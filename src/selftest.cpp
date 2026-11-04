@@ -1294,7 +1294,7 @@ void runSelfTest(ui::LayoutsWindow *window)
 				QTimer::singleShot(800, [] {
 					core::BroadcastSpec spec;
 					commands::showPreview(commands::broadcastFrames(
-						"Cam3OneTwo", spec, commands::KindMode::AllCameras));
+						"Cam3Columns", spec, commands::KindMode::AllCameras));
 				});
 				if (const char *grab = getenv("LAYOUTS_DEMO_GRAB"))
 					QTimer::singleShot(2000, [path = QString::fromUtf8(grab)] {
