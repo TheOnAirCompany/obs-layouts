@@ -562,6 +562,18 @@ void testCanvasSnapAndRuler()
 	const size_t afterCount = store.guides().sceneGuides(ctx.sceneUuid().toStdString()).size();
 	R->check(ruler && afterCount == before + 1, "ruler-drag-creates-guide",
 		 QString("%1 -> %2").arg(before).arg(afterCount));
+
+	/* Guide edits are one OBS undo entry each. */
+	QAction *undo = findAction(QKeySequence(QKeySequence::Undo));
+	QAction *redo = findAction(QKeySequence(QKeySequence::Redo));
+	if (undo && redo) {
+		undo->trigger();
+		const size_t afterUndo = store.guides().sceneGuides(ctx.sceneUuid().toStdString()).size();
+		redo->trigger();
+		const size_t afterRedo = store.guides().sceneGuides(ctx.sceneUuid().toStdString()).size();
+		R->check(afterUndo == before && afterRedo == before + 1, "guide-undo-redo",
+			 QString("undo %1, redo %2").arg(afterUndo).arg(afterRedo));
+	}
 }
 
 void testLayoutsV02()

@@ -35,6 +35,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QByteArray>
 #include <QColor>
 #include <QObject>
+#include <QString>
+
+#include <string>
 
 namespace layouts {
 
@@ -82,6 +85,13 @@ public:
 	void saveGuides(obs_data_t *data);
 	void loadGuides(obs_data_t *data);
 
+	/* Guide transactions: one OBS undo entry per user action (a whole drag included). */
+	void beginGuideEdit();
+	void endGuideEdit(const QString &undoLabel);
+	void cancelGuideEdit();
+	std::string guidesJson();
+	void restoreGuidesJson(const char *json);
+
 	/* Call after any change to guides / settings so every view refreshes. */
 	void notifyGuidesChanged();
 	void notifySettingsChanged(bool persist = true);
@@ -94,6 +104,8 @@ private:
 	Store() = default;
 	core::GuideDocument guides_;
 	ViewSettings settings_;
+	std::string guideBefore_;
+	bool guideEditing_ = false;
 };
 
 } // namespace layouts

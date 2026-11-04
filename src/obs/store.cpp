@@ -139,6 +139,57 @@ void Store::notifySettingsChanged(bool persist)
 	emit settingsChanged();
 }
 
+namespace {
+void undoRedoGuides(const char *data)
+{
+	Store::instance().restoreGuidesJson(data);
+	obs_frontend_save();
+}
+} // namespace
+
+std::string Store::guidesJson()
+{
+	OBSDataAutoRelease d = obs_data_create();
+	saveGuides(d);
+	const char *json = obs_data_get_json(d);
+	return json ? json : "";
+}
+
+void Store::restoreGuidesJson(const char *json)
+{
+	OBSDataAutoRelease d = obs_data_create_from_json(json);
+	if (d)
+		loadGuides(d); /* emits guidesChanged */
+}
+
+void Store::beginGuideEdit()
+{
+	guideBefore_ = guidesJson();
+	guideEditing_ = true;
+}
+
+void Store::endGuideEdit(const QString &undoLabel)
+{
+	notifyGuidesChanged();
+	if (!guideEditing_)
+		return;
+	guideEditing_ = false;
+	const std::string after = guidesJson();
+	if (after != guideBefore_) {
+		obs_frontend_add_undo_redo_action(undoLabel.toUtf8().constData(), undoRedoGuides, undoRedoGuides,
+						  guideBefore_.c_str(), after.c_str(), false);
+		obs_frontend_save(); /* guides live in the scene collection */
+	}
+}
+
+void Store::cancelGuideEdit()
+{
+	if (!guideEditing_)
+		return;
+	guideEditing_ = false;
+	restoreGuidesJson(guideBefore_.c_str());
+}
+
 void Store::saveGuides(obs_data_t *data)
 {
 	guides_.pruneOrphans(aliveSceneUuids());

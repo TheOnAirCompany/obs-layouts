@@ -1074,6 +1074,7 @@ void CanvasView::mousePressEvent(QMouseEvent *e)
 	if (const auto g = guideAt(p)) {
 		const auto ref = Store::instance().guides().find(*g);
 		if (ref && !ref->guide.locked) {
+			Store::instance().beginGuideEdit();
 			mode_ = Mode::Guide;
 			guideId_ = *g;
 			guideIsNew_ = false;
@@ -1314,8 +1315,7 @@ void CanvasView::finishGuide(const QPointF &p)
 	guideId_ = 0;
 	guideIsNew_ = false;
 	valueSnap_.reset();
-	Store::instance().notifyGuidesChanged();
-	obs_frontend_save(); /* guides live in the collection */
+	Store::instance().endGuideEdit(T("Undo.Guides")); /* guides live in the collection */
 }
 
 void CanvasView::updateRubber(const QPointF &p)
@@ -1344,8 +1344,8 @@ void CanvasView::cancelInteraction()
 		session_->cancel();
 		session_.reset();
 	}
-	if (mode_ == Mode::Guide && !guideIsNew_ && guideId_)
-		Store::instance().notifyGuidesChanged();
+	if (mode_ == Mode::Guide)
+		Store::instance().cancelGuideEdit(); /* Escape puts a dragged guide back */
 	mode_ = Mode::Idle;
 	dragItems_.clear();
 	snap_ = core::SnapResult();
@@ -1431,10 +1431,12 @@ void CanvasView::mouseReleaseEvent(QMouseEvent *e)
 		return;
 	}
 	if (mode_ == Mode::Guide) {
-		if (dragStarted_ || guideIsNew_)
+		if (dragStarted_ || guideIsNew_) {
 			finishGuide(e->position());
-		else
+		} else {
 			mode_ = Mode::Idle;
+			Store::instance().endGuideEdit(T("Undo.Guides")); /* a click without a move: no entry */
+		}
 	}
 	if (session_) {
 		session_->commit();
@@ -1466,9 +1468,9 @@ void CanvasView::mouseDoubleClickEvent(QMouseEvent *e)
 				core::parseExpression(text.toStdString(), ref->guide.axis == core::Axis::X ? c.w : c.h);
 			double v = 0;
 			if (ex.apply(ref->guide.pos, v)) {
+				Store::instance().beginGuideEdit();
 				Store::instance().guides().move(*g, v);
-				Store::instance().notifyGuidesChanged();
-				obs_frontend_save();
+				Store::instance().endGuideEdit(T("Undo.Guides"));
 			}
 		}
 		return;
@@ -1844,6 +1846,7 @@ void CanvasView::beginGuideDrag(core::Axis axis, const QPoint &globalPos)
 	if (!EditContext::instance().sceneSource())
 		return;
 	cancelInteraction();
+	Store::instance().beginGuideEdit();
 	mode_ = Mode::Guide;
 	guideIsNew_ = true;
 	guideId_ = 0;
@@ -1899,27 +1902,27 @@ void CanvasView::contextMenuEvent(QContextMenuEvent *e)
 					text.toStdString(), ref->guide.axis == core::Axis::X ? c.w : c.h);
 				double v = 0;
 				if (ex.apply(ref->guide.pos, v)) {
+					Store::instance().beginGuideEdit();
 					Store::instance().guides().move(id, v);
-					Store::instance().notifyGuidesChanged();
-					obs_frontend_save();
+					Store::instance().endGuideEdit(T("Undo.Guides"));
 				}
 			});
 			menu.addAction(ref->guide.locked ? T("Guide.Unlock") : T("Guide.Lock"), this, [id, ref] {
+				Store::instance().beginGuideEdit();
 				Store::instance().guides().setLocked(id, !ref->guide.locked);
-				Store::instance().notifyGuidesChanged();
-				obs_frontend_save();
+				Store::instance().endGuideEdit(T("Undo.Guides"));
 			});
 			menu.addAction(ref->global ? T("Guide.MakeScene") : T("Guide.MakeGlobal"), this, [id, ref] {
 				EditContext &c = EditContext::instance();
+				Store::instance().beginGuideEdit();
 				Store::instance().guides().setGlobal(id, c.sceneUuid().toStdString(),
 								     c.sceneName().toStdString(), !ref->global);
-				Store::instance().notifyGuidesChanged();
-				obs_frontend_save();
+				Store::instance().endGuideEdit(T("Undo.Guides"));
 			});
 			menu.addAction(T("Guide.Delete"), this, [id] {
+				Store::instance().beginGuideEdit();
 				Store::instance().guides().remove(id);
-				Store::instance().notifyGuidesChanged();
-				obs_frontend_save();
+				Store::instance().endGuideEdit(T("Undo.Guides"));
 			});
 			menu.addSeparator();
 		}
@@ -1957,31 +1960,31 @@ void CanvasView::contextMenuEvent(QContextMenuEvent *e)
 	const std::string name = ctx.sceneName().toStdString();
 	const double gx = std::round(w.x), gy = std::round(w.y);
 	menu.addAction(T("Guide.AddVertical").arg(fmt(gx)), this, [uuid, name, gx] {
+		Store::instance().beginGuideEdit();
 		Store::instance().guides().add(uuid, name, core::Axis::X, gx, false);
-		Store::instance().notifyGuidesChanged();
-		obs_frontend_save();
+		Store::instance().endGuideEdit(T("Undo.Guides"));
 	});
 	menu.addAction(T("Guide.AddHorizontal").arg(fmt(gy)), this, [uuid, name, gy] {
+		Store::instance().beginGuideEdit();
 		Store::instance().guides().add(uuid, name, core::Axis::Y, gy, false);
-		Store::instance().notifyGuidesChanged();
-		obs_frontend_save();
+		Store::instance().endGuideEdit(T("Undo.Guides"));
 	});
 	menu.addAction(T("Guide.AddCenter"), this, [uuid, name] {
 		const core::Rect c = EditContext::instance().canvasRect();
+		Store::instance().beginGuideEdit();
 		Store::instance().guides().add(uuid, name, core::Axis::X, c.w / 2.0, false);
 		Store::instance().guides().add(uuid, name, core::Axis::Y, c.h / 2.0, false);
-		Store::instance().notifyGuidesChanged();
-		obs_frontend_save();
+		Store::instance().endGuideEdit(T("Undo.Guides"));
 	});
 	menu.addAction(T("Guide.ClearScene"), this, [uuid] {
+		Store::instance().beginGuideEdit();
 		Store::instance().guides().clearScene(uuid);
-		Store::instance().notifyGuidesChanged();
-		obs_frontend_save();
+		Store::instance().endGuideEdit(T("Undo.Guides"));
 	});
 	menu.addAction(T("Guide.ClearGlobal"), this, [] {
+		Store::instance().beginGuideEdit();
 		Store::instance().guides().globalGuidesMutable().clear();
-		Store::instance().notifyGuidesChanged();
-		obs_frontend_save();
+		Store::instance().endGuideEdit(T("Undo.Guides"));
 	});
 	menu.exec(e->globalPos());
 }

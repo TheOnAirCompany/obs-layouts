@@ -5,6 +5,9 @@
 - **Layouts window**: the Canvas and the Inspector now live together in one regular window
   (resizable, maximizable, full screen), opened from Tools > Layouts or a hotkey. Nothing is added
   to the OBS window any more and nothing opens by itself at startup. Replaces the two docks of 0.1.
+- Guides are undoable: adding, moving, locking, deleting or clearing guides is one entry in Edit > Undo
+  (a whole drag included); Escape during a drag puts the guide back.
+- Fixed: a crash when the cursor rested over the Inspector while it refreshed.
 - Fixed: a violet preview frame could stay on the Canvas after the selection changed.
 
 - Resize several selected elements at once from the selection handles on the Canvas (corners keep the
