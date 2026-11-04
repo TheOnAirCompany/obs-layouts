@@ -736,8 +736,8 @@ void testBroadcast()
 			 h == core::HConstraint::Scale && v == core::VConstraint::Scale,
 		 "broadcast-camera-cropped-and-locked", QString("crop %1/%2").arg(crop.left).arg(crop.right));
 
-	/* Same items as screens: never cropped, whole content inside the half. */
-	unlockAll({"A", "B"});
+	/* Same items as screens, re-applied without the lock: never cropped, whole content
+	 * inside the half, and freed again. */
 	commands::applyBroadcast("Screen2Split", spec, commands::KindMode::AllScreens, false);
 	ctx.markDirty();
 	obs_sceneitem_crop crop2 = {};
@@ -747,7 +747,11 @@ void testBroadcast()
 	R->check(ea && crop2.left == 0 && crop2.right == 0 && crop2.top == 0 && crop2.bottom == 0 &&
 			 std::fabs(a2.w / a2.h - 2.0) < 0.01 && a2.right() <= half + 0.6 &&
 			 !obs_sceneitem_locked(ea->item),
-		 "broadcast-screen-fit-uncropped", rectStr(a2));
+		 "broadcast-screen-fit-uncropped-unlocked", rectStr(a2));
+	if (ea)
+		getConstraints(ea->item, h, v);
+	R->check(ea && h == core::HConstraint::Left && v == core::VConstraint::Top,
+		 "broadcast-unlock-resets-constraints");
 
 	/* The Inspector lists the templates for the selection. */
 	Store::instance().settings().broadcastKinds = 1;

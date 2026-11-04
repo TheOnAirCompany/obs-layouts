@@ -653,11 +653,21 @@ bool applyBroadcast(const std::string &key, const core::BroadcastSpec &spec, Kin
 				obs_sceneitem_set_order(p.entry.item, OBS_ORDER_MOVE_TOP);
 		}
 	}
-	if (lock) {
-		for (const Placed &p : placed)
+	/* The checkbox decides the final state: a locked layout re-applied without the lock is
+	 * freed again (constraints set by the lock go back to the default too). */
+	for (const Placed &p : placed) {
+		if (lock) {
 			lockItem(p.entry.item);
-		obs_frontend_save();
+		} else if (p.entry.locked) {
+			obs_sceneitem_set_locked(p.entry.item, false);
+			core::HConstraint h;
+			core::VConstraint v;
+			getConstraints(p.entry.item, h, v);
+			if (h == core::HConstraint::Scale && v == core::VConstraint::Scale)
+				setConstraints(p.entry.item, core::HConstraint::Left, core::VConstraint::Top);
+		}
 	}
+	obs_frontend_save();
 	EditContext::instance().markDirty();
 	return true;
 }

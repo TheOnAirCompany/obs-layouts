@@ -17,7 +17,8 @@
   TikTok, Reels, Shorts) guests stack instead of sitting side by side and screens stay 16:9 across
   the top; the gallery thumbnails follow the canvas shape.
 - **Lock the layout** (on by default): applied sources are locked so they can't be dragged by
-  accident, and scale with the canvas if its resolution changes.
+  accident, and scale with the canvas if its resolution changes. Re-applying a layout with the box unchecked frees them
+  again.
 - Constraints moved into a collapsed "Advanced" part of the Inspector.
 - Fixed: a crash when the cursor rested over the Inspector while it refreshed.
 - Fixed: a violet preview frame could stay on the Canvas after the selection changed.
