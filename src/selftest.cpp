@@ -27,6 +27,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/commands.hpp"
 #include "obs/constraints.hpp"
 #include "obs/edit-context.hpp"
+#include "obs/hotkeys.hpp"
 #include "obs/obs-convert.hpp"
 #include "obs/store.hpp"
 #include "ui/canvas-dock.hpp"
@@ -689,6 +690,24 @@ void testCropMode()
 	ctx.markDirty();
 }
 
+void testHotkeys()
+{
+	const bool grid = Store::instance().settings().grid;
+	const bool ok = hotkeys::trigger("layouts.toggle_grid");
+	R->check(ok && Store::instance().settings().grid != grid, "hotkey-toggle-grid");
+	hotkeys::trigger("layouts.toggle_grid");
+	resetItem("A", 100, 100);
+	resetItem("B", 700, 400);
+	EditContext::instance().markDirty();
+	selectNames({"A", "B"});
+	commands::setAlignTarget(core::AlignTarget::Selection);
+	hotkeys::trigger("layouts.align_left");
+	EditContext::instance().markDirty();
+	R->check(box("B").x == 100, "hotkey-align-left", rectStr(box("B")));
+	resetItem("B", 700, 400);
+	EditContext::instance().markDirty();
+}
+
 void testGroup()
 {
 	EditContext &ctx = EditContext::instance();
@@ -1114,6 +1133,7 @@ void runSelfTest(ui::CanvasDock *dock)
 		R->add(300, [] { testCanvasSnapAndRuler(); });
 		R->add(300, [] { testLayoutsV02(); });
 		R->add(300, [] { testCropMode(); });
+		R->add(300, [] { testHotkeys(); });
 		R->add(300, [] { testGroup(); });
 		R->add(500, [] { testGroupCheck(); });
 	}

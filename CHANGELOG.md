@@ -11,6 +11,8 @@
 - Ghost preview on the Canvas while hovering the auto layout or presets section, before applying.
 - Crop mode on the Canvas (C or the context menu): the handles crop the source and the image stays
   in place. Items without a bounding box.
+- OBS hotkeys for Layouts actions in Settings > Hotkeys (rulers, guides, grid, safe areas, snapping,
+  the six alignments, distribute, zoom to fit); no key bound by default.
 - Constraints (left, right, center, left and right, scale / top, bottom, center, top and bottom, scale)
   re-applied to every scene of a canvas when its resolution changes; saved with each item.
 

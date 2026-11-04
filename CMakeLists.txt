@@ -67,6 +67,8 @@ target_sources(
     src/obs/commands.cpp
     src/obs/constraints.cpp
     src/obs/constraints.hpp
+    src/obs/hotkeys.cpp
+    src/obs/hotkeys.hpp
     src/obs/commands.hpp
     src/ui/theme.cpp
     src/ui/theme.hpp

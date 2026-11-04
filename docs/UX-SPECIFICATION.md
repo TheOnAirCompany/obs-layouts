@@ -149,6 +149,12 @@ and refused actions show the reason.
 | Ctrl/Cmd + ; | guides |
 | Ctrl/Cmd + Z, Ctrl/Cmd + Shift + Z | OBS undo / redo (OBS shortcuts, untouched) |
 
+### Global hotkeys (0.2)
+In OBS *Settings > Hotkeys*, under names starting with "Layouts:": show or hide rulers, guides, grid
+and safe areas, turn snapping on or off, the six alignments, distribute horizontal and vertical
+spacing, zoom the Canvas to fit. No key is bound by default; bindings are saved in the plugin
+configuration. They work even when the Canvas does not have the focus.
+
 ### Rulers
 Horizontal and vertical, in canvas pixels, adaptive 1-2-5 graduation (labeled ticks at least 64 px
 apart, up to 10 subdivisions), negative values beyond the origin, the selection range highlighted,

@@ -29,8 +29,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "obs/constraints.hpp"
 #include "obs/edit-context.hpp"
+#include "obs/hotkeys.hpp"
 #include "obs/store.hpp"
 #include "ui/canvas-dock.hpp"
+#include "ui/canvas-view.hpp"
 #include "ui/inspector-dock.hpp"
 #include "ui/theme.hpp"
 
@@ -97,8 +99,11 @@ void onFrontendEvent(enum obs_frontend_event event, void *)
 	}
 	if (event == OBS_FRONTEND_EVENT_CANVAS_ADDED || event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED)
 		layouts::ConstraintWatcher::instance().recordSizes();
-	if (event == OBS_FRONTEND_EVENT_EXIT)
+	if (event == OBS_FRONTEND_EVENT_EXIT) {
 		layouts::ConstraintWatcher::instance().stop();
+		layouts::hotkeys::save();
+		layouts::hotkeys::unregisterAll();
+	}
 	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING) {
 		layouts::ConstraintWatcher::instance().start();
 		placeDocksOnFirstRun();
@@ -111,9 +116,10 @@ void onFrontendEvent(enum obs_frontend_event event, void *)
 
 void onSave(obs_data_t *data, bool saving, void *)
 {
-	if (saving)
+	if (saving) {
 		layouts::Store::instance().saveGuides(data);
-	else
+		layouts::hotkeys::save(); /* bindings may have changed in Settings > Hotkeys */
+	} else
 		layouts::Store::instance().loadGuides(data);
 }
 
@@ -162,6 +168,11 @@ bool obs_module_load(void)
 		delete g_canvas.data();
 		return false;
 	}
+
+	layouts::hotkeys::registerAll([] {
+		if (g_canvas)
+			g_canvas->view()->zoomFit();
+	});
 
 	obs_frontend_add_event_callback(onFrontendEvent, nullptr);
 	obs_frontend_add_save_callback(onSave, nullptr);
