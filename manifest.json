@@ -1,0 +1,18 @@
+{
+    "display_name": "Layouts for OBS",
+    "id": "152000f8-f7f2-4570-b77f-7aa1a08a6107",
+    "version": "0.1.0",
+    "authors": [
+        "The OnAir Company"
+    ],
+    "name": "obs-layouts",
+    "description": "Figma-like composition tools for OBS: inspector, rulers, guides, grids and smart snapping.",
+    "long_description": "Layouts for OBS adds an Inspector dock to position, size, rotate, crop and align scene items with pixel precision, and a Layouts Canvas dock with rulers, guides, layout grids, smart snapping and measurements. It only uses public OBS APIs and never touches the video output.",
+    "urls": {
+        "repository": "https://github.com/TheOnAirCompany/obs-layouts",
+        "website": "https://github.com/TheOnAirCompany/obs-layouts",
+        "support": "https://github.com/TheOnAirCompany/obs-layouts/issues"
+    },
+    "has_banner": false,
+    "has_icon": false
+}
