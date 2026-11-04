@@ -1106,7 +1106,19 @@ void runSelfTest(ui::CanvasDock *dock)
 			obs_frontend_save();
 		});
 		R->add(500, [] {
+			if (getenv("LAYOUTS_DEMO_CROP")) {
+				selectNames({"Camera"});
+				QKeyEvent kc(QEvent::KeyPress, Qt::Key_C, Qt::NoModifier, "c");
+				QApplication::sendEvent(g_dock->view(), &kc);
+				if (auto *d = qobject_cast<QDockWidget *>(g_dock->parentWidget()))
+					d->setGeometry(0, 560, 820, 440);
+				return;
+			}
 			selectNames({"Guest camera", "Slides"});
+			if (getenv("LAYOUTS_DEMO_PREVIEW")) {
+				core::PresetSpec ps;
+				commands::showPreview(commands::presetFrames(core::Preset::SplitScreen, ps));
+			}
 			if (auto *d = qobject_cast<QDockWidget *>(g_dock->parentWidget()))
 				d->setGeometry(0, 560, 820, 440);
 		});
