@@ -803,6 +803,38 @@ void testBroadcastScene()
 	ctx.markDirty();
 }
 
+void testShowScenes()
+{
+	EditContext &ctx = EditContext::instance();
+	ctx.follow();
+	const QString edited = ctx.sceneName();
+	selectNames({"A", "B", "C"});
+	core::BroadcastSpec spec;
+	const int n = commands::createShowScenes(
+		spec, commands::KindMode::AllCameras, true,
+		[](const std::string &key) { return QString("Show ") + QString::fromStdString(key); },
+		[](const QString &source) { return QString("Solo ") + source; });
+	/* 3 close-ups + three columns + host + 2. */
+	int found = 0, locked = 0;
+	for (const char *name : {"Solo A", "Solo B", "Solo C", "Show Cam3Columns", "Show Cam3OneTwo"}) {
+		OBSSourceAutoRelease src = obs_get_source_by_name(name);
+		obs_scene_t *scene = src ? obs_scene_from_source(src) : nullptr;
+		if (!scene)
+			continue;
+		found++;
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+				(*(int *)p) += obs_sceneitem_locked(item) ? 1 : 0;
+				return true;
+			},
+			&locked);
+		obs_source_remove(src);
+	}
+	R->check(n == 5 && found == 5 && locked == 3 + 3 + 3 && ctx.sceneName() == edited, "broadcast-show-scenes",
+		 QString("created %1 found %2 locked %3").arg(n).arg(found).arg(locked));
+}
+
 void testCropMode()
 {
 	EditContext &ctx = EditContext::instance();
@@ -1333,6 +1365,7 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(300, [] { testLayoutsV02(); });
 		R->add(300, [] { testBroadcast(); });
 		R->add(300, [] { testBroadcastScene(); });
+		R->add(300, [] { testShowScenes(); });
 		R->add(300, [] { unlockAll({"A", "B", "C"}); });
 		R->add(300, [] { testCropMode(); });
 		R->add(300, [] { testHotkeys(); });

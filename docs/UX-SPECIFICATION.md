@@ -83,7 +83,9 @@ Settings: gap between tiles and margin around the layout (0 = full bleed, like T
 (nothing moves)*, on by default, locks the sources and gives them the *scale* constraints, so they
 can't be dragged by accident and follow the canvas if its resolution changes; re-applying with the
 box unchecked frees them. *Apply* arranges the current scene (one undo entry); *New scene* creates a
-scene with the same sources in the layout and leaves the current one untouched. Hovering the section
+scene with the same sources in the layout and leaves the current one untouched. *Create show scenes*
+makes all the scenes of a show at once: a full-screen scene per selected source (named after it), then
+one scene per layout that fits the selection; the button briefly says how many were created. Hovering the section
 previews the chosen layout on the Canvas. The Constraints section moves under a collapsed *Advanced*.
 
 ### Auto layout (0.2, multiple selection)

@@ -134,6 +134,7 @@ private:
 	QCheckBox *broadcastLock_ = nullptr;
 	QPushButton *broadcastApply_ = nullptr;
 	QPushButton *broadcastScene_ = nullptr;
+	QPushButton *broadcastShow_ = nullptr;
 	bool hoverBroadcast_ = false;
 
 	/* constraints */

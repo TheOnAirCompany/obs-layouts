@@ -16,6 +16,8 @@
   screens. Gap and margin settings, previewed on the Canvas. On a portrait canvas (9:16 for
   TikTok, Reels, Shorts) guests stack instead of sitting side by side and screens stay 16:9 across
   the top; the gallery thumbnails follow the canvas shape.
+- **Create show scenes**: one click makes a full-screen scene for each selected source, then a
+  scene for every broadcast layout that fits the selection (locked if the box is checked).
 - **Lock the layout** (on by default): applied sources are locked so they can't be dragged by
   accident, and scale with the canvas if its resolution changes. Re-applying a layout with the box unchecked frees them
   again.

@@ -29,6 +29,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "core/broadcast.hpp"
 #include "core/layout.hpp"
 
+#include <functional>
 #include <optional>
 #include <string>
 
@@ -91,6 +92,12 @@ bool applyBroadcast(const std::string &key, const core::BroadcastSpec &spec, Kin
  * sources are shared, never duplicated). Returns the new scene name, empty on failure. */
 QString createBroadcastScene(const std::string &key, const QString &sceneName, const core::BroadcastSpec &spec,
 			     KindMode mode, bool lock);
+/* One-click show: a full-screen scene for each selected source, then one scene per
+ * layout that fits the selection. Names come from the callbacks. Returns the number of
+ * scenes created; the edited scene does not change. */
+int createShowScenes(const core::BroadcastSpec &spec, KindMode mode, bool lock,
+		     const std::function<QString(const std::string &key)> &templateName,
+		     const std::function<QString(const QString &sourceName)> &soloName);
 
 /* Shows the frames as a ghost preview on the Canvas (empty clears it). */
 void showPreview(const std::vector<core::Frame> &frames);
