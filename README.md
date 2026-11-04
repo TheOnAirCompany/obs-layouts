@@ -10,7 +10,7 @@ Layouts for OBS is a native OBS Studio plugin that brings the composition tools 
 
 </div>
 
-![Layouts for OBS in OBS Studio 33](docs/images/overview.png)
+![The Layouts window: Canvas with rulers and guides, Inspector on the right](docs/images/layouts-window.png)
 
 > **Status: 0.1.0 preview.** Tested in OBS Studio 33.0.1 on macOS (Apple Silicon). Windows and Linux packages are built by CI but not tested at runtime yet. Packages are unsigned. Keep a backup of your scene collection and report anything odd in [Issues](https://github.com/TheOnAirCompany/obs-layouts/issues).
 
@@ -30,8 +30,6 @@ The right panel of the Layouts window. It always shows the selection of the edit
 - **Presets**: corners, centered, full screen, lower third area, picture in picture, split screen, one large + two small, 2 × 2 grid, with margins you set.
 - **Constraints**: pin elements to an edge, the center, both edges or scale them, so they keep their place when the canvas resolution changes.
 
-<img src="docs/images/inspector.png" alt="Inspector" width="290" align="right">
-
 ### Layouts Canvas
 
 The editing surface in the middle of the Layouts window, next to the OBS preview.
@@ -46,10 +44,6 @@ The editing surface in the middle of the Layouts window, next to the OBS preview
 - **Zoom** (fit, 100 %, selection, pinch, Ctrl/Cmd + wheel) and **pan** (Space + drag, wheel).
 - **Safe areas**, center lines and custom margins.
 - Edit the scene OBS shows, or **pin any scene**, including scenes of other OBS 33 canvases (vertical...).
-
-<br clear="right">
-
-![Layouts Canvas](docs/images/canvas.png)
 
 ### Made for live shows
 
