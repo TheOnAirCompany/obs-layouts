@@ -59,7 +59,8 @@ const std::vector<BroadcastTemplate> &broadcastTemplates();
 std::vector<BroadcastTemplate> templatesFor(int cameras, int screens);
 
 /* Slots of a template on a canvas. Camera slots come first, in reading order, then
- * screen slots. Unknown keys give no slot. */
+ * screen slots. Unknown keys give no slot. On a portrait canvas (taller than wide) the
+ * guests stack instead of sitting side by side and screens span the width at the top. */
 std::vector<Slot> buildBroadcast(const std::string &key, const Rect &canvas, const BroadcastSpec &spec);
 
 /* Crop (source pixels) and scale so that a source of srcW x srcH exactly fills a cell

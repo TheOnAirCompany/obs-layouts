@@ -108,7 +108,7 @@ std::vector<BroadcastTemplate> templatesFor(int cameras, int screens)
 	return out;
 }
 
-std::vector<Slot> buildBroadcast(const std::string &key, const Rect &canvas, const BroadcastSpec &spec)
+static std::vector<Slot> buildLandscape(const std::string &key, const Rect &canvas, const BroadcastSpec &spec)
 {
 	std::vector<Slot> out;
 	if (!(canvas.w > 0) || !(canvas.h > 0))
@@ -177,6 +177,90 @@ std::vector<Slot> buildBroadcast(const std::string &key, const Rect &canvas, con
 		out.push_back({SlotKind::Screen, fit169(cells[1])});
 	}
 	return out;
+}
+
+namespace {
+
+Rect transposed(const Rect &r)
+{
+	return {r.y, r.x, r.h, r.w};
+}
+
+/* n tiles in a block: `rows` rows, the last row shares its width between what is left. */
+std::vector<Rect> rowsOf(const Rect &r, int n, int rows, double g)
+{
+	std::vector<Rect> out;
+	rows = std::clamp(rows, 1, std::max(1, n));
+	const int cols = (n + rows - 1) / rows;
+	int left = n;
+	for (const Rect &row : split(r, rows, g, Axis::Y)) {
+		const int k = std::min(cols, left);
+		for (const Rect &c : split(row, k, g, Axis::X))
+			out.push_back(c);
+		left -= k;
+	}
+	return out;
+}
+
+/* Portrait canvas (9:16 for TikTok, Reels, Shorts): guests stack instead of sitting side by
+ * side, screens keep 16:9 across the full width at the top. */
+std::vector<Slot> buildPortrait(const std::string &key, const Rect &canvas, const BroadcastSpec &spec)
+{
+	std::vector<Slot> out;
+	const Rect r = inset(canvas, spec.margin);
+	const double g = std::max(0.0, spec.gap);
+
+	if (key == "Cam2Duo169") {
+		for (const Rect &half : split(r, 2, g, Axis::Y))
+			out.push_back({SlotKind::Camera, fit169(half)});
+		return out;
+	}
+	if (key.rfind("Cam", 0) == 0) {
+		/* The landscape arrangement turned a quarter: columns become rows. */
+		for (const Slot &s : buildLandscape(key, transposed(canvas), spec))
+			out.push_back({s.kind, transposed(s.cell)});
+		return out;
+	}
+	if (key == "Screen1Full") {
+		out.push_back({SlotKind::Screen, r});
+	} else if (key == "Screen2Split") {
+		for (const Rect &half : split(r, 2, g, Axis::Y))
+			out.push_back({SlotKind::Screen, fit169(half)});
+	} else if (key == "Screen1Cam1Pip") {
+		const double w = canvas.w * 0.42;
+		const double h = w / k169;
+		const double pad = std::max(spec.margin, canvas.w * 0.05);
+		out.push_back({SlotKind::Camera, {canvas.right() - pad - w, canvas.bottom() - pad - h, w, h}});
+		out.push_back({SlotKind::Screen, r});
+	} else if (key == "Screen2Cam2Grid") {
+		const double sh = r.w / k169;
+		const Rect top{r.x, r.y, r.w, sh * 2 + g};
+		const Rect rest{r.x, top.bottom() + g, r.w, r.bottom() - top.bottom() - g};
+		if (rest.h > 0)
+			cams(out, split(rest, 2, g, Axis::X));
+		for (const Rect &s : split(top, 2, g, Axis::Y))
+			out.push_back({SlotKind::Screen, s});
+	} else if (key == "Screen1Cam1Side" || key.rfind("Screen1Cam", 0) == 0) {
+		const bool column = key == "Screen1Cam1Side" || key.find("Column") != std::string::npos;
+		const int n = key == "Screen1Cam1Side" ? 1 : std::max(1, key[10] - '0');
+		const Rect screen{r.x, r.y, r.w, r.w / k169};
+		const Rect rest{r.x, screen.bottom() + g, r.w, r.bottom() - screen.bottom() - g};
+		if (rest.h > 0) {
+			/* Column: one guest per row. Strip: guests side by side, two rows from 4. */
+			cams(out, rowsOf(rest, n, column ? n : (n <= 3 ? 1 : 2), g));
+		}
+		out.push_back({SlotKind::Screen, screen});
+	}
+	return out;
+}
+
+} // namespace
+
+std::vector<Slot> buildBroadcast(const std::string &key, const Rect &canvas, const BroadcastSpec &spec)
+{
+	if (!(canvas.w > 0) || !(canvas.h > 0))
+		return {};
+	return canvas.h > canvas.w ? buildPortrait(key, canvas, spec) : buildLandscape(key, canvas, spec);
 }
 
 CoverResult coverCell(uint32_t srcW, uint32_t srcH, double cellW, double cellH, double keepTop)

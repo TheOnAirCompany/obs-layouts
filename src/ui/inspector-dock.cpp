@@ -720,9 +720,14 @@ protected:
 	}
 };
 
-QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor &screen, const QColor &bg)
+QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor &screen, const QColor &bg,
+		     double aspect)
 {
 	const QSize size(112, 63);
+	/* The canvas shape inside the thumbnail box (portrait canvases stay portrait). */
+	const double bw = std::min<double>(size.width(), size.height() * aspect);
+	const double bh = bw / aspect;
+	const QRectF area((size.width() - bw) / 2, (size.height() - bh) / 2, bw, bh);
 	QIcon icon;
 	for (qreal dpr : {1.0, 2.0}) {
 		QPixmap pm(size * dpr);
@@ -732,11 +737,11 @@ QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor 
 		p.setRenderHint(QPainter::Antialiasing);
 		p.setPen(Qt::NoPen);
 		p.setBrush(bg);
-		p.drawRoundedRect(QRectF(0, 0, size.width(), size.height()), 3, 3);
+		p.drawRoundedRect(area, 3, 3);
 		core::BroadcastSpec spec;
 		spec.gap = 2;
 		for (const core::Slot &s :
-		     core::buildBroadcast(key, {0, 0, (double)size.width(), (double)size.height()}, spec)) {
+		     core::buildBroadcast(key, {area.x(), area.y(), area.width(), area.height()}, spec)) {
 			p.setBrush(s.kind == core::SlotKind::Camera ? camera : screen);
 			p.drawRoundedRect(QRectF(s.cell.x + 0.5, s.cell.y + 0.5, s.cell.w - 1, s.cell.h - 1), 1.5, 1.5);
 			if (s.kind == core::SlotKind::Camera) {
@@ -906,7 +911,10 @@ void InspectorDock::syncBroadcast()
 	QStringList shown;
 	for (int i = 0; i < broadcastGallery_->count(); i++)
 		shown << broadcastGallery_->item(i)->data(Qt::UserRole).toString();
-	if (keys != shown) {
+	const core::Rect canvas = EditContext::instance().canvasRect();
+	const double aspect = canvas.w > 0 && canvas.h > 0 ? canvas.w / canvas.h : 16.0 / 9.0;
+	if (keys != shown || std::fabs(broadcastGallery_->property("aspect").toDouble() - aspect) > 1e-3) {
+		broadcastGallery_->setProperty("aspect", aspect);
 		const QString current = broadcastGallery_->currentItem()
 						? broadcastGallery_->currentItem()->data(Qt::UserRole).toString()
 						: QString();
@@ -915,8 +923,14 @@ void InspectorDock::syncBroadcast()
 		const QColor scr = QColor::fromRgba(tokens::kThumbScreen);
 		const QColor bg = palette().color(QPalette::Base);
 		for (const QString &k : keys) {
-			auto *item = new QListWidgetItem(broadcastThumb(k.toStdString(), cam, scr, bg),
-							 T(("Broadcast." + k.toStdString()).c_str()),
+			/* Some names change on a portrait canvas (three columns become three rows). */
+			const std::string base = "Broadcast." + k.toStdString();
+			const char *portrait = nullptr;
+			const QString label =
+				aspect < 1 && obs_module_get_string((base + ".Portrait").c_str(), &portrait)
+					? QString::fromUtf8(portrait)
+					: T(base.c_str());
+			auto *item = new QListWidgetItem(broadcastThumb(k.toStdString(), cam, scr, bg, aspect), label,
 							 broadcastGallery_);
 			item->setData(Qt::UserRole, k);
 			item->setToolTip(item->text());

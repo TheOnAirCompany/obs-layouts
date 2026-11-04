@@ -1017,6 +1017,19 @@ void testMultiCanvas()
 	ctx.markDirty();
 	R->check(box("V1").right() == 1080 && box("V1").bottom() == 1920, "align-in-vertical-canvas",
 		 rectStr(box("V1")));
+
+	/* Broadcast layouts on a portrait canvas: the duo stacks top and bottom. */
+	addColor(vs, "V2", 640, 360, 0xFF80FF80, 400, 400);
+	ctx.markDirty();
+	selectNames({"V1", "V2"});
+	core::BroadcastSpec spec;
+	spec.gap = 0;
+	commands::applyBroadcast("Cam2Split", spec, commands::KindMode::AllCameras, false);
+	ctx.markDirty();
+	const core::Rect a = box("V1"), b = box("V2");
+	R->check(std::fabs(a.w - 1080) < 1 && std::fabs(a.h - 960) < 1 && std::fabs(b.y - 960) < 1 &&
+			 std::fabs(b.bottom() - 1920) < 1,
+		 "broadcast-portrait-duo-stacks", rectStr(a) + rectStr(b));
 	obs_scene_release(vs);
 }
 
@@ -1259,6 +1272,20 @@ void runSelfTest(ui::LayoutsWindow *window)
 				/* Three guests: the Broadcast layouts gallery, first template previewed. */
 				Store::instance().settings().broadcastKinds = 1;
 				selectNames({"Camera", "Guest camera", "Slides"});
+				if (getenv("LAYOUTS_DEMO_PORTRAIT")) {
+					obs_video_info ovi = {};
+					obs_get_video_info(&ovi);
+					ovi.base_width = ovi.output_width = 1080;
+					ovi.base_height = ovi.output_height = 1920;
+					g_vertical = obs_frontend_add_canvas("Vertical", &ovi, PROGRAM);
+					obs_scene_t *vs = obs_canvas_scene_create(g_vertical, "Vertical Scene");
+					addColor(vs, "Host", 1280, 720, 0xFF6B4F3A, 0, 0);
+					addColor(vs, "Guest 1", 1280, 720, 0xFF3A5A6B, 0, 800);
+					addColor(vs, "Guest 2", 1280, 720, 0xFF4A3A6B, 0, 1400);
+					EditContext::instance().pin(obs_scene_get_source(vs));
+					obs_scene_release(vs);
+					selectNames({"Host", "Guest 1", "Guest 2"});
+				}
 				g_window->setGeometry(0, 120, 1400, 900);
 				QTimer::singleShot(800, [] {
 					core::BroadcastSpec spec;

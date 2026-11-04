@@ -12,6 +12,11 @@ bool inside(const Rect &outer, const Rect &r)
 	return r.x >= outer.x - 1e-6 && r.y >= outer.y - 1e-6 && r.right() <= outer.right() + 1e-6 &&
 	       r.bottom() <= outer.bottom() + 1e-6;
 }
+
+bool overlaps(const Rect &a, const Rect &b)
+{
+	return a.x < b.right() - 1e-6 && b.x < a.right() - 1e-6 && a.y < b.bottom() - 1e-6 && b.y < a.bottom() - 1e-6;
+}
 } // namespace
 
 TEST("broadcast: every template fills its slots inside the canvas without overlap")
@@ -84,4 +89,38 @@ TEST("broadcast: cover crop fills the cell and keeps faces")
 	c = coverCell(1280, 720, 640, 360);
 	CHECK(c.crop.left == 0 && c.crop.top == 0);
 	CHECK_NEAR(c.scale.x, 0.5, 1e-9);
+}
+
+TEST("broadcast: portrait canvas stacks guests and keeps screens 16:9 on top")
+{
+	const Rect v(0, 0, 1080, 1920);
+	BroadcastSpec spec;
+	for (const BroadcastTemplate &t : broadcastTemplates()) {
+		const std::vector<Slot> s = buildBroadcast(t.key, v, spec);
+		CHECK((int)s.size() == t.cameras + t.screens);
+		for (size_t i = 0; i < s.size(); i++) {
+			CHECK(inside(v, s[i].cell));
+			CHECK(s[i].cell.w > 0 && s[i].cell.h > 0);
+			for (size_t j = i + 1; j < s.size(); j++) {
+				if (t.key != "Screen1Cam1Pip" && overlaps(s[i].cell, s[j].cell))
+					t::fail(__FILE__, __LINE__, t.key + " portrait overlap");
+			}
+		}
+	}
+	spec.gap = 0;
+	std::vector<Slot> duo = buildBroadcast("Cam2Split", v, spec);
+	CHECK(duo[0].cell == Rect(0, 0, 1080, 960));
+	CHECK(duo[1].cell == Rect(0, 960, 1080, 960));
+	std::vector<Slot> strip = buildBroadcast("Screen1Cam2Strip", v, spec);
+	CHECK(strip.back().cell == Rect(0, 0, 1080, 607.5));
+	CHECK_NEAR(strip[0].cell.y, 607.5, 1e-9);
+	CHECK_NEAR(strip[0].cell.bottom(), 1920, 1e-9);
+	CHECK_NEAR(strip[0].cell.w, 540, 1e-9);
+	std::vector<Slot> column = buildBroadcast("Screen1Cam2Column", v, spec);
+	CHECK_NEAR(column[0].cell.w, 1080, 1e-9); /* one guest per row */
+	CHECK_NEAR(column[1].cell.y, column[0].cell.bottom(), 1e-9);
+	std::vector<Slot> five = buildBroadcast("Screen1Cam5Strip", v, spec);
+	CHECK_NEAR(five[3].cell.w, 540, 1e-9); /* last row of two shares the width */
+	/* Square canvas keeps the landscape arrangement. */
+	CHECK(buildBroadcast("Cam2Split", Rect(0, 0, 1080, 1080), spec)[1].cell.x > 0);
 }

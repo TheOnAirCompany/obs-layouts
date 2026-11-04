@@ -13,7 +13,9 @@
   picture in picture, screen + guests on the side or below, two screens. Cameras fill their tile
   (cropped, keeping the top of the frame where faces are); screens are always shown whole. Cameras
   are detected (video capture devices, NDI, DeckLink, AJA), or count everything as cameras or as
-  screens. Gap and margin settings, previewed on the Canvas.
+  screens. Gap and margin settings, previewed on the Canvas. On a portrait canvas (9:16 for
+  TikTok, Reels, Shorts) guests stack instead of sitting side by side and screens stay 16:9 across
+  the top; the gallery thumbnails follow the canvas shape.
 - **Lock the layout** (on by default): applied sources are locked so they can't be dragged by
   accident, and scale with the canvas if its resolution changes.
 - Constraints moved into a collapsed "Advanced" part of the Inspector.
