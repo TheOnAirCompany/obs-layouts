@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — not released yet
+## 0.2.0 — 2026-11-04
 
 - **Layouts window**: the Canvas and the Inspector now live together in one regular window
   (resizable, maximizable, full screen), opened from Tools > Layouts or a hotkey. Nothing is added

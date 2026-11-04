@@ -12,7 +12,7 @@ Layouts for OBS is a native OBS Studio plugin that brings the composition tools 
 
 ![The Layouts window: Canvas with rulers and guides, Inspector on the right](docs/images/layouts-window.png)
 
-> **Status: 0.1.0 preview.** Tested in OBS Studio 33.0.1 on macOS (Apple Silicon). Windows and Linux packages are built by CI but not tested at runtime yet. Packages are unsigned. Keep a backup of your scene collection and report anything odd in [Issues](https://github.com/TheOnAirCompany/obs-layouts/issues).
+> **Status: 0.2.0 preview.** Tested in OBS Studio 33.0.1 on macOS (Apple Silicon). Windows and Linux packages are built by CI but not tested at runtime yet. Packages are unsigned. Keep a backup of your scene collection and report anything odd in [Issues](https://github.com/TheOnAirCompany/obs-layouts/issues).
 
 ## What it adds
 
