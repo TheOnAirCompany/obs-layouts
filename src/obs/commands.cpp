@@ -682,8 +682,16 @@ std::vector<Placed> assignSlots(const std::string &key, const core::BroadcastSpe
 
 /* A new scene (in the edited scene's canvas) holding these sources in their slots; the
  * sources are shared, never duplicated. The name is made unique ("Duo", "Duo 2"...). */
-obs_source_t *makeScene(const std::vector<Placed> &placed, const QString &sceneName, bool lock, QString &name)
+obs_source_t *makeScene(const std::vector<Placed> &all, const QString &sceneName, bool lock, QString &name)
 {
+	/* A group belongs to its scene: OBS never shares one between scenes. */
+	std::vector<Placed> placed;
+	for (const Placed &p : all) {
+		if (!obs_source_is_group(obs_sceneitem_get_source(p.entry.item)))
+			placed.push_back(p);
+	}
+	if (placed.empty())
+		return nullptr;
 	name = sceneName;
 	for (int i = 2;; i++) {
 		OBSSourceAutoRelease existing = obs_get_source_by_name(name.toUtf8().constData());

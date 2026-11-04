@@ -833,6 +833,16 @@ void testShowScenes()
 	}
 	R->check(n == 5 && found == 5 && locked == 3 + 3 + 3 && ctx.sceneName() == edited, "broadcast-show-scenes",
 		 QString("created %1 found %2 locked %3").arg(n).arg(found).arg(locked));
+
+	/* A group is never shared with another scene. */
+	selectNames({"G"});
+	const QString groupScene = commands::createBroadcastScene("Screen1Full", "Group only", spec,
+								  commands::KindMode::AllScreens, false);
+	OBSSourceAutoRelease leaked = obs_get_source_by_name("Group only");
+	R->check(groupScene.isEmpty() && !leaked && ctx.sceneName() == edited, "broadcast-new-scene-skips-groups",
+		 groupScene);
+	if (leaked)
+		obs_source_remove(leaked);
 }
 
 void testCropMode()
