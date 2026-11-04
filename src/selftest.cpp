@@ -25,6 +25,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "core/expression.hpp"
 #include "obs/commands.hpp"
+#include "obs/constraints.hpp"
 #include "obs/edit-context.hpp"
 #include "obs/obs-convert.hpp"
 #include "obs/store.hpp"
@@ -840,6 +841,77 @@ void cleanupCanvas()
 	}
 }
 
+obs_canvas_t *g_cc = nullptr;
+OBSSourceAutoRelease g_ccScene;
+
+void constraintsSetup()
+{
+	obs_video_info ovi = {};
+	obs_get_video_info(&ovi);
+	ovi.base_width = ovi.output_width = 1920;
+	ovi.base_height = ovi.output_height = 1080;
+	g_cc = obs_frontend_add_canvas("Layouts Constraints", &ovi, PROGRAM);
+	R->check(g_cc != nullptr, "constraints-canvas-created");
+	if (!g_cc)
+		return;
+	obs_scene_t *s = obs_canvas_scene_create(g_cc, "Constraints Scene");
+	obs_sceneitem_t *r = addColor(s, "KR", 160, 120, 0xFF00AAFF, 1720, 920);
+	obs_sceneitem_t *l = addColor(s, "KL", 1840, 100, 0xFFAA00FF, 40, 40);
+	addColor(s, "KU", 200, 200, 0xFFFFAA00, 860, 440);
+	setConstraints(r, core::HConstraint::Right, core::VConstraint::Bottom);
+	setConstraints(l, core::HConstraint::LeftRight, core::VConstraint::Top);
+	g_ccScene = obs_scene_get_source(s); /* takes the create reference */
+	ConstraintWatcher::instance().recordSizes();
+}
+
+void constraintsReset()
+{
+	if (!g_cc)
+		return;
+	obs_video_info ovi = {};
+	obs_canvas_get_video_info(g_cc, &ovi);
+	ovi.base_width = ovi.output_width = 1280;
+	ovi.base_height = ovi.output_height = 720;
+	R->check(obs_canvas_reset_video(g_cc, &ovi), "constraints-canvas-reset");
+}
+
+core::Rect itemRect(const char *name)
+{
+	obs_sceneitem_t *it = obs_scene_find_source(obs_scene_from_source(g_ccScene), name);
+	if (!it)
+		return {};
+	obs_transform_info info = {};
+	obs_sceneitem_crop crop = {};
+	obs_sceneitem_get_info2(it, &info);
+	obs_sceneitem_get_crop(it, &crop);
+	core::ItemModel m;
+	m.t = fromObs(info, crop);
+	obs_source_t *src = obs_sceneitem_get_source(it);
+	m.sourceWidth = obs_source_get_width(src);
+	m.sourceHeight = obs_source_get_height(src);
+	return core::visualFrame(m).quad.bounds();
+}
+
+void constraintsCheck()
+{
+	if (!g_cc)
+		return;
+	const core::Rect r = itemRect("KR"), l = itemRect("KL"), u = itemRect("KU");
+	R->check(std::fabs(r.right() - 1240) < 1 && std::fabs(r.bottom() - 680) < 1 && std::fabs(r.w - 160) < 1,
+		 "constraint-right-bottom", rectStr(r));
+	R->check(std::fabs(l.x - 40) < 1 && std::fabs(l.right() - 1240) < 1 && std::fabs(l.y - 40) < 1,
+		 "constraint-left-right-top", rectStr(l));
+	/* Unconstrained: OBS's own behavior (center offset and size follow the height ratio). */
+	const core::Rect expected =
+		core::obsRelativeMapping(core::Rect{860, 440, 200, 200}, 1920, 1080, 1280, 720, true);
+	R->check(std::fabs(u.x - expected.x) < 1 && std::fabs(u.w - expected.w) < 1, "constraint-none-is-obs-default",
+		 rectStr(u) + " expected " + rectStr(expected));
+	g_ccScene = nullptr;
+	obs_frontend_remove_canvas(g_cc);
+	obs_canvas_release(g_cc);
+	g_cc = nullptr;
+}
+
 /* ---- performance ---- */
 
 OBSSourceAutoRelease g_perfScene;
@@ -1080,6 +1152,9 @@ void runSelfTest(ui::CanvasDock *dock)
 	if (enabled("canvas")) {
 		R->add(1500, [] { testMultiCanvas(); });
 		R->add(800, [] { cleanupCanvas(); });
+		R->add(500, [] { constraintsSetup(); });
+		R->add(800, [] { constraintsReset(); });
+		R->add(1000, [] { constraintsCheck(); });
 	}
 	if (enabled("perf")) {
 		for (int n : {10, 50, 100, 250})

@@ -9,6 +9,8 @@
 - Composition presets: corners, centered, full screen, lower third area, picture in picture, split
   screen, stacked, one large + two small, 2 × 2 grid; margin, gap and corner size settings.
 - Ghost preview on the Canvas while hovering the auto layout or presets section, before applying.
+- Constraints (left, right, center, left and right, scale / top, bottom, center, top and bottom, scale)
+  re-applied to every scene of a canvas when its resolution changes; saved with each item.
 
 ## 0.1.0 — preview
 

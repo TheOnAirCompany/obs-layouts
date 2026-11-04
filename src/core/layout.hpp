@@ -119,4 +119,21 @@ std::optional<Preset> presetFromKey(const std::string &key);
 std::vector<Frame> applyPreset(Preset preset, const std::vector<Frame> &frames, const Rect &canvas,
 			       const PresetSpec &spec);
 
+/* ---- constraints ---- */
+
+/* How an item follows a change of canvas size (Figma-style constraints). */
+enum class HConstraint { None = 0, Left, Right, Center, LeftRight, Scale };
+enum class VConstraint { None = 0, Top, Bottom, Center, TopBottom, Scale };
+
+/* Target rect for an item whose rect was `before` on a canvas of size from -> to.
+ * None keeps the axis untouched (returns the `before` coordinates on that axis). */
+Rect applyConstraints(const Rect &before, double fromW, double fromH, double toW, double toH, HConstraint h,
+		      VConstraint v);
+
+/* What OBS 31+ does by itself to an item with relative coordinates when the canvas
+ * size changes: the offset from the canvas center and the size (when scaled) follow
+ * the canvas height ratio. Used to recover the rect an item had before the change. */
+Rect obsRelativeMapping(const Rect &before, double fromW, double fromH, double toW, double toH, bool scaleSize);
+Rect invertObsRelativeMapping(const Rect &after, double fromW, double fromH, double toW, double toH, bool scaleSize);
+
 } // namespace layouts::core

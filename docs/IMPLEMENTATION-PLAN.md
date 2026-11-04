@@ -28,7 +28,7 @@ Status legend: ✅ done in 0.1.0 · ⏭ next.
 | Task | Notes |
 |---|---|
 | Auto layout (horizontal, vertical, grid; spacing, padding, alignment) applied on demand | ✅ on `dev/0.2` (`core/layout`) |
-| Constraints (left, right, center, left & right, scale) re-applied on canvas size change | `video_reset` canvas signal |
+| Constraints (left, right, center, left & right, scale) re-applied on canvas size change | ✅ on `dev/0.2` (`canvas_video_reset` signal, item private settings) |
 | Layout presets (webcam corners, picture in picture, split screen…) with a preview before applying | ✅ on `dev/0.2` |
 | Crop by dragging handles with Alt (OBS convention) | — |
 | Multi-selection resize on the Canvas | ✅ on `dev/0.2` |

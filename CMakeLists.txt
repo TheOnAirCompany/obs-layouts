@@ -65,6 +65,8 @@ target_sources(
     src/obs/edit-session.cpp
     src/obs/edit-session.hpp
     src/obs/commands.cpp
+    src/obs/constraints.cpp
+    src/obs/constraints.hpp
     src/obs/commands.hpp
     src/ui/theme.cpp
     src/ui/theme.hpp

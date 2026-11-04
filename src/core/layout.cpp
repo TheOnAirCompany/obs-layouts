@@ -317,4 +317,75 @@ std::vector<Frame> applyPreset(Preset preset, const std::vector<Frame> &frames, 
 	return out;
 }
 
+Rect applyConstraints(const Rect &b, double fromW, double fromH, double toW, double toH, HConstraint h, VConstraint v)
+{
+	Rect r = b;
+	if (!(fromW > 0) || !(fromH > 0) || !(toW > 0) || !(toH > 0))
+		return r;
+	const double left = b.left(), right = fromW - b.right();
+	switch (h) {
+	case HConstraint::Left:
+		r.x = left;
+		break;
+	case HConstraint::Right:
+		r.x = toW - right - b.w;
+		break;
+	case HConstraint::Center:
+		r.x = toW / 2 + (b.centerX() - fromW / 2) - b.w / 2;
+		break;
+	case HConstraint::LeftRight:
+		r.x = left;
+		r.w = std::max(1.0, toW - left - right);
+		break;
+	case HConstraint::Scale:
+		r.x = b.x * toW / fromW;
+		r.w = b.w * toW / fromW;
+		break;
+	case HConstraint::None:
+	default:
+		break;
+	}
+	const double top = b.top(), bottom = fromH - b.bottom();
+	switch (v) {
+	case VConstraint::Top:
+		r.y = top;
+		break;
+	case VConstraint::Bottom:
+		r.y = toH - bottom - b.h;
+		break;
+	case VConstraint::Center:
+		r.y = toH / 2 + (b.centerY() - fromH / 2) - b.h / 2;
+		break;
+	case VConstraint::TopBottom:
+		r.y = top;
+		r.h = std::max(1.0, toH - top - bottom);
+		break;
+	case VConstraint::Scale:
+		r.y = b.y * toH / fromH;
+		r.h = b.h * toH / fromH;
+		break;
+	case VConstraint::None:
+	default:
+		break;
+	}
+	return r;
+}
+
+Rect obsRelativeMapping(const Rect &b, double fromW, double fromH, double toW, double toH, bool scaleSize)
+{
+	if (!(fromH > 0) || !(toH > 0))
+		return b;
+	const double k = toH / fromH;
+	const double w = scaleSize ? b.w * k : b.w;
+	const double h = scaleSize ? b.h * k : b.h;
+	const double cx = toW / 2 + (b.centerX() - fromW / 2) * k;
+	const double cy = toH / 2 + (b.centerY() - fromH / 2) * k;
+	return {cx - w / 2, cy - h / 2, w, h};
+}
+
+Rect invertObsRelativeMapping(const Rect &a, double fromW, double fromH, double toW, double toH, bool scaleSize)
+{
+	return obsRelativeMapping(a, toW, toH, fromW, fromH, scaleSize);
+}
+
 } // namespace layouts::core

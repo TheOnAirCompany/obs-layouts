@@ -23,6 +23,7 @@ Every API below was checked in the OBS 33.0.1 sources.
 | Live state | `obs_source_active`, `obs_frontend_streaming_active`, `obs_frontend_recording_active`, `obs_frontend_replay_buffer_active`, `obs_frontend_virtualcam_active` |
 | Lock | `obs_sceneitem_set_locked`, `obs_sceneitem_locked` |
 | Double-click | `obs_frontend_open_sceneitem_edit_transform` |
+| Constraints (0.2) | `obs_sceneitem_get_private_settings`, global signal `canvas_video_reset`, `obs_get_canvas_by_uuid`, `obs_canvas_enum_scenes` |
 
 ## Threads
 

@@ -125,3 +125,38 @@ TEST("layout: presets place items and keep ratios")
 	CHECK(presetFromKey("SplitScreen") == Preset::SplitScreen);
 	CHECK(!presetFromKey("Nope"));
 }
+
+TEST("constraints: pins, stretch, center, scale")
+{
+	const Rect r{1720, 920, 160, 120}; /* 40 px from the right and the bottom of 1920x1080 */
+	Rect o = applyConstraints(r, 1920, 1080, 1280, 720, HConstraint::Right, VConstraint::Bottom);
+	CHECK_NEAR(o.right(), 1240, 1e-9);
+	CHECK_NEAR(o.bottom(), 680, 1e-9);
+	CHECK_NEAR(o.w, 160, 0);
+	o = applyConstraints(Rect{40, 40, 1840, 100}, 1920, 1080, 1280, 720, HConstraint::LeftRight, VConstraint::Top);
+	CHECK_NEAR(o.x, 40, 0);
+	CHECK_NEAR(o.right(), 1240, 1e-9);
+	CHECK_NEAR(o.y, 40, 0);
+	o = applyConstraints(Rect{860, 440, 200, 200}, 1920, 1080, 1080, 1920, HConstraint::Center,
+			     VConstraint::Center);
+	CHECK_NEAR(o.centerX(), 540, 1e-9);
+	CHECK_NEAR(o.centerY(), 960, 1e-9);
+	o = applyConstraints(Rect{960, 0, 960, 540}, 1920, 1080, 3840, 2160, HConstraint::Scale, VConstraint::Scale);
+	CHECK(o == Rect(1920, 0, 1920, 1080));
+	o = applyConstraints(r, 1920, 1080, 1280, 720, HConstraint::None, VConstraint::None);
+	CHECK(o == r);
+}
+
+TEST("constraints: OBS relative mapping round trip")
+{
+	const Rect r{1720, 920, 160, 120};
+	const Rect a = obsRelativeMapping(r, 1920, 1080, 1280, 720, true);
+	CHECK_NEAR(a.w, 160 * 720.0 / 1080.0, 1e-9);
+	CHECK_NEAR(a.centerX(), 640 + (1800 - 960) * 720.0 / 1080.0, 1e-9);
+	const Rect back = invertObsRelativeMapping(a, 1920, 1080, 1280, 720, true);
+	CHECK_NEAR(back.x, r.x, 1e-9);
+	CHECK_NEAR(back.y, r.y, 1e-9);
+	CHECK_NEAR(back.w, r.w, 1e-9);
+	const Rect s = obsRelativeMapping(r, 1920, 1080, 1280, 720, false);
+	CHECK_NEAR(s.w, 160, 0);
+}

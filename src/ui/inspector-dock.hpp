@@ -53,6 +53,7 @@ private:
 	QWidget *section(const QString &title, QWidget *body);
 	QWidget *buildLayoutSection();
 	QWidget *buildPresetSection();
+	QWidget *buildConstraintSection();
 	void syncLayoutControls();
 	void previewLayout(bool force = false);
 	void previewPreset(bool force = false, int index = -1);
@@ -110,6 +111,11 @@ private:
 	NumericField *presetGap_ = nullptr;
 	NumericField *presetCorner_ = nullptr;
 	QToolButton *presetApply_ = nullptr;
+
+	/* constraints */
+	QWidget *constraintSection_ = nullptr;
+	QComboBox *constraintH_ = nullptr;
+	QComboBox *constraintV_ = nullptr;
 };
 
 } // namespace layouts::ui

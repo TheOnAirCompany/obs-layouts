@@ -21,9 +21,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "theme.hpp"
 #include "widgets.hpp"
 
+#include "obs/constraints.hpp"
 #include "obs/edit-context.hpp"
 #include "obs/store.hpp"
 
+#include <obs-frontend-api.h>
 #include <obs-module.h>
 
 #include <QButtonGroup>
@@ -441,6 +443,8 @@ void InspectorDock::build()
 	v->addWidget(layoutSection_);
 	presetSection_ = buildPresetSection();
 	v->addWidget(presetSection_);
+	constraintSection_ = buildConstraintSection();
+	v->addWidget(constraintSection_);
 
 	/* ---- crop ---- */
 	{
@@ -570,6 +574,7 @@ void InspectorDock::refresh()
 	arrangeSection_->setVisible(multi);
 	layoutSection_->setVisible(multi);
 	presetSection_->setVisible(n > 0);
+	constraintSection_->setVisible(n > 0);
 	alignTargetRow_->setVisible(multi);
 	syncLayoutControls();
 	cropSection_->setVisible(n > 0);
@@ -628,6 +633,20 @@ void InspectorDock::refresh()
 		keyObject_->setCurrentIndex(commands::keyIndex());
 	}
 
+	/* Constraints */
+	{
+		std::vector<double> hs, vs;
+		for (const ItemEntry *e : sel) {
+			core::HConstraint h;
+			core::VConstraint v;
+			getConstraints(e->item, h, v);
+			hs.push_back((double)h);
+			vs.push_back((double)v);
+		}
+		constraintH_->setCurrentIndex(allEqual(hs) ? (int)hs.front() : -1);
+		constraintV_->setCurrentIndex(allEqual(vs) ? (int)vs.front() : -1);
+	}
+
 	/* Bounds */
 	std::vector<double> types, aligns, crops;
 	for (const ItemEntry *e : sel) {
@@ -656,6 +675,63 @@ void InspectorDock::refresh()
 		cropToBounds_->setCheckState(Qt::PartiallyChecked);
 
 	updating_ = false;
+}
+
+/* ------------------------------------------------------------ constraints */
+
+QWidget *InspectorDock::buildConstraintSection()
+{
+	auto *body = new QWidget(content_);
+	auto *bl = new QVBoxLayout(body);
+	bl->setContentsMargins(0, 0, 0, 0);
+	bl->setSpacing(tokens::kRowSpacing);
+
+	constraintH_ = new QComboBox(body);
+	for (const char *k : {"Constraint.Default", "Constraint.Left", "Constraint.Right", "Constraint.Center",
+			      "Constraint.LeftRight", "Constraint.Scale"})
+		constraintH_->addItem(T(k));
+	constraintV_ = new QComboBox(body);
+	for (const char *k : {"Constraint.Default", "Constraint.Top", "Constraint.Bottom", "Constraint.Center",
+			      "Constraint.TopBottom", "Constraint.Scale"})
+		constraintV_->addItem(T(k));
+	for (QComboBox *c : {constraintH_, constraintV_}) {
+		c->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+		c->setMinimumContentsLength(6);
+	}
+	constraintH_->setToolTip(T("Constraint.HTooltip"));
+	constraintV_->setToolTip(T("Constraint.VTooltip"));
+
+	auto *w = new QWidget(body);
+	auto *l = row(w);
+	l->addWidget(constraintH_, 1);
+	l->addWidget(constraintV_, 1);
+	bl->addWidget(w);
+	auto *hint = new QLabel(T("Constraint.Hint"), body);
+	hint->setWordWrap(true);
+	QPalette p = hint->palette();
+	p.setColor(QPalette::WindowText, p.color(QPalette::Disabled, QPalette::WindowText));
+	hint->setPalette(p);
+	bl->addWidget(hint);
+
+	auto apply = [this](bool horizontal, int index) {
+		if (updating_ || index < 0)
+			return;
+		for (const ItemEntry *e : EditContext::instance().selection()) {
+			core::HConstraint h;
+			core::VConstraint v;
+			getConstraints(e->item, h, v);
+			if (horizontal)
+				h = (core::HConstraint)index;
+			else
+				v = (core::VConstraint)index;
+			setConstraints(e->item, h, v);
+		}
+		obs_frontend_save();
+		refresh();
+	};
+	connect(constraintH_, &QComboBox::activated, this, [apply](int i) { apply(true, i); });
+	connect(constraintV_, &QComboBox::activated, this, [apply](int i) { apply(false, i); });
+	return section(T("Section.Constraints"), body);
 }
 
 /* ------------------------------------------------------------ auto layout */

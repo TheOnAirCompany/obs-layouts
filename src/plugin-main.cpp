@@ -27,6 +27,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPointer>
 #include <QTimer>
 
+#include "obs/constraints.hpp"
 #include "obs/edit-context.hpp"
 #include "obs/store.hpp"
 #include "ui/canvas-dock.hpp"
@@ -94,7 +95,12 @@ void onFrontendEvent(enum obs_frontend_event event, void *)
 		layouts::Store::instance().guides().clear();
 		layouts::Store::instance().notifyGuidesChanged();
 	}
+	if (event == OBS_FRONTEND_EVENT_CANVAS_ADDED || event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED)
+		layouts::ConstraintWatcher::instance().recordSizes();
+	if (event == OBS_FRONTEND_EVENT_EXIT)
+		layouts::ConstraintWatcher::instance().stop();
 	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING) {
+		layouts::ConstraintWatcher::instance().start();
 		placeDocksOnFirstRun();
 #ifdef LAYOUTS_SELFTEST
 		if (getenv("LAYOUTS_SELFTEST"))
@@ -168,6 +174,7 @@ void obs_module_unload(void)
 {
 	obs_frontend_remove_save_callback(onSave, nullptr);
 	obs_frontend_remove_event_callback(onFrontendEvent, nullptr);
+	layouts::ConstraintWatcher::instance().stop();
 	layouts::EditContext::instance().shutdown();
 	obs_log(LOG_INFO, "plugin unloaded");
 }

@@ -69,6 +69,14 @@ stacked (2); one large + two small (3); 2 × 2 grid (4). Settings: margin, gap, 
 the canvas width). Aspect ratios are kept, except full screen and the picture-in-picture background,
 which fill the canvas. Hovering the section or an entry of the list previews on the Canvas.
 
+### Constraints (0.2)
+Two lists: horizontal (OBS default, left, right, center, left and right, scale) and vertical (OBS
+default, top, bottom, center, top and bottom, scale). Stored with each item in the scene collection.
+When a canvas resolution changes, every constrained item of every scene of that canvas is placed
+again: pinned edges keep their margin, center keeps the offset from the center, left and right (top
+and bottom) stretch, scale follows the canvas. *OBS default* keeps OBS's own behavior (offset from the
+center and size follow the canvas height).
+
 ### Locked elements
 - Arrange (align, distribute, spacing, same size) and mouse manipulation never move them.
 - They still count in the selection bounds.
