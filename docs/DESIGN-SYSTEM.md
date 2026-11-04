@@ -40,8 +40,8 @@ is used for state (selection, snapping, live).
 | `kTrackFill` | `#FF3D71` 10 % | column / row tracks |
 | `kSafeArea` | `#FFD60A` 50 % | safe areas, custom margins |
 | `kCenterLine` | `#FFD60A` 38 % | center and 4:3 lines |
-| `kPreview` / `kPreviewFill` (0.2) | `#8B6CFF` / 19 % | ghost frames of presets and auto layout (to review) |
-| `kCrop` (0.2) | `#FF9F0A` | crop mode frame and handles (to review) |
+| `kPreview` / `kPreviewFill` (0.2) | `#8B6CFF` / 19 % | ghost frames of presets and auto layout |
+| `kCrop` (0.2) | `#FF9F0A` | crop mode frame and handles |
 | `kOutside` | `#1B1C1F` | around the canvas |
 | `kCanvasBackdrop` | black | canvas behind the scene |
 | `kLiveFrame` | `#E5484D`, 2 px | frame around the canvas when on air |
@@ -70,4 +70,4 @@ is used for state (selection, snapping, live).
 
 ## Review
 All values above were reviewed on screenshots of the Inspector and the Canvas in OBS 33.0.1 and
-approved as is (2026-11-04). Changing a value means editing `src/ui/theme.hpp` only.
+approved as is (2026-11-04), including the 0.2 tokens `kPreview`, `kPreviewFill` and `kCrop`. Changing a value means editing `src/ui/theme.hpp` only.
