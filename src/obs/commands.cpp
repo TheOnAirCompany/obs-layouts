@@ -555,10 +555,9 @@ std::vector<ItemEntry> topLevelSelection()
 	return out;
 }
 
-std::vector<Placed> assignSlots(const std::string &key, const core::BroadcastSpec &spec, KindMode mode)
+std::vector<Placed> assignSlotsFor(const std::string &key, const core::BroadcastSpec &spec,
+				   const std::vector<ItemEntry> &items, const std::vector<core::SlotKind> &kinds)
 {
-	const std::vector<ItemEntry> items = topLevelSelection();
-	const std::vector<core::SlotKind> kinds = selectionKinds(mode);
 	const std::vector<core::Slot> targets = core::buildBroadcast(key, EditContext::instance().canvasRect(), spec);
 	std::vector<Placed> out;
 	std::vector<bool> used(items.size(), false);
@@ -573,6 +572,8 @@ std::vector<Placed> assignSlots(const std::string &key, const core::BroadcastSpe
 	}
 	return out;
 }
+
+std::vector<Placed> assignSlots(const std::string &key, const core::BroadcastSpec &spec, KindMode mode);
 
 /* Transform that places a source in a slot: cameras fill it (cropped), screens fit. */
 core::ItemTransform slotTransform(const core::ItemModel &m, core::SlotKind kind, const core::Rect &cell)
@@ -653,24 +654,45 @@ bool applyBroadcast(const std::string &key, const core::BroadcastSpec &spec, Kin
 				obs_sceneitem_set_order(p.entry.item, OBS_ORDER_MOVE_TOP);
 		}
 	}
-	if (lock) {
-		for (const Placed &p : placed)
+	/* The checkbox decides the final state: a locked layout re-applied without the lock is
+	 * freed again (constraints set by the lock go back to the default too). */
+	for (const Placed &p : placed) {
+		if (lock) {
 			lockItem(p.entry.item);
-		obs_frontend_save();
+		} else if (p.entry.locked) {
+			obs_sceneitem_set_locked(p.entry.item, false);
+			core::HConstraint h;
+			core::VConstraint v;
+			getConstraints(p.entry.item, h, v);
+			if (h == core::HConstraint::Scale && v == core::VConstraint::Scale)
+				setConstraints(p.entry.item, core::HConstraint::Left, core::VConstraint::Top);
+		}
 	}
+	obs_frontend_save();
 	EditContext::instance().markDirty();
 	return true;
 }
 
-QString createBroadcastScene(const std::string &key, const QString &sceneName, const core::BroadcastSpec &spec,
-			     KindMode mode, bool lock)
-{
-	const std::vector<Placed> placed = assignSlots(key, spec, mode);
-	if (placed.empty())
-		return QString();
+namespace {
 
-	/* A unique name: "Duo 50/50", "Duo 50/50 2"... */
-	QString name = sceneName;
+std::vector<Placed> assignSlots(const std::string &key, const core::BroadcastSpec &spec, KindMode mode)
+{
+	return assignSlotsFor(key, spec, topLevelSelection(), selectionKinds(mode));
+}
+
+/* A new scene (in the edited scene's canvas) holding these sources in their slots; the
+ * sources are shared, never duplicated. The name is made unique ("Duo", "Duo 2"...). */
+obs_source_t *makeScene(const std::vector<Placed> &all, const QString &sceneName, bool lock, QString &name)
+{
+	/* A group belongs to its scene: OBS never shares one between scenes. */
+	std::vector<Placed> placed;
+	for (const Placed &p : all) {
+		if (!obs_source_is_group(obs_sceneitem_get_source(p.entry.item)))
+			placed.push_back(p);
+	}
+	if (placed.empty())
+		return nullptr;
+	name = sceneName;
 	for (int i = 2;; i++) {
 		OBSSourceAutoRelease existing = obs_get_source_by_name(name.toUtf8().constData());
 		if (!existing)
@@ -686,7 +708,7 @@ QString createBroadcastScene(const std::string &key, const QString &sceneName, c
 	if (canvas)
 		obs_canvas_release(canvas);
 	if (!scene)
-		return QString();
+		return nullptr;
 
 	/* Screens first, cameras on top (a picture-in-picture camera must stay visible). */
 	std::vector<Placed> stacked = placed;
@@ -705,13 +727,60 @@ QString createBroadcastScene(const std::string &key, const QString &sceneName, c
 		if (lock)
 			lockItem(item);
 	}
+	/* OBS keeps the scene in its list; the caller gets a weak use of the source. */
 	obs_source_t *source = obs_scene_get_source(scene);
+	obs_scene_release(scene);
+	return source;
+}
+
+} // namespace
+
+QString createBroadcastScene(const std::string &key, const QString &sceneName, const core::BroadcastSpec &spec,
+			     KindMode mode, bool lock)
+{
+	const std::vector<Placed> placed = assignSlots(key, spec, mode);
+	if (placed.empty())
+		return QString();
+	QString name;
+	obs_source_t *source = makeScene(placed, sceneName, lock, name);
+	if (!source)
+		return QString();
 	if (obs_frontend_preview_program_mode_active())
 		obs_frontend_set_current_preview_scene(source);
 	EditContext::instance().pin(source);
-	obs_scene_release(scene);
 	obs_frontend_save();
 	return name;
+}
+
+int createShowScenes(const core::BroadcastSpec &spec, KindMode mode, bool lock,
+		     const std::function<QString(const std::string &key)> &templateName,
+		     const std::function<QString(const QString &sourceName)> &soloName)
+{
+	const std::vector<ItemEntry> items = topLevelSelection();
+	const std::vector<core::SlotKind> kinds = selectionKinds(mode);
+	int created = 0, cams = 0, screens = 0;
+	QString name;
+	/* One full-screen scene per source: the close-ups of the show. */
+	for (size_t i = 0; i < items.size(); i++) {
+		const bool camera = kinds[i] == core::SlotKind::Camera;
+		(camera ? cams : screens)++;
+		const std::vector<Placed> placed =
+			assignSlotsFor(camera ? "Cam1Full" : "Screen1Full", spec, {items[i]}, {kinds[i]});
+		const QString source = QString::fromUtf8(obs_source_get_name(obs_sceneitem_get_source(items[i].item)));
+		if (!placed.empty() && makeScene(placed, soloName(source), lock, name))
+			created++;
+	}
+	/* Then every layout made for the whole selection. */
+	for (const core::BroadcastTemplate &t : core::templatesFor(cams, screens)) {
+		if (t.cameras + t.screens < 2)
+			continue; /* the same as the close-up above */
+		const std::vector<Placed> placed = assignSlotsFor(t.key, spec, items, kinds);
+		if (!placed.empty() && makeScene(placed, templateName(t.key), lock, name))
+			created++;
+	}
+	if (created > 0)
+		obs_frontend_save();
+	return created;
 }
 
 void showPreview(const std::vector<core::Frame> &frames)

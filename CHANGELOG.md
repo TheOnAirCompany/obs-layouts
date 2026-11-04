@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — not released yet
+## 0.2.0 — 2026-11-04
 
 - **Layouts window**: the Canvas and the Inspector now live together in one regular window
   (resizable, maximizable, full screen), opened from Tools > Layouts or a hotkey. Nothing is added
@@ -13,9 +13,14 @@
   picture in picture, screen + guests on the side or below, two screens. Cameras fill their tile
   (cropped, keeping the top of the frame where faces are); screens are always shown whole. Cameras
   are detected (video capture devices, NDI, DeckLink, AJA), or count everything as cameras or as
-  screens. Gap and margin settings, previewed on the Canvas.
+  screens. Gap and margin settings, previewed on the Canvas. On a portrait canvas (9:16 for
+  TikTok, Reels, Shorts) guests stack instead of sitting side by side and screens stay 16:9 across
+  the top; the gallery thumbnails follow the canvas shape.
+- **Create show scenes**: one click makes a full-screen scene for each selected source, then a
+  scene for every broadcast layout that fits the selection (locked if the box is checked).
 - **Lock the layout** (on by default): applied sources are locked so they can't be dragged by
-  accident, and scale with the canvas if its resolution changes.
+  accident, and scale with the canvas if its resolution changes. Re-applying a layout with the box unchecked frees them
+  again.
 - Constraints moved into a collapsed "Advanced" part of the Inspector.
 - Fixed: a crash when the cursor rested over the Inspector while it refreshed.
 - Fixed: a violet preview frame could stay on the Canvas after the selection changed.

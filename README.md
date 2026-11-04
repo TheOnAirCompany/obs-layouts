@@ -12,7 +12,7 @@ Layouts for OBS is a native OBS Studio plugin that brings the composition tools 
 
 ![The Layouts window: Canvas with rulers and guides, Inspector on the right](docs/images/layouts-window.png)
 
-> **Status: 0.1.0 preview.** Tested in OBS Studio 33.0.1 on macOS (Apple Silicon). Windows and Linux packages are built by CI but not tested at runtime yet. Packages are unsigned. Keep a backup of your scene collection and report anything odd in [Issues](https://github.com/TheOnAirCompany/obs-layouts/issues).
+> **Status: 0.2.0 preview.** Tested in OBS Studio 33.0.1 on macOS (Apple Silicon). Windows and Linux packages are built by CI but not tested at runtime yet. Packages are unsigned. Keep a backup of your scene collection and report anything odd in [Issues](https://github.com/TheOnAirCompany/obs-layouts/issues).
 
 ## What it adds
 
@@ -26,7 +26,10 @@ The right panel of the Layouts window. It always shows the selection of the edit
 - **Crop** in source pixels (the image stays in place), **bounding box** type and alignment.
 - **Multiple selection**: align to the selection, the canvas or a **key object**; distribute centers or spacing; type an **exact gap**; same width / height / size; **Mixed** values.
 - **Copy / paste properties** (position, size, rotation, crop, bounding box).
-- **Broadcast layouts**: select 1 to 6 cameras and up to 2 screens, pick a TV-style layout (duo, three columns, host + guests, grids, screen + guests on the side or below, picture in picture) and apply it, or make a new scene with it. Cameras fill their tile, screens are never cropped. **Lock the layout** keeps everything in place.
+- **Broadcast layouts**: select 1 to 6 cameras and up to 2 screens, pick a TV-style layout (duo, three columns, host + guests, grids, screen + guests on the side or below, picture in picture) and apply it, or make a new scene with it. Cameras fill their tile, screens are never cropped. Works on vertical canvases too (guests stack, screens on top). **Create show scenes** makes, in one click, a full-screen scene per guest and screen plus a scene for every layout that fits. **Lock the layout** keeps everything in place.
+
+  ![Broadcast layouts in the Inspector, three columns previewed on the Canvas](docs/images/broadcast-layouts.png)
+
 - **Auto layout**: rows, columns or a grid, with gap, padding and alignment, inside the selection or the whole canvas, previewed on the Canvas before you apply it.
 - **Presets**: corners, centered, full screen, lower third area, picture in picture, split screen, one large + two small, 2 × 2 grid, with margins you set.
 - **Constraints** (Advanced): pin elements to an edge, the center, both edges or scale them, so they keep their place when the canvas resolution changes.

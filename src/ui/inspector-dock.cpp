@@ -35,6 +35,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QLabel>
 #include <QMenu>
 #include <QResizeEvent>
+#include <QTimer>
 #include <QPushButton>
 #include <QPainter>
 #include <QListWidget>
@@ -720,9 +721,30 @@ protected:
 	}
 };
 
-QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor &screen, const QColor &bg)
+/* Template name; some names change on a portrait canvas (three columns become three rows). */
+QString broadcastLabel(const std::string &key, double aspect)
+{
+	const std::string base = "Broadcast." + key;
+	const char *portrait = nullptr;
+	if (aspect < 1 && obs_module_get_string((base + ".Portrait").c_str(), &portrait))
+		return QString::fromUtf8(portrait);
+	return QString::fromUtf8(obs_module_text(base.c_str()));
+}
+
+double canvasAspect()
+{
+	const core::Rect canvas = EditContext::instance().canvasRect();
+	return canvas.w > 0 && canvas.h > 0 ? canvas.w / canvas.h : 16.0 / 9.0;
+}
+
+QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor &screen, const QColor &bg,
+		     double aspect)
 {
 	const QSize size(112, 63);
+	/* The canvas shape inside the thumbnail box (portrait canvases stay portrait). */
+	const double bw = std::min<double>(size.width(), size.height() * aspect);
+	const double bh = bw / aspect;
+	const QRectF area((size.width() - bw) / 2, (size.height() - bh) / 2, bw, bh);
 	QIcon icon;
 	for (qreal dpr : {1.0, 2.0}) {
 		QPixmap pm(size * dpr);
@@ -732,11 +754,11 @@ QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor 
 		p.setRenderHint(QPainter::Antialiasing);
 		p.setPen(Qt::NoPen);
 		p.setBrush(bg);
-		p.drawRoundedRect(QRectF(0, 0, size.width(), size.height()), 3, 3);
+		p.drawRoundedRect(area, 3, 3);
 		core::BroadcastSpec spec;
 		spec.gap = 2;
 		for (const core::Slot &s :
-		     core::buildBroadcast(key, {0, 0, (double)size.width(), (double)size.height()}, spec)) {
+		     core::buildBroadcast(key, {area.x(), area.y(), area.width(), area.height()}, spec)) {
 			p.setBrush(s.kind == core::SlotKind::Camera ? camera : screen);
 			p.drawRoundedRect(QRectF(s.cell.x + 0.5, s.cell.y + 0.5, s.cell.w - 1, s.cell.h - 1), 1.5, 1.5);
 			if (s.kind == core::SlotKind::Camera) {
@@ -824,6 +846,9 @@ QWidget *InspectorDock::buildBroadcastSection()
 	btl->addWidget(broadcastApply_, 1);
 	btl->addWidget(broadcastScene_, 1);
 	bl->addWidget(buttons);
+	broadcastShow_ = new QPushButton(T("Broadcast.Show"), body);
+	broadcastShow_->setToolTip(T("Broadcast.ShowTooltip"));
+	bl->addWidget(broadcastShow_);
 
 	auto spec = [] {
 		core::BroadcastSpec s;
@@ -878,6 +903,17 @@ QWidget *InspectorDock::buildBroadcastSection()
 						       spec(), kinds(), Store::instance().settings().broadcastLock);
 	});
 
+	connect(broadcastShow_, &QPushButton::clicked, this, [this, spec, kinds] {
+		const double aspect = canvasAspect();
+		const int n = commands::createShowScenes(
+			spec(), kinds(), Store::instance().settings().broadcastLock,
+			[aspect](const std::string &key) { return broadcastLabel(key, aspect); },
+			[](const QString &source) { return T("Broadcast.SoloScene").arg(source); });
+		/* Brief confirmation on the button itself. */
+		broadcastShow_->setText(T("Broadcast.ShowDone").arg(n));
+		QTimer::singleShot(2500, broadcastShow_, [this] { broadcastShow_->setText(T("Broadcast.Show")); });
+	});
+
 	QWidget *sec = section(T("Section.Broadcast"), body);
 	sec->setObjectName("LayoutsBroadcastSection");
 	sec->installEventFilter(this);
@@ -906,7 +942,9 @@ void InspectorDock::syncBroadcast()
 	QStringList shown;
 	for (int i = 0; i < broadcastGallery_->count(); i++)
 		shown << broadcastGallery_->item(i)->data(Qt::UserRole).toString();
-	if (keys != shown) {
+	const double aspect = canvasAspect();
+	if (keys != shown || std::fabs(broadcastGallery_->property("aspect").toDouble() - aspect) > 1e-3) {
+		broadcastGallery_->setProperty("aspect", aspect);
 		const QString current = broadcastGallery_->currentItem()
 						? broadcastGallery_->currentItem()->data(Qt::UserRole).toString()
 						: QString();
@@ -915,8 +953,8 @@ void InspectorDock::syncBroadcast()
 		const QColor scr = QColor::fromRgba(tokens::kThumbScreen);
 		const QColor bg = palette().color(QPalette::Base);
 		for (const QString &k : keys) {
-			auto *item = new QListWidgetItem(broadcastThumb(k.toStdString(), cam, scr, bg),
-							 T(("Broadcast." + k.toStdString()).c_str()),
+			const QString label = broadcastLabel(k.toStdString(), aspect);
+			auto *item = new QListWidgetItem(broadcastThumb(k.toStdString(), cam, scr, bg, aspect), label,
 							 broadcastGallery_);
 			item->setData(Qt::UserRole, k);
 			item->setToolTip(item->text());
@@ -933,6 +971,7 @@ void InspectorDock::syncBroadcast()
 	broadcastEmpty_->setText(T("Broadcast.None"));
 	broadcastApply_->setEnabled(any);
 	broadcastScene_->setEnabled(any);
+	broadcastShow_->setEnabled(cams + screens > 0);
 	updating_ = was;
 }
 

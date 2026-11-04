@@ -736,8 +736,8 @@ void testBroadcast()
 			 h == core::HConstraint::Scale && v == core::VConstraint::Scale,
 		 "broadcast-camera-cropped-and-locked", QString("crop %1/%2").arg(crop.left).arg(crop.right));
 
-	/* Same items as screens: never cropped, whole content inside the half. */
-	unlockAll({"A", "B"});
+	/* Same items as screens, re-applied without the lock: never cropped, whole content
+	 * inside the half, and freed again. */
 	commands::applyBroadcast("Screen2Split", spec, commands::KindMode::AllScreens, false);
 	ctx.markDirty();
 	obs_sceneitem_crop crop2 = {};
@@ -747,7 +747,11 @@ void testBroadcast()
 	R->check(ea && crop2.left == 0 && crop2.right == 0 && crop2.top == 0 && crop2.bottom == 0 &&
 			 std::fabs(a2.w / a2.h - 2.0) < 0.01 && a2.right() <= half + 0.6 &&
 			 !obs_sceneitem_locked(ea->item),
-		 "broadcast-screen-fit-uncropped", rectStr(a2));
+		 "broadcast-screen-fit-uncropped-unlocked", rectStr(a2));
+	if (ea)
+		getConstraints(ea->item, h, v);
+	R->check(ea && h == core::HConstraint::Left && v == core::VConstraint::Top,
+		 "broadcast-unlock-resets-constraints");
 
 	/* The Inspector lists the templates for the selection. */
 	Store::instance().settings().broadcastKinds = 1;
@@ -797,6 +801,48 @@ void testBroadcastScene()
 		obs_source_remove(src);
 	ctx.pin(original);
 	ctx.markDirty();
+}
+
+void testShowScenes()
+{
+	EditContext &ctx = EditContext::instance();
+	ctx.follow();
+	const QString edited = ctx.sceneName();
+	selectNames({"A", "B", "C"});
+	core::BroadcastSpec spec;
+	const int n = commands::createShowScenes(
+		spec, commands::KindMode::AllCameras, true,
+		[](const std::string &key) { return QString("Show ") + QString::fromStdString(key); },
+		[](const QString &source) { return QString("Solo ") + source; });
+	/* 3 close-ups + three columns + host + 2. */
+	int found = 0, locked = 0;
+	for (const char *name : {"Solo A", "Solo B", "Solo C", "Show Cam3Columns", "Show Cam3OneTwo"}) {
+		OBSSourceAutoRelease src = obs_get_source_by_name(name);
+		obs_scene_t *scene = src ? obs_scene_from_source(src) : nullptr;
+		if (!scene)
+			continue;
+		found++;
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+				(*(int *)p) += obs_sceneitem_locked(item) ? 1 : 0;
+				return true;
+			},
+			&locked);
+		obs_source_remove(src);
+	}
+	R->check(n == 5 && found == 5 && locked == 3 + 3 + 3 && ctx.sceneName() == edited, "broadcast-show-scenes",
+		 QString("created %1 found %2 locked %3").arg(n).arg(found).arg(locked));
+
+	/* A group is never shared with another scene. */
+	selectNames({"G"});
+	const QString groupScene = commands::createBroadcastScene("Screen1Full", "Group only", spec,
+								  commands::KindMode::AllScreens, false);
+	OBSSourceAutoRelease leaked = obs_get_source_by_name("Group only");
+	R->check(groupScene.isEmpty() && !leaked && ctx.sceneName() == edited, "broadcast-new-scene-skips-groups",
+		 groupScene);
+	if (leaked)
+		obs_source_remove(leaked);
 }
 
 void testCropMode()
@@ -1017,6 +1063,19 @@ void testMultiCanvas()
 	ctx.markDirty();
 	R->check(box("V1").right() == 1080 && box("V1").bottom() == 1920, "align-in-vertical-canvas",
 		 rectStr(box("V1")));
+
+	/* Broadcast layouts on a portrait canvas: the duo stacks top and bottom. */
+	addColor(vs, "V2", 640, 360, 0xFF80FF80, 400, 400);
+	ctx.markDirty();
+	selectNames({"V1", "V2"});
+	core::BroadcastSpec spec;
+	spec.gap = 0;
+	commands::applyBroadcast("Cam2Split", spec, commands::KindMode::AllCameras, false);
+	ctx.markDirty();
+	const core::Rect a = box("V1"), b = box("V2");
+	R->check(std::fabs(a.w - 1080) < 1 && std::fabs(a.h - 960) < 1 && std::fabs(b.y - 960) < 1 &&
+			 std::fabs(b.bottom() - 1920) < 1,
+		 "broadcast-portrait-duo-stacks", rectStr(a) + rectStr(b));
 	obs_scene_release(vs);
 }
 
@@ -1259,11 +1318,25 @@ void runSelfTest(ui::LayoutsWindow *window)
 				/* Three guests: the Broadcast layouts gallery, first template previewed. */
 				Store::instance().settings().broadcastKinds = 1;
 				selectNames({"Camera", "Guest camera", "Slides"});
+				if (getenv("LAYOUTS_DEMO_PORTRAIT")) {
+					obs_video_info ovi = {};
+					obs_get_video_info(&ovi);
+					ovi.base_width = ovi.output_width = 1080;
+					ovi.base_height = ovi.output_height = 1920;
+					g_vertical = obs_frontend_add_canvas("Vertical", &ovi, PROGRAM);
+					obs_scene_t *vs = obs_canvas_scene_create(g_vertical, "Vertical Scene");
+					addColor(vs, "Host", 1280, 720, 0xFF6B4F3A, 0, 0);
+					addColor(vs, "Guest 1", 1280, 720, 0xFF3A5A6B, 0, 800);
+					addColor(vs, "Guest 2", 1280, 720, 0xFF4A3A6B, 0, 1400);
+					EditContext::instance().pin(obs_scene_get_source(vs));
+					obs_scene_release(vs);
+					selectNames({"Host", "Guest 1", "Guest 2"});
+				}
 				g_window->setGeometry(0, 120, 1400, 900);
 				QTimer::singleShot(800, [] {
 					core::BroadcastSpec spec;
 					commands::showPreview(commands::broadcastFrames(
-						"Cam3OneTwo", spec, commands::KindMode::AllCameras));
+						"Cam3Columns", spec, commands::KindMode::AllCameras));
 				});
 				if (const char *grab = getenv("LAYOUTS_DEMO_GRAB"))
 					QTimer::singleShot(2000, [path = QString::fromUtf8(grab)] {
@@ -1302,6 +1375,7 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(300, [] { testLayoutsV02(); });
 		R->add(300, [] { testBroadcast(); });
 		R->add(300, [] { testBroadcastScene(); });
+		R->add(300, [] { testShowScenes(); });
 		R->add(300, [] { unlockAll({"A", "B", "C"}); });
 		R->add(300, [] { testCropMode(); });
 		R->add(300, [] { testHotkeys(); });

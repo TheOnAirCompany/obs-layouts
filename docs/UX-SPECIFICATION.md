@@ -57,6 +57,37 @@ Header shows "N elements selected" and the number of locked items. Adds:
 Every field shows *Mixed* when values differ. A typed value applies to every element; a relative
 expression (`+20`) applies to each element's own value.
 
+### Broadcast layouts (0.2)
+The first section of the Inspector when something is selected, meant for people who only want a TV
+layout without learning the rest. It counts the selected top-level sources as cameras or screens
+(*Detect*: video capture devices, NDI, DeckLink and AJA are cameras, anything else is a screen; or
+*All cameras*, *All screens*) and shows only the layouts made for that count, as thumbnails drawn
+with the canvas shape (light blue cameras, amber screens, blue outline on the chosen one). With
+nothing that fits, a short sentence says what to select.
+
+| Guests | Cameras only | With screens |
+|---|---|---|
+| 1 | full screen | screen + PiP, screen + camera |
+| 2 | duo split, duo 16:9 | screen + 2 side / below, 2 screens + 2 |
+| 3 | three columns, host + 2 | screen + 3 side / below |
+| 4 | 2 × 2, host + 3 below | screen + 4 side / below |
+| 5 | 2 + 3, host + 4 | screen + 5 below |
+| 6 | 3 × 2 | screen + 6 below |
+
+Screens alone: one full, two side by side. Sources fill the slots in selection order. A camera fills
+its tile edge to edge: the crop is centered horizontally and keeps 30 % of the removed height at the
+top, so faces stay in frame. A screen is fitted whole, never cropped. On a portrait canvas guests
+stack and screens span the width at the top; names that would be wrong change (three rows, stacked).
+
+Settings: gap between tiles and margin around the layout (0 = full bleed, like TV). *Lock the layout
+(nothing moves)*, on by default, locks the sources and gives them the *scale* constraints, so they
+can't be dragged by accident and follow the canvas if its resolution changes; re-applying with the
+box unchecked frees them. *Apply* arranges the current scene (one undo entry); *New scene* creates a
+scene with the same sources in the layout and leaves the current one untouched. *Create show scenes*
+makes all the scenes of a show at once: a full-screen scene per selected source (named after it), then
+one scene per layout that fits the selection; the button briefly says how many were created. Hovering the section
+previews the chosen layout on the Canvas. The Constraints section moves under a collapsed *Advanced*.
+
 ### Auto layout (0.2, multiple selection)
 Direction Horizontal | Vertical | Grid; area *In the selection* or *In the canvas*; *Keep sizes* or
 *Fill* (equal share of the main axis, ratio kept); alignment of the group on the main axis and of each
@@ -72,7 +103,7 @@ the canvas width). Aspect ratios are kept, except full screen and the picture-in
 which fill the canvas. Hovering the section or an entry of the list previews on the Canvas.
 
 ### Constraints (0.2)
-Two lists: horizontal (OBS default, left, right, center, left and right, scale) and vertical (OBS
+Collapsed under *Advanced*. Two lists: horizontal (OBS default, left, right, center, left and right, scale) and vertical (OBS
 default, top, bottom, center, top and bottom, scale). Stored with each item in the scene collection.
 When a canvas resolution changes, every constrained item of every scene of that canvas is placed
 again: pinned edges keep their margin, center keeps the offset from the center, left and right (top
@@ -80,7 +111,8 @@ and bottom) stretch, scale follows the canvas. *OBS default* keeps OBS's own beh
 center and size follow the canvas height).
 
 ### Locked elements
-- Arrange (align, distribute, spacing, same size) and mouse manipulation never move them.
+- Arrange (align, distribute, spacing, same size), auto layout, presets and mouse manipulation never
+  move them. Applying a broadcast layout is explicit and does place them.
 - They still count in the selection bounds.
 - Explicit numeric edits in the Inspector apply to them, like OBS's *Edit Transform* window.
 
