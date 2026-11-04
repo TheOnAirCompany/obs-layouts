@@ -9,7 +9,7 @@ triggers the release workflow of the OBS plugin template, which builds, packages
 | | Status |
 |---|---|
 | OBS Studio | 33.0.1 and later (uses the OBS 33 canvas API); older versions are not supported |
-| macOS 12+ (Apple Silicon, Intel) | built and tested (Apple Silicon) |
+| macOS 13+ (Apple Silicon, Intel, universal binary) | built and tested (Apple Silicon) |
 | Windows 10/11 x64 | built by CI, not tested at runtime |
 | Ubuntu 24.04+ x86_64 | built by CI, not tested at runtime |
 
