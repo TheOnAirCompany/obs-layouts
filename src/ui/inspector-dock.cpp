@@ -750,6 +750,7 @@ QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor 
 		}
 		p.end();
 		icon.addPixmap(pm);
+		icon.addPixmap(pm, QIcon::Selected); /* no tint: the outline shows the selection */
 	}
 	return icon;
 }
@@ -910,8 +911,8 @@ void InspectorDock::syncBroadcast()
 						? broadcastGallery_->currentItem()->data(Qt::UserRole).toString()
 						: QString();
 		broadcastGallery_->clear();
-		const QColor cam = QColor::fromRgba(tokens::kSelection);
-		const QColor scr = palette().color(QPalette::Mid);
+		const QColor cam = QColor::fromRgba(tokens::kThumbCamera);
+		const QColor scr = QColor::fromRgba(tokens::kThumbScreen);
 		const QColor bg = palette().color(QPalette::Base);
 		for (const QString &k : keys) {
 			auto *item = new QListWidgetItem(broadcastThumb(k.toStdString(), cam, scr, bg),
