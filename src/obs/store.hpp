@@ -27,6 +27,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "core/grid.hpp"
 #include "core/guides.hpp"
+#include "core/layout.hpp"
 #include "core/snapping.hpp"
 
 #include <obs.h>
@@ -56,6 +57,9 @@ struct ViewSettings {
 	bool blockOnAir = false; /* refuse edits on a scene that is on air */
 	bool ratioLock = false;
 	bool firstRunDone = false; /* docks placed on first launch */
+	core::FlowSpec flow;       /* auto layout parameters */
+	bool flowInCanvas = false; /* auto layout container: canvas instead of selection */
+	core::PresetSpec preset;   /* margins of composition presets */
 	QColor guideColor{0xFF, 0x3D, 0x71};
 };
 

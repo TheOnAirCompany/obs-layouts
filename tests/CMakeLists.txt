@@ -19,6 +19,7 @@ add_executable(
   test-snapping.cpp
   test-expression.cpp
   test-guides.cpp
+  test-layout.cpp
   ${CORE_DIR}/geometry.cpp
   ${CORE_DIR}/item-model.cpp
   ${CORE_DIR}/arrange.cpp
@@ -26,6 +27,7 @@ add_executable(
   ${CORE_DIR}/snapping.cpp
   ${CORE_DIR}/expression.cpp
   ${CORE_DIR}/guides.cpp
+  ${CORE_DIR}/layout.cpp
 )
 target_include_directories(layouts-core-tests PRIVATE "${CORE_DIR}")
 

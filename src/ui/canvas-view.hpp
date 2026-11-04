@@ -128,7 +128,7 @@ protected:
 	void contextMenuEvent(QContextMenuEvent *e) override;
 
 private:
-	enum class Mode { Idle, Pan, Rubber, Move, Resize, Rotate, Guide };
+	enum class Mode { Idle, Pan, Rubber, Move, Resize, ResizeMulti, Rotate, Guide };
 
 	void createDisplay();
 	void destroyDisplay();
@@ -145,6 +145,11 @@ private:
 	int handleAt(const QPointF &p, const ItemEntry &e) const; /* -1 none, 0..7 handles, 8 rotate */
 	std::optional<uint64_t> guideAt(const QPointF &p) const;
 	const ItemEntry *singleEditable();
+	/* Bounds of a multi-selection that can be resized (2+ items, one unlocked). */
+	std::optional<core::Rect> multiResizable();
+	int handleAtRect(const QPointF &p, const core::Rect &r) const; /* -1 none, 0..7 */
+	void startResizeMulti();
+	void updateResizeMulti(const QPointF &p, Qt::KeyboardModifiers mods);
 	void updateHoverCursor(const QPointF &p);
 
 	/* interactions */

@@ -559,6 +559,104 @@ void testCanvasSnapAndRuler()
 		 QString("%1 -> %2").arg(before).arg(afterCount));
 }
 
+void testLayoutsV02()
+{
+	EditContext &ctx = EditContext::instance();
+	resetItem("A", 100, 100);
+	resetItem("B", 700, 400);
+	resetItem("C", 1300, 250);
+	ctx.markDirty();
+
+	/* Auto layout: horizontal, gap 30, inside the canvas, vertically centered. */
+	selectNames({"A", "B", "C"});
+	core::FlowSpec fs;
+	fs.direction = core::FlowDirection::Horizontal;
+	fs.gap = 30;
+	fs.padding = 40;
+	fs.crossAlign = core::FlowAlign::Center;
+	commands::autoLayout(fs, true);
+	ctx.markDirty();
+	R->check(box("A").x == 40 && std::fabs(box("B").x - (40 + 400 + 30)) < 0.6 &&
+			 std::fabs(box("C").x - (40 + 400 + 30 + 300 + 30)) < 0.6 &&
+			 std::fabs(box("B").centerY() - 540) < 0.6,
+		 "auto-layout-horizontal", rectStr(box("A")) + rectStr(box("B")) + rectStr(box("C")));
+
+	/* Grid of 2 columns in the selection. */
+	fs.direction = core::FlowDirection::Grid;
+	fs.columns = 2;
+	fs.gap = 10;
+	fs.padding = 0;
+	fs.crossAlign = core::FlowAlign::Start;
+	commands::autoLayout(fs, false);
+	ctx.markDirty();
+	R->check(std::fabs(box("C").y - (box("A").y + 300 + 10)) < 0.6, "auto-layout-grid",
+		 rectStr(box("A")) + rectStr(box("B")) + rectStr(box("C")));
+
+	/* Preview frames are shown and cleared. */
+	commands::showPreview(commands::flowFrames(fs, true));
+	R->check(ctx.preview().size() == 3, "preview-shown");
+	commands::showPreview({});
+	R->check(ctx.preview().empty(), "preview-cleared");
+
+	/* Hovering the presets section of the Inspector previews on the Canvas. */
+	selectNames({"A", "B"});
+	emit ctx.itemsChanged(); /* let the Inspector list the presets for 2 items */
+	if (QWidget *sec = static_cast<QWidget *>(obs_frontend_get_main_window())
+				   ->findChild<QWidget *>("LayoutsPresetSection")) {
+		QEvent enter(QEvent::Enter);
+		QApplication::sendEvent(sec, &enter);
+		const size_t shown = ctx.preview().size();
+		QEvent leave(QEvent::Leave);
+		QApplication::sendEvent(sec, &leave);
+		R->check(shown == 2 && ctx.preview().empty(), "preset-hover-preview", QString::number(shown));
+	} else {
+		R->check(false, "preset-hover-preview", "section not found");
+	}
+
+	/* Presets. */
+	resetItem("B", 700, 400);
+	ctx.markDirty();
+	selectNames({"B"});
+	core::PresetSpec ps;
+	ps.margin = 40;
+	ps.cornerScale = 0.25;
+	commands::applyPreset(core::Preset::CornerBottomRight, ps);
+	ctx.markDirty();
+	R->check(std::fabs(box("B").right() - 1880) < 0.6 && std::fabs(box("B").bottom() - 1040) < 0.6 &&
+			 std::fabs(box("B").w - 480) < 0.6,
+		 "preset-corner", rectStr(box("B")));
+	resetItem("A", 0, 0);
+	resetItem("B", 0, 0);
+	ctx.markDirty();
+	selectNames({"A", "B"});
+	ps.gap = 20;
+	commands::applyPreset(core::Preset::SplitScreen, ps);
+	ctx.markDirty();
+	R->check(box("A").right() < box("B").left() && std::fabs(box("A").w - 910) < 0.6 &&
+			 std::fabs(box("A").w / box("A").h - 2.0) < 0.01,
+		 "preset-split-keeps-ratio", rectStr(box("A")) + rectStr(box("B")));
+
+	/* Multi-selection resize with the bottom-right handle, mouse driven. */
+	resetItem("A", 100, 100);
+	resetItem("B", 700, 400);
+	ctx.markDirty();
+	selectNames({"A", "B"});
+	ui::CanvasView *v = g_dock->view();
+	v->rebuildOverlay();
+	const core::Rect b0 = box("A").united(box("B"));
+	const QPointF h = v->worldToView({b0.right(), b0.bottom()});
+	const double d = 100 * v->zoom(); /* +100 canvas px on x */
+	sendMouse(v, QEvent::MouseButtonPress, h, Qt::LeftButton);
+	for (int i = 1; i <= 10; i++)
+		sendMouse(v, QEvent::MouseMove, h + QPointF(d * i / 10.0, 0), Qt::LeftButton, Qt::ControlModifier);
+	sendMouse(v, QEvent::MouseButtonRelease, h + QPointF(d, 0), Qt::NoButton, Qt::ControlModifier);
+	ctx.markDirty();
+	const core::Rect b1 = box("A").united(box("B"));
+	const double k = (b0.w + 100) / b0.w;
+	R->check(std::fabs(b1.x - b0.x) < 0.6 && std::fabs(b1.w - b0.w * k) < 1.5 && std::fabs(b1.h - b0.h * k) < 1.5,
+		 "multi-resize-keeps-ratio", rectStr(b0) + " -> " + rectStr(b1));
+}
+
 void testGroup()
 {
 	EditContext &ctx = EditContext::instance();
@@ -911,6 +1009,7 @@ void runSelfTest(ui::CanvasDock *dock)
 		R->add(300, [] { testCommands(); });
 		R->add(300, [] { testUndo(); });
 		R->add(300, [] { testCanvasSnapAndRuler(); });
+		R->add(300, [] { testLayoutsV02(); });
 		R->add(300, [] { testGroup(); });
 		R->add(500, [] { testGroupCheck(); });
 	}

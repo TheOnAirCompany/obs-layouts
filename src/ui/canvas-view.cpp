@@ -21,6 +21,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "theme.hpp"
 
 #include "core/expression.hpp"
+#include "core/layout.hpp"
 #include "obs/commands.hpp"
 #include "obs/store.hpp"
 
@@ -734,6 +735,15 @@ void CanvasView::rebuildOverlay()
 				worldRect(*b, one, tokens::kSelection);
 		}
 
+		/* ---- preview of a preset / auto layout ---- */
+		for (const core::Quad &q : ctx.preview()) {
+			const core::Rect b = q.bounds();
+			const QPointF a = dev({b.left(), b.top()}), c = dev({b.right(), b.bottom()});
+			rect((float)a.x(), (float)a.y(), (float)(c.x() - a.x()), (float)(c.y() - a.y()),
+			     tokens::kPreviewFill);
+			quad(q, 2 * one, tokens::kPreview);
+		}
+
 		/* ---- guides ---- */
 		if (vs.guides) {
 			const std::string uuid = ctx.sceneUuid().toStdString();
@@ -772,7 +782,7 @@ void CanvasView::rebuildOverlay()
 			else
 				line(dev({sl.from, sl.pos}), dev({sl.to, sl.pos}), one, tokens::kSmartGuide);
 		};
-		if (mode_ == Mode::Move || mode_ == Mode::Resize) {
+		if (mode_ == Mode::Move || mode_ == Mode::Resize || mode_ == Mode::ResizeMulti) {
 			for (const core::SnapLine &sl : snap_.lines)
 				snapLine(sl);
 			for (const core::SpacingHint &h : snap_.spacings) {
@@ -787,7 +797,7 @@ void CanvasView::rebuildOverlay()
 				}
 			}
 		}
-		if (valueSnap_ && (mode_ == Mode::Guide || mode_ == Mode::Resize))
+		if (valueSnap_ && (mode_ == Mode::Guide || mode_ == Mode::Resize || mode_ == Mode::ResizeMulti))
 			snapLine(*valueSnap_);
 
 		/* ---- measurements (Alt) ---- */
@@ -836,6 +846,14 @@ void CanvasView::rebuildOverlay()
 			const float hs = (float)(tokens::kHandleSize * r);
 			for (const core::RefPoint &hr : kHandleRefs) {
 				const QPointF p = dev(e->frame.point(hr));
+				rect((float)p.x() - hs / 2, (float)p.y() - hs / 2, hs, hs, 0xFFFFFFFF);
+				outline((float)p.x() - hs / 2, (float)p.y() - hs / 2, hs, hs, one, tokens::kSelection);
+			}
+		}
+		if (const auto mb = multiResizable()) {
+			const float hs = (float)(tokens::kHandleSize * r);
+			for (const core::RefPoint &hr : kHandleRefs) {
+				const QPointF p = dev(core::pointInRect(*mb, hr));
 				rect((float)p.x() - hs / 2, (float)p.y() - hs / 2, hs, hs, 0xFFFFFFFF);
 				outline((float)p.x() - hs / 2, (float)p.y() - hs / 2, hs, hs, one, tokens::kSelection);
 			}
@@ -936,6 +954,17 @@ void CanvasView::updateHoverCursor(const QPointF &p)
 			return;
 		}
 	}
+	if (const auto mb = multiResizable()) {
+		const int h = handleAtRect(p, *mb);
+		if (h >= 0) {
+			static const Qt::CursorShape shapes[8] = {Qt::SizeFDiagCursor, Qt::SizeVerCursor,
+								  Qt::SizeBDiagCursor, Qt::SizeHorCursor,
+								  Qt::SizeFDiagCursor, Qt::SizeVerCursor,
+								  Qt::SizeBDiagCursor, Qt::SizeHorCursor};
+			setCursor(shapes[h]);
+			return;
+		}
+	}
 	if (const auto g = guideAt(p)) {
 		const auto ref = Store::instance().guides().find(*g);
 		if (ref && !ref->guide.locked) {
@@ -1020,6 +1049,16 @@ void CanvasView::mousePressEvent(QMouseEvent *e)
 					std::atan2(pressWorld_.y - rotCenter_.y, pressWorld_.x - rotCenter_.x));
 				rotStartRot_ = core::worldRotation(item->model, item->parent);
 			}
+			return;
+		}
+	}
+
+	/* Handles of a multi-selection. */
+	if (const auto mb = multiResizable()) {
+		const int h = handleAtRect(p, *mb);
+		if (h >= 0) {
+			handle_ = h;
+			mode_ = Mode::ResizeMulti;
 			return;
 		}
 	}
@@ -1326,6 +1365,8 @@ void CanvasView::mouseMoveEvent(QMouseEvent *e)
 		dragStarted_ = true;
 		if (mode_ == Mode::Move) {
 			startMove(p);
+		} else if (mode_ == Mode::ResizeMulti) {
+			startResizeMulti();
 		} else if (mode_ == Mode::Resize || mode_ == Mode::Rotate) {
 			session_ = std::make_unique<EditSession>();
 			if (!session_->begin(T(mode_ == Mode::Resize ? "Undo.Size" : "Undo.Rotation"))) {
@@ -1341,6 +1382,9 @@ void CanvasView::mouseMoveEvent(QMouseEvent *e)
 		break;
 	case Mode::Resize:
 		updateResize(p, e->modifiers());
+		break;
+	case Mode::ResizeMulti:
+		updateResizeMulti(p, e->modifiers());
 		break;
 	case Mode::Rotate:
 		updateRotate(p, e->modifiers());
@@ -1587,6 +1631,144 @@ void CanvasView::keyReleaseEvent(QKeyEvent *e)
 	if (e->key() >= Qt::Key_Left && e->key() <= Qt::Key_Down)
 		return; /* nudges are merged by OBS's repeatable undo */
 	QWidget::keyReleaseEvent(e);
+}
+
+std::optional<core::Rect> CanvasView::multiResizable()
+{
+	const auto sel = EditContext::instance().selection();
+	if (sel.size() < 2)
+		return std::nullopt;
+	const bool anyMovable = std::any_of(sel.begin(), sel.end(), [](const ItemEntry *e) { return !e->locked; });
+	if (!anyMovable)
+		return std::nullopt;
+	return selectionBounds();
+}
+
+int CanvasView::handleAtRect(const QPointF &p, const core::Rect &r) const
+{
+	for (int i = 0; i < 8; i++) {
+		const QPointF h = worldToView(core::pointInRect(r, kHandleRefs[i]));
+		if (std::hypot(h.x() - p.x(), h.y() - p.y()) <= tokens::kHandleHit)
+			return i;
+	}
+	return -1;
+}
+
+void CanvasView::startResizeMulti()
+{
+	EditContext &ctx = EditContext::instance();
+	dragItems_.clear();
+	std::optional<core::Rect> u;
+	for (const ItemEntry *e : ctx.selection()) {
+		if (e->locked)
+			continue;
+		if (e->groupId) {
+			const ItemEntry *g = ctx.find(e->groupId, 0);
+			if (g && g->selected)
+				continue;
+		}
+		dragItems_.push_back(*e);
+		const core::Rect b = e->frame.quad.bounds();
+		u = u ? u->united(b) : b;
+	}
+	dragUnion_ = u.value_or(core::Rect());
+	session_ = std::make_unique<EditSession>();
+	if (dragItems_.empty() || !(dragUnion_.w > 0) || !(dragUnion_.h > 0) || !session_->begin(T("Undo.Size"))) {
+		session_.reset();
+		dragItems_.clear();
+		mode_ = Mode::Idle;
+	}
+}
+
+void CanvasView::updateResizeMulti(const QPointF &p, Qt::KeyboardModifiers mods)
+{
+	if (!session_ || dragItems_.empty())
+		return;
+	const core::Rect b0 = dragUnion_;
+	const core::RefPoint hr = kHandleRefs[handle_];
+	const bool fromCenter = mods & Qt::AltModifier;
+	core::Vec2 w = viewToWorld(p);
+
+	/* Snap the moving edges. */
+	valueSnap_.reset();
+	snap_ = core::SnapResult();
+	core::SnapSettings ss = Store::instance().settings().snap;
+	if (ss.enabled && !(mods & Qt::ControlModifier)) {
+		const core::SnapContext ctx = snapContext(true);
+		const double th = ss.thresholdPx / zoom_;
+		if (hr.fx != 0.5) {
+			const core::ValueSnap vx =
+				core::snapValue(w.x, core::Axis::X, ctx, ss, th, b0.top(), b0.bottom());
+			if (vx.snapped) {
+				w.x = vx.value;
+				if (vx.line)
+					snap_.lines.push_back(*vx.line);
+			}
+		}
+		if (hr.fy != 0.5) {
+			const core::ValueSnap vy =
+				core::snapValue(w.y, core::Axis::Y, ctx, ss, th, b0.left(), b0.right());
+			if (vy.snapped) {
+				w.y = vy.value;
+				if (vy.line)
+					snap_.lines.push_back(*vy.line);
+			}
+		}
+	}
+
+	double l = b0.left(), t = b0.top(), r = b0.right(), bt = b0.bottom();
+	const core::Vec2 c = b0.center();
+	if (hr.fx == 1.0) {
+		r = w.x;
+		if (fromCenter)
+			l = 2 * c.x - w.x;
+	} else if (hr.fx == 0.0) {
+		l = w.x;
+		if (fromCenter)
+			r = 2 * c.x - w.x;
+	}
+	if (hr.fy == 1.0) {
+		bt = w.y;
+		if (fromCenter)
+			t = 2 * c.y - w.y;
+	} else if (hr.fy == 0.0) {
+		t = w.y;
+		if (fromCenter)
+			bt = 2 * c.y - w.y;
+	}
+	core::Rect target = core::Rect::fromEdges(std::min(l, r), std::min(t, bt), std::max(l, r), std::max(t, bt));
+	target.w = std::max(1.0, target.w);
+	target.h = std::max(1.0, target.h);
+
+	/* Corners keep the ratio of the selection, like a single element; Shift frees it.
+	 * The anchor is the opposite corner, or the center with Alt. */
+	const bool corner = hr.fx != 0.5 && hr.fy != 0.5;
+	if (corner && !(mods & Qt::ShiftModifier)) {
+		const double k = std::max(target.w / b0.w, target.h / b0.h);
+		const double nw = b0.w * k, nh = b0.h * k;
+		const double ax = fromCenter ? 0.5 : 1.0 - hr.fx;
+		const double ay = fromCenter ? 0.5 : 1.0 - hr.fy;
+		const core::Vec2 anchor = core::pointInRect(b0, {ax, ay});
+		target = {anchor.x - nw * ax, anchor.y - nh * ay, nw, nh};
+	}
+
+	std::vector<core::Frame> frames;
+	for (const ItemEntry &e : dragItems_)
+		frames.push_back({e.frame.center(), e.frame.width, e.frame.height});
+	const std::vector<core::Frame> out = core::scaleFrames(frames, b0, target);
+
+	std::vector<Change> changes;
+	const core::RefPoint center{0.5, 0.5};
+	for (size_t i = 0; i < dragItems_.size(); i++) {
+		const ItemEntry &e = dragItems_[i];
+		core::ItemModel m = e.model;
+		m.t = core::setWorldSize(m, e.parent, std::max(1.0, out[i].width), std::max(1.0, out[i].height),
+					 center);
+		m.t = core::moveRefTo(m, e.parent, center, out[i].center);
+		changes.push_back({e.item, m.t});
+	}
+	session_->apply(changes);
+	rebuildOverlay();
 }
 
 /* ============================================================ rulers API */

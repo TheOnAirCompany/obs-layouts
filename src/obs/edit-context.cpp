@@ -242,6 +242,14 @@ void EditContext::markDirty()
 		QMetaObject::invokeMethod(this, "refresh", Qt::QueuedConnection);
 }
 
+void EditContext::setPreview(const std::vector<core::Quad> &quads)
+{
+	if (quads.empty() && preview_.empty())
+		return;
+	preview_ = quads;
+	emit itemsChanged();
+}
+
 void EditContext::refresh()
 {
 	posted_ = false;

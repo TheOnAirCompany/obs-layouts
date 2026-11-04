@@ -25,6 +25,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 
 #include <cmath>
+#include <functional>
 #include <memory>
 
 namespace layouts::commands {
@@ -440,6 +441,90 @@ bool nudge(double dx, double dy)
 	return applyPerItem(
 		"Undo.Nudge", [&](const ItemEntry &e) { return core::moveBy(e.model, e.parent, {dx, dy}); }, true,
 		true);
+}
+
+namespace {
+
+std::vector<core::Frame> framesOf(const std::vector<ItemEntry> &sel)
+{
+	std::vector<core::Frame> frames;
+	for (const ItemEntry &e : sel)
+		frames.push_back({e.frame.center(), e.frame.width, e.frame.height});
+	return frames;
+}
+
+/* Moves and resizes each item to its target frame (center and visual size);
+ * rotation is kept. Locked items are skipped. */
+bool applyFrames(const char *undoKey, const std::vector<ItemEntry> &sel, const std::vector<core::Frame> &frames)
+{
+	std::vector<Change> changes;
+	const core::RefPoint center{0.5, 0.5};
+	for (size_t i = 0; i < sel.size() && i < frames.size(); i++) {
+		const ItemEntry &e = sel[i];
+		if (e.locked)
+			continue;
+		core::ItemModel m = e.model;
+		if (frames[i].width > 0 && frames[i].height > 0)
+			m.t = core::setWorldSize(m, e.parent, frames[i].width, frames[i].height, center);
+		m.t = core::moveRefTo(m, e.parent, center, frames[i].center);
+		changes.push_back({e.item, m.t});
+	}
+	return EditSession::run(tr(undoKey), changes);
+}
+
+} // namespace
+
+std::vector<core::Frame> flowFrames(const core::FlowSpec &spec, bool inCanvas)
+{
+	const std::vector<ItemEntry> sel = selectionCopy();
+	const std::vector<core::Frame> frames = framesOf(sel);
+	if (frames.empty())
+		return frames;
+	core::Rect container = EditContext::instance().canvasRect();
+	if (!inCanvas) {
+		std::vector<core::ArrangeItem> items;
+		for (const ItemEntry &e : sel)
+			items.push_back({e.frame.quad.bounds(), false});
+		container = core::selectionBounds(items);
+	}
+	return core::flow(frames, container, spec);
+}
+
+std::vector<core::Frame> presetFrames(core::Preset preset, const core::PresetSpec &spec)
+{
+	const std::vector<ItemEntry> sel = selectionCopy();
+	return core::applyPreset(preset, framesOf(sel), EditContext::instance().canvasRect(), spec);
+}
+
+bool autoLayout(const core::FlowSpec &spec, bool inCanvas)
+{
+	const std::vector<ItemEntry> sel = selectionCopy();
+	if (sel.size() < 2)
+		return false;
+	const std::vector<core::Frame> frames = flowFrames(spec, inCanvas);
+	showPreview({});
+	return applyFrames("Undo.Layout", sel, frames);
+}
+
+bool applyPreset(core::Preset preset, const core::PresetSpec &spec)
+{
+	const std::vector<ItemEntry> sel = selectionCopy();
+	if (sel.empty())
+		return false;
+	const std::vector<core::Frame> frames = presetFrames(preset, spec);
+	showPreview({});
+	return applyFrames("Undo.Preset", sel, frames);
+}
+
+void showPreview(const std::vector<core::Frame> &frames)
+{
+	std::vector<core::Quad> quads;
+	for (const core::Frame &f : frames) {
+		const core::Rect r = f.rect();
+		quads.push_back(core::Quad{{core::Vec2{r.left(), r.top()}, core::Vec2{r.right(), r.top()},
+					    core::Vec2{r.right(), r.bottom()}, core::Vec2{r.left(), r.bottom()}}});
+	}
+	EditContext::instance().setPreview(quads);
 }
 
 bool copyProperties()

@@ -55,6 +55,20 @@ Header shows "N elements selected" and the number of locked items. Adds:
 Every field shows *Mixed* when values differ. A typed value applies to every element; a relative
 expression (`+20`) applies to each element's own value.
 
+### Auto layout (0.2, multiple selection)
+Direction Horizontal | Vertical | Grid; area *In the selection* or *In the canvas*; *Keep sizes* or
+*Fill* (equal share of the main axis, ratio kept); alignment of the group on the main axis and of each
+element on the cross axis (inside its cell for a grid); gap, padding, grid columns. Elements are placed
+in reading order. Hovering the section shows the result as violet ghost frames on the Canvas;
+*Apply layout* applies it as one undo entry.
+
+### Presets (0.2)
+The list shows the presets available for the number of selected elements, used in selection order:
+corners (4), centered, full screen, lower third area (1 element); picture in picture, split screen,
+stacked (2); one large + two small (3); 2 × 2 grid (4). Settings: margin, gap, corner size (percent of
+the canvas width). Aspect ratios are kept, except full screen and the picture-in-picture background,
+which fill the canvas. Hovering the section or an entry of the list previews on the Canvas.
+
 ### Locked elements
 - Arrange (align, distribute, spacing, same size) and mouse manipulation never move them.
 - They still count in the selection bounds.
@@ -103,7 +117,7 @@ and refused actions show the reason.
 | Shift while dragging | constrain to the main axis |
 | Ctrl/Cmd while dragging | bypass snapping (OBS convention) |
 | Drag on empty canvas | rubber band selection (Shift adds) |
-| Drag a handle | resize; corners keep the ratio, Shift frees it (OBS convention); Alt resizes from the center |
+| Drag a handle | resize; corners keep the ratio, Shift frees it (OBS convention); Alt resizes from the center. With several elements selected, the handles are on the selection box and scale every element (0.2) |
 | Drag just outside a corner | rotate around the center; Shift = 15° steps; snaps to 0/90/180/270 within 2° (Ctrl/Cmd disables) |
 | Drag a guide | move it; drop it on a ruler to delete it |
 | Double-click a guide | type its exact position (math accepted) |

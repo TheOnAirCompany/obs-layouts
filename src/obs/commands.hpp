@@ -26,6 +26,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "core/arrange.hpp"
 #include "core/expression.hpp"
 #include "core/item-model.hpp"
+#include "core/layout.hpp"
 
 #include <optional>
 
@@ -66,6 +67,15 @@ bool setBoundsAlignment(uint32_t align);
 bool setCropToBounds(bool crop);
 bool setLocked(bool locked);
 bool nudge(double dx, double dy);
+
+/* ---- layouts on several items (selection order) ---- */
+/* Target frames for the current selection, without applying them (previews). */
+std::vector<core::Frame> flowFrames(const core::FlowSpec &spec, bool inCanvas);
+std::vector<core::Frame> presetFrames(core::Preset preset, const core::PresetSpec &spec);
+bool autoLayout(const core::FlowSpec &spec, bool inCanvas);
+bool applyPreset(core::Preset preset, const core::PresetSpec &spec);
+/* Shows the frames as a ghost preview on the Canvas (empty clears it). */
+void showPreview(const std::vector<core::Frame> &frames);
 
 /* ---- properties clipboard ---- */
 enum PasteMask : unsigned {

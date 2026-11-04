@@ -55,6 +55,8 @@ target_sources(
     src/core/expression.hpp
     src/core/guides.cpp
     src/core/guides.hpp
+    src/core/layout.cpp
+    src/core/layout.hpp
     src/obs/obs-convert.hpp
     src/obs/store.cpp
     src/obs/store.hpp

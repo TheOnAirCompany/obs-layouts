@@ -27,11 +27,11 @@ Status legend: ✅ done in 0.1.0 · ⏭ next.
 
 | Task | Notes |
 |---|---|
-| Auto layout (horizontal, vertical, grid; spacing, padding, alignment) applied on demand | uses `core/arrange`; stored in item private settings |
+| Auto layout (horizontal, vertical, grid; spacing, padding, alignment) applied on demand | ✅ on `dev/0.2` (`core/layout`) |
 | Constraints (left, right, center, left & right, scale) re-applied on canvas size change | `video_reset` canvas signal |
-| Layout presets (webcam corners, picture in picture, split screen…) with a preview before applying | never duplicates sources |
+| Layout presets (webcam corners, picture in picture, split screen…) with a preview before applying | ✅ on `dev/0.2` |
 | Crop by dragging handles with Alt (OBS convention) | — |
-| Multi-selection resize on the Canvas | scale the selection box |
+| Multi-selection resize on the Canvas | ✅ on `dev/0.2` |
 | Configurable shortcuts through OBS hotkeys | — |
 | Design review follow-up | tokens in `src/ui/theme.hpp` |
 | Windows and Linux runtime validation, signed packages | needs certificates |

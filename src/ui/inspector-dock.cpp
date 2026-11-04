@@ -24,6 +24,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/edit-context.hpp"
 #include "obs/store.hpp"
 
+#include <obs-module.h>
+
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
@@ -31,6 +33,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QLabel>
 #include <QMenu>
 #include <QScrollArea>
+#include <QSpinBox>
+#include <QAbstractItemView>
+#include <QEvent>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -432,6 +437,11 @@ void InspectorDock::build()
 		v->addWidget(arrangeSection_);
 	}
 
+	layoutSection_ = buildLayoutSection();
+	v->addWidget(layoutSection_);
+	presetSection_ = buildPresetSection();
+	v->addWidget(presetSection_);
+
 	/* ---- crop ---- */
 	{
 		auto *body = new QWidget(content_);
@@ -558,7 +568,10 @@ void InspectorDock::refresh()
 			w->setVisible(n > 0);
 	}
 	arrangeSection_->setVisible(multi);
+	layoutSection_->setVisible(multi);
+	presetSection_->setVisible(n > 0);
 	alignTargetRow_->setVisible(multi);
+	syncLayoutControls();
 	cropSection_->setVisible(n > 0);
 	boundsSection_->setVisible(n > 0);
 
@@ -643,6 +656,244 @@ void InspectorDock::refresh()
 		cropToBounds_->setCheckState(Qt::PartiallyChecked);
 
 	updating_ = false;
+}
+
+/* ------------------------------------------------------------ auto layout */
+
+QWidget *InspectorDock::buildLayoutSection()
+{
+	auto *body = new QWidget(content_);
+	auto *bl = new QVBoxLayout(body);
+	bl->setContentsMargins(0, 0, 0, 0);
+	bl->setSpacing(tokens::kRowSpacing);
+
+	auto *seg = new QWidget(body);
+	flowDir_ = segmented({T("Flow.Horizontal"), T("Flow.Vertical"), T("Flow.Grid")}, seg);
+	bl->addWidget(seg);
+
+	auto combo = [body](std::initializer_list<const char *> keys, const char *tip) {
+		auto *c = new QComboBox(body);
+		for (const char *k : keys)
+			c->addItem(T(k));
+		c->setToolTip(T(tip));
+		c->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+		c->setMinimumContentsLength(6);
+		return c;
+	};
+	flowContainer_ = combo({"Flow.InSelection", "Flow.InCanvas"}, "Flow.ContainerTooltip");
+	flowSizing_ = combo({"Flow.Keep", "Flow.Fill"}, "Flow.SizingTooltip");
+	flowMain_ = combo({"Flow.Start", "Flow.Center", "Flow.End"}, "Flow.MainTooltip");
+	flowCross_ = combo({"Flow.Start", "Flow.Center", "Flow.End"}, "Flow.CrossTooltip");
+
+	auto pair = [body](QWidget *a, QWidget *b) {
+		auto *w = new QWidget(body);
+		auto *l = row(w);
+		l->addWidget(a, 1);
+		l->addWidget(b, 1);
+		return w;
+	};
+	bl->addWidget(pair(flowContainer_, flowSizing_));
+	bl->addWidget(pair(flowMain_, flowCross_));
+
+	flowGap_ = new NumericField(QString::fromUtf8("\xE2\x86\x94"), T("Flow.Gap"), body);
+	flowPadding_ = new NumericField(QString::fromUtf8("\xE2\x96\xA2"), T("Flow.Padding"), body);
+	bl->addWidget(pair(flowGap_, flowPadding_));
+
+	columnsRow_ = new QWidget(body);
+	auto *cr = row(columnsRow_);
+	auto *cl = new QLabel(T("Flow.Columns"), columnsRow_);
+	flowColumns_ = new QSpinBox(columnsRow_);
+	flowColumns_->setRange(1, 50);
+	cr->addWidget(cl);
+	cr->addWidget(flowColumns_, 1);
+	bl->addWidget(columnsRow_);
+
+	auto *apply = new QToolButton(body);
+	apply->setText(T("Flow.Apply"));
+	apply->setToolTip(T("Flow.ApplyTooltip"));
+	apply->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	apply->setMinimumHeight(tokens::kFieldHeight);
+	bl->addWidget(apply);
+
+	auto changed = [this] {
+		if (updating_)
+			return;
+		ViewSettings &s = Store::instance().settings();
+		s.flow.direction = (core::FlowDirection)std::max(0, flowDir_->checkedId());
+		s.flowInCanvas = flowContainer_->currentIndex() == 1;
+		s.flow.sizing = (core::FlowSizing)std::max(0, flowSizing_->currentIndex());
+		s.flow.mainAlign = (core::FlowAlign)std::max(0, flowMain_->currentIndex());
+		s.flow.crossAlign = (core::FlowAlign)std::max(0, flowCross_->currentIndex());
+		s.flow.columns = flowColumns_->value();
+		Store::instance().saveSettings();
+		columnsRow_->setVisible(s.flow.direction == core::FlowDirection::Grid);
+		previewLayout();
+	};
+	connect(flowDir_, &QButtonGroup::idClicked, this, changed);
+	for (QComboBox *c : {flowContainer_, flowSizing_, flowMain_, flowCross_})
+		connect(c, &QComboBox::activated, this, changed);
+	connect(flowColumns_, &QSpinBox::valueChanged, this, changed);
+	auto number = [this](double core::FlowSpec::*field, double lo) {
+		return [this, field, lo](const core::Expression &e) {
+			ViewSettings &s = Store::instance().settings();
+			double v = 0;
+			if (!e.apply(s.flow.*field, v))
+				return;
+			s.flow.*field = std::max(lo, v);
+			Store::instance().saveSettings();
+			syncLayoutControls();
+			previewLayout();
+		};
+	};
+	connect(flowGap_, &NumericField::committed, this, number(&core::FlowSpec::gap, -10000.0));
+	connect(flowPadding_, &NumericField::committed, this, number(&core::FlowSpec::padding, 0.0));
+	connect(apply, &QToolButton::clicked, this, [] {
+		const ViewSettings &s = Store::instance().settings();
+		commands::autoLayout(s.flow, s.flowInCanvas);
+	});
+
+	QWidget *sec = section(T("Section.Layout"), body);
+	sec->setObjectName("LayoutsAutoLayoutSection");
+	sec->installEventFilter(this);
+	return sec;
+}
+
+QWidget *InspectorDock::buildPresetSection()
+{
+	auto *body = new QWidget(content_);
+	auto *bl = new QVBoxLayout(body);
+	bl->setContentsMargins(0, 0, 0, 0);
+	bl->setSpacing(tokens::kRowSpacing);
+
+	preset_ = new QComboBox(body);
+	preset_->setToolTip(T("Preset.Tooltip"));
+	preset_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+	preset_->setMinimumContentsLength(10);
+	bl->addWidget(preset_);
+
+	auto *nums = new QWidget(body);
+	auto *nl = row(nums);
+	presetMargin_ = new NumericField("M", T("Preset.Margin"), nums);
+	presetGap_ = new NumericField(QString::fromUtf8("\xE2\x86\x94"), T("Preset.Gap"), nums);
+	presetCorner_ = new NumericField("%", T("Preset.Corner"), nums);
+	nl->addWidget(presetMargin_);
+	nl->addWidget(presetGap_);
+	nl->addWidget(presetCorner_);
+	bl->addWidget(nums);
+
+	presetApply_ = new QToolButton(body);
+	presetApply_->setText(T("Preset.Apply"));
+	presetApply_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	presetApply_->setMinimumHeight(tokens::kFieldHeight);
+	bl->addWidget(presetApply_);
+
+	connect(preset_, &QComboBox::activated, this, [this] { previewPreset(true); });
+	connect(preset_, &QComboBox::highlighted, this, [this](int i) { previewPreset(true, i); });
+	auto number = [this](double core::PresetSpec::*field, double lo, double hi, double scale) {
+		return [this, field, lo, hi, scale](const core::Expression &e) {
+			ViewSettings &s = Store::instance().settings();
+			double v = 0;
+			if (!e.apply(s.preset.*field * scale, v))
+				return;
+			s.preset.*field = std::clamp(v / scale, lo, hi);
+			Store::instance().saveSettings();
+			syncLayoutControls();
+			previewPreset();
+		};
+	};
+	connect(presetMargin_, &NumericField::committed, this, number(&core::PresetSpec::margin, 0.0, 10000.0, 1.0));
+	connect(presetGap_, &NumericField::committed, this, number(&core::PresetSpec::gap, 0.0, 10000.0, 1.0));
+	connect(presetCorner_, &NumericField::committed, this,
+		number(&core::PresetSpec::cornerScale, 0.05, 1.0, 100.0));
+	connect(presetApply_, &QToolButton::clicked, this, [this] {
+		const auto p = core::presetFromKey(preset_->currentData().toString().toStdString());
+		if (p)
+			commands::applyPreset(*p, Store::instance().settings().preset);
+	});
+
+	QWidget *sec = section(T("Section.Presets"), body);
+	sec->setObjectName("LayoutsPresetSection");
+	sec->installEventFilter(this);
+	return sec;
+}
+
+void InspectorDock::syncLayoutControls()
+{
+	const bool was = updating_;
+	updating_ = true;
+	const ViewSettings &s = Store::instance().settings();
+	if (QAbstractButton *b = flowDir_->button((int)s.flow.direction))
+		b->setChecked(true);
+	flowContainer_->setCurrentIndex(s.flowInCanvas ? 1 : 0);
+	flowSizing_->setCurrentIndex((int)s.flow.sizing);
+	flowMain_->setCurrentIndex((int)s.flow.mainAlign);
+	flowCross_->setCurrentIndex((int)s.flow.crossAlign);
+	flowColumns_->setValue(s.flow.columns);
+	columnsRow_->setVisible(s.flow.direction == core::FlowDirection::Grid);
+	flowGap_->setValue(s.flow.gap);
+	flowPadding_->setValue(s.flow.padding);
+	presetMargin_->setValue(s.preset.margin);
+	presetGap_->setValue(s.preset.gap);
+	presetCorner_->setValue(s.preset.cornerScale * 100.0);
+
+	/* Presets available for the number of selected items. */
+	const int n = (int)EditContext::instance().selection().size();
+	QStringList keys;
+	for (const core::PresetInfo &p : core::presets()) {
+		if (n >= p.minItems && n <= p.maxItems)
+			keys << QString::fromUtf8(p.key);
+	}
+	QStringList shown;
+	for (int i = 0; i < preset_->count(); i++)
+		shown << preset_->itemData(i).toString();
+	if (keys != shown) {
+		const QString current = preset_->currentData().toString();
+		preset_->clear();
+		for (const QString &k : keys)
+			preset_->addItem(T(("Preset." + k.toStdString()).c_str()), k);
+		const int idx = preset_->findData(current);
+		preset_->setCurrentIndex(idx >= 0 ? idx : 0);
+	}
+	presetApply_->setEnabled(preset_->count() > 0);
+	preset_->setEnabled(preset_->count() > 0);
+	if (preset_->count() == 0)
+		preset_->setPlaceholderText(T("Preset.None"));
+	updating_ = was;
+}
+
+void InspectorDock::previewLayout(bool force)
+{
+	if (!force && !layoutSection_->underMouse())
+		return;
+	const ViewSettings &s = Store::instance().settings();
+	commands::showPreview(commands::flowFrames(s.flow, s.flowInCanvas));
+}
+
+void InspectorDock::previewPreset(bool force, int index)
+{
+	if (!force && !presetSection_->underMouse() && !preset_->view()->isVisible())
+		return;
+	const int i = index >= 0 ? index : preset_->currentIndex();
+	const auto p = core::presetFromKey(preset_->itemData(i).toString().toStdString());
+	if (!p) {
+		commands::showPreview({});
+		return;
+	}
+	std::vector<core::Frame> frames = commands::presetFrames(*p, Store::instance().settings().preset);
+	commands::showPreview(frames);
+}
+
+bool InspectorDock::eventFilter(QObject *obj, QEvent *event)
+{
+	if (event->type() == QEvent::Enter) {
+		if (obj == layoutSection_)
+			previewLayout(true);
+		else if (obj == presetSection_)
+			previewPreset(true);
+	} else if (event->type() == QEvent::Leave && (obj == layoutSection_ || obj == presetSection_)) {
+		commands::showPreview({});
+	}
+	return QWidget::eventFilter(obj, event);
 }
 
 } // namespace layouts::ui

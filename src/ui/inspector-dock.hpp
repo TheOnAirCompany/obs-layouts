@@ -28,7 +28,9 @@ class QButtonGroup;
 class QCheckBox;
 class QComboBox;
 class QLabel;
+class QSpinBox;
 class QToolButton;
+class QVBoxLayout;
 
 namespace layouts::ui {
 
@@ -49,7 +51,16 @@ private:
 	void updateLive();
 	void bindField(NumericField *f, commands::Field field);
 	QWidget *section(const QString &title, QWidget *body);
+	QWidget *buildLayoutSection();
+	QWidget *buildPresetSection();
+	void syncLayoutControls();
+	void previewLayout(bool force = false);
+	void previewPreset(bool force = false, int index = -1);
 
+protected:
+	bool eventFilter(QObject *obj, QEvent *event) override;
+
+private:
 	QLabel *title_ = nullptr;
 	QLabel *subtitle_ = nullptr;
 	QLabel *live_ = nullptr;
@@ -79,6 +90,26 @@ private:
 	QComboBox *boundsAlign_ = nullptr;
 	QCheckBox *cropToBounds_ = nullptr;
 	bool updating_ = false;
+
+	/* auto layout (multi) */
+	QWidget *layoutSection_ = nullptr;
+	QButtonGroup *flowDir_ = nullptr;
+	QComboBox *flowContainer_ = nullptr;
+	QComboBox *flowMain_ = nullptr;
+	QComboBox *flowCross_ = nullptr;
+	QComboBox *flowSizing_ = nullptr;
+	QSpinBox *flowColumns_ = nullptr;
+	QWidget *columnsRow_ = nullptr;
+	NumericField *flowGap_ = nullptr;
+	NumericField *flowPadding_ = nullptr;
+
+	/* presets */
+	QWidget *presetSection_ = nullptr;
+	QComboBox *preset_ = nullptr;
+	NumericField *presetMargin_ = nullptr;
+	NumericField *presetGap_ = nullptr;
+	NumericField *presetCorner_ = nullptr;
+	QToolButton *presetApply_ = nullptr;
 };
 
 } // namespace layouts::ui

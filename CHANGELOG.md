@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased (0.2 in progress)
+
+- Resize several selected elements at once from the selection handles on the Canvas (corners keep the
+  ratio, Shift frees it, Alt resizes from the center, edges snap).
+- Auto layout in the Inspector: horizontal, vertical or grid; gap, padding, alignment on both axes,
+  keep sizes or fill with equal sizes; inside the selection or the whole canvas; applied on demand.
+- Composition presets: corners, centered, full screen, lower third area, picture in picture, split
+  screen, stacked, one large + two small, 2 × 2 grid; margin, gap and corner size settings.
+- Ghost preview on the Canvas while hovering the auto layout or presets section, before applying.
+
 ## 0.1.0 — preview
 
 First version.

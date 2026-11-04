@@ -101,6 +101,11 @@ public:
 	/* Marks the snapshot dirty (called from any thread). */
 	void markDirty();
 
+	/* Ghost frames shown on the Canvas before an operation is applied (presets,
+	 * auto layout). World space. Empty = no preview. */
+	void setPreview(const std::vector<core::Quad> &quads);
+	const std::vector<core::Quad> &preview() const { return preview_; }
+
 	void handleFrontendEvent(enum obs_frontend_event event);
 	void shutdown();
 
@@ -130,6 +135,7 @@ private:
 	std::shared_ptr<std::vector<ItemEntry>> items_ = std::make_shared<std::vector<ItemEntry>>();
 	std::vector<std::shared_ptr<std::vector<ItemEntry>>> retired_;
 	bool releasePosted_ = false;
+	std::vector<core::Quad> preview_;
 	std::vector<std::pair<int64_t, int64_t>> selectionOrder_; /* (groupId, id): ids are per scene */
 	std::atomic_bool dirty_{true};
 	std::atomic_bool posted_{false};
