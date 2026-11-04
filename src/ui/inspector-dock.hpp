@@ -94,6 +94,8 @@ private:
 	QCheckBox *cropToBounds_ = nullptr;
 	bool updating_ = false;
 	bool hoverLayout_ = false;
+	bool refreshing_ = false;
+	int previewOwner_ = 0; /* 0 none, 1 auto layout, 2 presets */
 	bool hoverPreset_ = false;
 
 	/* auto layout (multi) */

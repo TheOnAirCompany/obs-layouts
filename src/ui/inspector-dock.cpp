@@ -526,6 +526,13 @@ void InspectorDock::updateLive()
 
 void InspectorDock::refresh()
 {
+	if (refreshing_)
+		return; /* re-entered through a Qt event sent while refreshing */
+	refreshing_ = true;
+	struct Reset {
+		bool &flag;
+		~Reset() { flag = false; }
+	} reset{refreshing_};
 	updating_ = true;
 	EditContext &ctx = EditContext::instance();
 	const std::vector<const ItemEntry *> sel = ctx.selection();
@@ -567,18 +574,20 @@ void InspectorDock::refresh()
 	paste_->setVisible(n > 0);
 	paste_->setEnabled(commands::canPaste());
 
+	/* Set each visibility once: hiding then showing a section would send synthetic
+	 * enter/leave events (and previews) on every refresh. */
 	for (QWidget *w : content_->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly)) {
-		if (w != title_->parentWidget() && w != live_ && w != empty_)
-			w->setVisible(n > 0);
+		if (w == title_->parentWidget() || w == live_ || w == empty_)
+			continue;
+		bool visible = n > 0;
+		if (w == arrangeSection_ || w == layoutSection_)
+			visible = multi;
+		if (w->isVisibleTo(content_) != visible)
+			w->setVisible(visible);
 	}
-	arrangeSection_->setVisible(multi);
-	layoutSection_->setVisible(multi);
-	presetSection_->setVisible(n > 0);
-	constraintSection_->setVisible(n > 0);
-	alignTargetRow_->setVisible(multi);
+	if (alignTargetRow_->isVisibleTo(content_) != multi)
+		alignTargetRow_->setVisible(multi);
 	syncLayoutControls();
-	cropSection_->setVisible(n > 0);
-	boundsSection_->setVisible(n > 0);
 
 	if (n == 0) {
 		updating_ = false;
@@ -944,6 +953,7 @@ void InspectorDock::previewLayout(bool force)
 	if (!force && !hoverLayout_)
 		return;
 	const ViewSettings &s = Store::instance().settings();
+	previewOwner_ = 1;
 	commands::showPreview(commands::flowFrames(s.flow, s.flowInCanvas));
 }
 
@@ -958,6 +968,7 @@ void InspectorDock::previewPreset(bool force, int index)
 		return;
 	}
 	std::vector<core::Frame> frames = commands::presetFrames(*p, Store::instance().settings().preset);
+	previewOwner_ = 2;
 	commands::showPreview(frames);
 }
 
@@ -982,10 +993,17 @@ bool InspectorDock::eventFilter(QObject *obj, QEvent *event)
 
 void InspectorDock::clearPreviewIfIdle()
 {
-	const bool layoutActive = hoverLayout_ && layoutSection_->isVisible();
-	const bool presetActive = (hoverPreset_ && presetSection_->isVisible()) || preset_->view()->isVisible();
-	if (!layoutActive && !presetActive)
+	/* The preview belongs to the section that showed it: only that section's hover
+	 * state keeps it alive. */
+	bool keep = false;
+	if (previewOwner_ == 1)
+		keep = hoverLayout_ && layoutSection_->isVisible();
+	else if (previewOwner_ == 2)
+		keep = (hoverPreset_ && presetSection_->isVisible()) || preset_->view()->isVisible();
+	if (!keep) {
+		previewOwner_ = 0;
 		commands::showPreview({});
+	}
 }
 
 void InspectorDock::hideEvent(QHideEvent *e)

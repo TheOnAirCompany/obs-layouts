@@ -186,6 +186,7 @@ CanvasView::CanvasView(QWidget *parent) : QWidget(parent)
 	EditContext &ctx = EditContext::instance();
 	connect(&ctx, &EditContext::sceneChanged, this, &CanvasView::onSceneChanged);
 	connect(&ctx, &EditContext::itemsChanged, this, &CanvasView::rebuildOverlay);
+	connect(&ctx, &EditContext::previewChanged, this, &CanvasView::rebuildOverlay);
 	connect(&ctx, &EditContext::liveStateChanged, this, &CanvasView::rebuildOverlay);
 	connect(&Store::instance(), &Store::guidesChanged, this, &CanvasView::rebuildOverlay);
 	connect(&Store::instance(), &Store::settingsChanged, this, &CanvasView::rebuildOverlay);

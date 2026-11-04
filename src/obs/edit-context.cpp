@@ -247,7 +247,7 @@ void EditContext::setPreview(const std::vector<core::Quad> &quads)
 	if (quads.empty() && preview_.empty())
 		return;
 	preview_ = quads;
-	emit itemsChanged();
+	emit previewChanged(); /* not itemsChanged: the Inspector must not refresh for a preview */
 }
 
 void EditContext::refresh()

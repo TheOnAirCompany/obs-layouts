@@ -597,9 +597,16 @@ void testLayoutsV02()
 	R->check(std::fabs(box("C").y - (box("A").y + 300 + 10)) < 0.6, "auto-layout-grid",
 		 rectStr(box("A")) + rectStr(box("B")) + rectStr(box("C")));
 
-	/* A preview only lives while a section of the Inspector is hovered. */
+	/* A stray preview (nothing hovered) goes away at the next selection change. */
+	for (const char *name : {"LayoutsAutoLayoutSection", "LayoutsPresetSection"}) {
+		if (QWidget *sec = g_window->findChild<QWidget *>(name)) {
+			QEvent leave(QEvent::Leave); /* the real cursor may sit over the window */
+			QApplication::sendEvent(sec, &leave);
+		}
+	}
 	commands::showPreview(commands::flowFrames(fs, true));
-	R->check(ctx.preview().empty(), "preview-needs-hover", QString::number(ctx.preview().size()));
+	emit ctx.itemsChanged();
+	R->check(ctx.preview().empty(), "stray-preview-cleared", QString::number(ctx.preview().size()));
 
 	/* Hovering the presets section of the Inspector previews on the Canvas. */
 	selectNames({"A", "B"});

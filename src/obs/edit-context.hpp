@@ -112,6 +112,7 @@ public:
 signals:
 	void sceneChanged();
 	void itemsChanged(); /* transforms, selection, list */
+	void previewChanged();
 	void liveStateChanged();
 	void editRefused(const QString &reason);
 
