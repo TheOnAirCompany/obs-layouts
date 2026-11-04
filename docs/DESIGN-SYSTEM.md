@@ -2,14 +2,14 @@
 
 Layouts follows the active OBS theme: every widget uses `QPalette` colors, so Yami, Grey, Rachni,
 Light or custom themes apply. Visual values that are Layouts' own live in **one file**,
-`src/ui/theme.hpp`, and are **provisional** until reviewed.
+`src/ui/theme.hpp`. They were validated in a design review on 2026-11-04.
 
 ## Principles
 Compact, precise, quiet. Dark mode first but theme-adaptive. Icons from
 [Lucide](https://lucide.dev) (ISC), tinted with the theme text color. No decorative color: color
 is used for state (selection, snapping, live).
 
-## Tokens (provisional)
+## Tokens
 
 ### Inspector
 | Token | Value | Use |
@@ -67,6 +67,5 @@ is used for state (selection, snapping, live).
 | Property rows | Qt layouts with the tokens above | — |
 
 ## Review
-The values above were chosen without a design review and are submitted for validation (design
-review page with screenshots of the Inspector and the Canvas). Changing a value means editing
-`src/ui/theme.hpp` only.
+All values above were reviewed on screenshots of the Inspector and the Canvas in OBS 33.0.1 and
+approved as is (2026-11-04). Changing a value means editing `src/ui/theme.hpp` only.

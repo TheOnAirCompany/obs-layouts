@@ -18,8 +18,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #pragma once
 
-/* Design tokens. Every visual value of Layouts lives here (provisional values,
- * submitted for review in docs/DESIGN-SYSTEM.md). Widgets otherwise inherit the
+/* Design tokens. Every visual value of Layouts lives here (reviewed and approved,
+ * see docs/DESIGN-SYSTEM.md). Widgets otherwise inherit the
  * active OBS theme through QPalette. */
 
 #include <QColor>
