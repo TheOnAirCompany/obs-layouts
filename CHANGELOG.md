@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (0.2 in progress)
+## 0.2.0 — not released yet
 
 - Resize several selected elements at once from the selection handles on the Canvas (corners keep the
   ratio, Shift frees it, Alt resizes from the center, edges snap).

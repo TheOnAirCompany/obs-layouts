@@ -26,6 +26,9 @@ A dock that always shows the selection of the edited scene.
 - **Crop** in source pixels (the image stays in place), **bounding box** type and alignment.
 - **Multiple selection**: align to the selection, the canvas or a **key object**; distribute centers or spacing; type an **exact gap**; same width / height / size; **Mixed** values.
 - **Copy / paste properties** (position, size, rotation, crop, bounding box).
+- **Auto layout**: rows, columns or a grid, with gap, padding and alignment, inside the selection or the whole canvas, previewed on the Canvas before you apply it.
+- **Presets**: corners, centered, full screen, lower third area, picture in picture, split screen, one large + two small, 2 × 2 grid, with margins you set.
+- **Constraints**: pin elements to an edge, the center, both edges or scale them, so they keep their place when the canvas resolution changes.
 
 <img src="docs/images/inspector.png" alt="Inspector" width="290" align="right">
 
@@ -38,7 +41,8 @@ An editing surface for the scene, next to the OBS preview.
 - **Layout grids**: square grid (presets 8 to 64 px), columns, rows.
 - **Smart snapping**: guides, grid, other elements (edges, centers, **equal spacing**), canvas — with red smart guides. Hold Ctrl/Cmd to bypass it, as in OBS.
 - **Measurements**: hold Alt to see the distances to the hovered element or to the canvas.
-- **Direct manipulation**: select, Shift-select, rubber band, move, resize from 8 handles (Alt from the center), rotate just outside a corner, nudge with the arrows.
+- **Direct manipulation**: select, Shift-select, rubber band, move, resize from 8 handles (Alt from the center), rotate just outside a corner, nudge with the arrows. With several elements selected, the handles scale the whole selection.
+- **Crop mode** (C): the handles crop the source and the image stays in place.
 - **Zoom** (fit, 100 %, selection, pinch, Ctrl/Cmd + wheel) and **pan** (Space + drag, wheel).
 - **Safe areas**, center lines and custom margins.
 - Edit the scene OBS shows, or **pin any scene**, including scenes of other OBS 33 canvases (vertical...).
@@ -80,7 +84,10 @@ To uninstall, remove the plugin. Your scenes and sources are never touched; Layo
 | Shift + 0 / 1 / 2 | zoom 100 % / fit / selection |
 | + / − | zoom in / out |
 | Shift + R, Shift + G, Ctrl/Cmd + ; | rulers, grid, guides |
-| Esc | cancel a drag, clear the selection |
+| C | crop mode for the selected element |
+| Esc | cancel a drag, leave crop mode, clear the selection |
+
+Rulers, guides, grid, safe areas, snapping, the six alignments, distribution and zoom to fit can also get global keys in OBS **Settings > Hotkeys** (entries starting with "Layouts:").
 
 ## Documentation
 
