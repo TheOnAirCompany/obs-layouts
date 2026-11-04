@@ -318,6 +318,11 @@ void Store::loadSettings()
 	f("preset_margin", s.preset.margin, 0.0, 10000.0);
 	f("preset_gap", s.preset.gap, 0.0, 10000.0);
 	f("preset_corner_scale", s.preset.cornerScale, 0.05, 1.0);
+	f("broadcast_gap", s.broadcastGap, 0.0, 1000.0);
+	f("broadcast_margin", s.broadcastMargin, 0.0, 1000.0);
+	b("broadcast_lock", s.broadcastLock);
+	if (obs_data_has_user_value(d, "broadcast_kinds"))
+		s.broadcastKinds = std::clamp((int)obs_data_get_int(d, "broadcast_kinds"), 0, 2);
 	s.windowGeometry = QByteArray::fromBase64(obs_data_get_string(d, "window_geometry"));
 	s.splitterState = QByteArray::fromBase64(obs_data_get_string(d, "splitter_state"));
 	if (obs_data_has_user_value(d, "guide_color")) {
@@ -377,6 +382,10 @@ void Store::saveSettings()
 	obs_data_set_double(d, "preset_margin", s.preset.margin);
 	obs_data_set_double(d, "preset_gap", s.preset.gap);
 	obs_data_set_double(d, "preset_corner_scale", s.preset.cornerScale);
+	obs_data_set_double(d, "broadcast_gap", s.broadcastGap);
+	obs_data_set_double(d, "broadcast_margin", s.broadcastMargin);
+	obs_data_set_bool(d, "broadcast_lock", s.broadcastLock);
+	obs_data_set_int(d, "broadcast_kinds", s.broadcastKinds);
 	obs_data_set_string(d, "window_geometry", s.windowGeometry.toBase64().constData());
 	obs_data_set_string(d, "splitter_state", s.splitterState.toBase64().constData());
 	obs_data_set_string(d, "guide_color", s.guideColor.name(QColor::HexRgb).toUtf8().constData());

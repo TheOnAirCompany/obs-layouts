@@ -34,6 +34,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QGridLayout>
 #include <QLabel>
 #include <QMenu>
+#include <QResizeEvent>
+#include <QPushButton>
+#include <QPainter>
+#include <QListWidget>
 #include <QScrollArea>
 #include <QSpinBox>
 #include <QAbstractItemView>
@@ -198,6 +202,9 @@ void InspectorDock::build()
 	empty_->setWordWrap(true);
 	empty_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
 	v->addWidget(empty_);
+
+	broadcastSection_ = buildBroadcastSection();
+	v->addWidget(broadcastSection_);
 
 	/* ---- align ---- */
 	{
@@ -588,6 +595,7 @@ void InspectorDock::refresh()
 	if (alignTargetRow_->isVisibleTo(content_) != multi)
 		alignTargetRow_->setVisible(multi);
 	syncLayoutControls();
+	syncBroadcast();
 
 	if (n == 0) {
 		updating_ = false;
@@ -688,6 +696,263 @@ void InspectorDock::refresh()
 	updating_ = false;
 }
 
+/* ------------------------------------------------------ broadcast layouts */
+
+namespace {
+
+/* A wrapping gallery whose height always shows every row (no inner scrolling). */
+class Gallery : public QListWidget {
+public:
+	using QListWidget::QListWidget;
+	void fitRows()
+	{
+		const QSize cell = gridSize();
+		const int cols = std::max(1, viewport()->width() / std::max(1, cell.width()));
+		const int rows = std::max(1, (count() + cols - 1) / cols);
+		setFixedHeight(rows * cell.height() + 2 * frameWidth() + 2 * spacing());
+	}
+
+protected:
+	void resizeEvent(QResizeEvent *e) override
+	{
+		QListWidget::resizeEvent(e);
+		fitRows();
+	}
+};
+
+QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor &screen, const QColor &bg)
+{
+	const QSize size(112, 63);
+	QIcon icon;
+	for (qreal dpr : {1.0, 2.0}) {
+		QPixmap pm(size * dpr);
+		pm.setDevicePixelRatio(dpr);
+		pm.fill(Qt::transparent);
+		QPainter p(&pm);
+		p.setRenderHint(QPainter::Antialiasing);
+		p.setPen(Qt::NoPen);
+		p.setBrush(bg);
+		p.drawRoundedRect(QRectF(0, 0, size.width(), size.height()), 3, 3);
+		core::BroadcastSpec spec;
+		spec.gap = 2;
+		for (const core::Slot &s :
+		     core::buildBroadcast(key, {0, 0, (double)size.width(), (double)size.height()}, spec)) {
+			p.setBrush(s.kind == core::SlotKind::Camera ? camera : screen);
+			p.drawRoundedRect(QRectF(s.cell.x + 0.5, s.cell.y + 0.5, s.cell.w - 1, s.cell.h - 1), 1.5, 1.5);
+			if (s.kind == core::SlotKind::Camera) {
+				/* a head and shoulders */
+				const QPointF c(s.cell.x + s.cell.w / 2, s.cell.y + s.cell.h * 0.42);
+				const double r = std::min(s.cell.w, s.cell.h) * 0.16;
+				p.setBrush(bg);
+				p.drawEllipse(c, r, r);
+				p.drawChord(QRectF(c.x() - r * 2, c.y() + r * 1.3, r * 4, r * 3.2), 0, 180 * 16);
+			}
+		}
+		p.end();
+		icon.addPixmap(pm);
+	}
+	return icon;
+}
+
+} // namespace
+
+QWidget *InspectorDock::buildBroadcastSection()
+{
+	auto *body = new QWidget(content_);
+	auto *bl = new QVBoxLayout(body);
+	bl->setContentsMargins(0, 0, 0, 0);
+	bl->setSpacing(tokens::kRowSpacing);
+
+	auto *top = new QWidget(body);
+	auto *tl = row(top);
+	broadcastSummary_ = new QLabel(top);
+	broadcastSummary_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+	broadcastKinds_ = new QComboBox(top);
+	broadcastKinds_->addItems({T("Broadcast.KindsAuto"), T("Broadcast.KindsCameras"), T("Broadcast.KindsScreens")});
+	broadcastKinds_->setToolTip(T("Broadcast.KindsTooltip"));
+	broadcastKinds_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+	broadcastKinds_->setMinimumContentsLength(6);
+	tl->addWidget(broadcastKinds_, 1);
+	bl->addWidget(broadcastSummary_);
+	bl->addWidget(top);
+
+	broadcastGallery_ = new Gallery(body);
+	broadcastGallery_->setViewMode(QListView::IconMode);
+	broadcastGallery_->setIconSize(QSize(112, 63));
+	broadcastGallery_->setResizeMode(QListView::Adjust);
+	broadcastGallery_->setMovement(QListView::Static);
+	broadcastGallery_->setWrapping(true);
+	broadcastGallery_->setGridSize(QSize(124, 96));
+	broadcastGallery_->setUniformItemSizes(true);
+	broadcastGallery_->setWordWrap(true);
+	broadcastGallery_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	/* Selection as an outline so the thumbnail keeps its colors. */
+	broadcastGallery_->setStyleSheet(
+		QString("QListWidget { background: transparent; }"
+			"QListWidget::item { border: 2px solid transparent; border-radius: 4px; }"
+			"QListWidget::item:selected { background: transparent; border-color: %1; }"
+			"QListWidget::item:hover:!selected { border-color: palette(mid); }")
+			.arg(QColor::fromRgba(tokens::kSelection).name()));
+	broadcastGallery_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	broadcastGallery_->setFrameShape(QFrame::NoFrame);
+	broadcastGallery_->setSelectionMode(QAbstractItemView::SingleSelection);
+	bl->addWidget(broadcastGallery_);
+
+	broadcastEmpty_ = new QLabel(body);
+	broadcastEmpty_->setWordWrap(true);
+	bl->addWidget(broadcastEmpty_);
+
+	auto *nums = new QWidget(body);
+	auto *nl = row(nums);
+	broadcastGap_ = new NumericField(QString::fromUtf8("\xE2\x86\x94"), T("Broadcast.Gap"), nums);
+	broadcastMargin_ = new NumericField("M", T("Broadcast.Margin"), nums);
+	nl->addWidget(broadcastGap_);
+	nl->addWidget(broadcastMargin_);
+	bl->addWidget(nums);
+
+	broadcastLock_ = new QCheckBox(T("Broadcast.Lock"), body);
+	broadcastLock_->setToolTip(T("Broadcast.LockTooltip"));
+	bl->addWidget(broadcastLock_);
+
+	auto *buttons = new QWidget(body);
+	auto *btl = row(buttons);
+	broadcastApply_ = new QPushButton(T("Broadcast.Apply"), buttons);
+	broadcastApply_->setDefault(true);
+	broadcastScene_ = new QPushButton(T("Broadcast.NewScene"), buttons);
+	broadcastScene_->setToolTip(T("Broadcast.NewSceneTooltip"));
+	btl->addWidget(broadcastApply_, 1);
+	btl->addWidget(broadcastScene_, 1);
+	bl->addWidget(buttons);
+
+	auto spec = [] {
+		core::BroadcastSpec s;
+		s.gap = Store::instance().settings().broadcastGap;
+		s.margin = Store::instance().settings().broadcastMargin;
+		return s;
+	};
+	auto kinds = [] {
+		return (commands::KindMode)Store::instance().settings().broadcastKinds;
+	};
+
+	connect(broadcastKinds_, &QComboBox::activated, this, [this](int i) {
+		Store::instance().settings().broadcastKinds = std::clamp(i, 0, 2);
+		Store::instance().saveSettings();
+		syncBroadcast();
+		previewBroadcast(true);
+	});
+	connect(broadcastGallery_, &QListWidget::currentItemChanged, this, [this] {
+		if (!updating_)
+			previewBroadcast(true);
+	});
+	auto number = [this](double ViewSettings::*field) {
+		return [this, field](const core::Expression &e) {
+			ViewSettings &s = Store::instance().settings();
+			double v = 0;
+			if (!e.apply(s.*field, v))
+				return;
+			s.*field = std::clamp(v, 0.0, 1000.0);
+			Store::instance().saveSettings();
+			syncBroadcast();
+			previewBroadcast(true);
+		};
+	};
+	connect(broadcastGap_, &NumericField::committed, this, number(&ViewSettings::broadcastGap));
+	connect(broadcastMargin_, &NumericField::committed, this, number(&ViewSettings::broadcastMargin));
+	connect(broadcastLock_, &QCheckBox::toggled, this, [this](bool on) {
+		if (updating_)
+			return;
+		Store::instance().settings().broadcastLock = on;
+		Store::instance().saveSettings();
+	});
+	connect(broadcastApply_, &QPushButton::clicked, this, [this, spec, kinds] {
+		QListWidgetItem *it = broadcastGallery_->currentItem();
+		if (it)
+			commands::applyBroadcast(it->data(Qt::UserRole).toString().toStdString(), spec(), kinds(),
+						 Store::instance().settings().broadcastLock);
+	});
+	connect(broadcastScene_, &QPushButton::clicked, this, [this, spec, kinds] {
+		QListWidgetItem *it = broadcastGallery_->currentItem();
+		if (it)
+			commands::createBroadcastScene(it->data(Qt::UserRole).toString().toStdString(), it->text(),
+						       spec(), kinds(), Store::instance().settings().broadcastLock);
+	});
+
+	QWidget *sec = section(T("Section.Broadcast"), body);
+	sec->setObjectName("LayoutsBroadcastSection");
+	sec->installEventFilter(this);
+	return sec;
+}
+
+void InspectorDock::syncBroadcast()
+{
+	const bool was = updating_;
+	updating_ = true;
+	const ViewSettings &s = Store::instance().settings();
+	broadcastKinds_->setCurrentIndex(s.broadcastKinds);
+	broadcastGap_->setValue(s.broadcastGap);
+	broadcastMargin_->setValue(s.broadcastMargin);
+	broadcastLock_->setChecked(s.broadcastLock);
+
+	int cams = 0, screens = 0;
+	for (core::SlotKind k : commands::selectionKinds((commands::KindMode)s.broadcastKinds))
+		(k == core::SlotKind::Camera ? cams : screens)++;
+	broadcastSummary_->setText(T("Broadcast.Summary").arg(cams).arg(screens));
+
+	const std::vector<core::BroadcastTemplate> list = core::templatesFor(cams, screens);
+	QStringList keys;
+	for (const core::BroadcastTemplate &t : list)
+		keys << QString::fromStdString(t.key);
+	QStringList shown;
+	for (int i = 0; i < broadcastGallery_->count(); i++)
+		shown << broadcastGallery_->item(i)->data(Qt::UserRole).toString();
+	if (keys != shown) {
+		const QString current = broadcastGallery_->currentItem()
+						? broadcastGallery_->currentItem()->data(Qt::UserRole).toString()
+						: QString();
+		broadcastGallery_->clear();
+		const QColor cam = QColor::fromRgba(tokens::kSelection);
+		const QColor scr = palette().color(QPalette::Mid);
+		const QColor bg = palette().color(QPalette::Base);
+		for (const QString &k : keys) {
+			auto *item = new QListWidgetItem(broadcastThumb(k.toStdString(), cam, scr, bg),
+							 T(("Broadcast." + k.toStdString()).c_str()),
+							 broadcastGallery_);
+			item->setData(Qt::UserRole, k);
+			item->setToolTip(item->text());
+			if (k == current)
+				broadcastGallery_->setCurrentItem(item);
+		}
+		if (!broadcastGallery_->currentItem() && broadcastGallery_->count() > 0)
+			broadcastGallery_->setCurrentRow(0);
+		static_cast<Gallery *>(broadcastGallery_)->fitRows();
+	}
+	const bool any = !keys.isEmpty();
+	broadcastGallery_->setVisible(any);
+	broadcastEmpty_->setVisible(!any);
+	broadcastEmpty_->setText(T("Broadcast.None"));
+	broadcastApply_->setEnabled(any);
+	broadcastScene_->setEnabled(any);
+	updating_ = was;
+}
+
+void InspectorDock::previewBroadcast(bool force)
+{
+	if (!force && !hoverBroadcast_)
+		return;
+	QListWidgetItem *it = broadcastGallery_->currentItem();
+	if (!it || !broadcastGallery_->isVisible()) {
+		commands::showPreview({});
+		return;
+	}
+	core::BroadcastSpec spec;
+	spec.gap = Store::instance().settings().broadcastGap;
+	spec.margin = Store::instance().settings().broadcastMargin;
+	previewOwner_ = 3;
+	commands::showPreview(
+		commands::broadcastFrames(it->data(Qt::UserRole).toString().toStdString(), spec,
+					  (commands::KindMode)Store::instance().settings().broadcastKinds));
+}
+
 /* ------------------------------------------------------------ constraints */
 
 QWidget *InspectorDock::buildConstraintSection()
@@ -742,7 +1007,26 @@ QWidget *InspectorDock::buildConstraintSection()
 	};
 	connect(constraintH_, &QComboBox::activated, this, [apply](int i) { apply(true, i); });
 	connect(constraintV_, &QComboBox::activated, this, [apply](int i) { apply(false, i); });
-	return section(T("Section.Constraints"), body);
+	/* Advanced: most people only need "Lock the layout" in Broadcast layouts. */
+	auto *box = new QWidget(content_);
+	auto *bl2 = new QVBoxLayout(box);
+	bl2->setContentsMargins(0, 0, 0, 0);
+	bl2->setSpacing(tokens::kRowSpacing);
+	auto *toggle = new QToolButton(box);
+	toggle->setText(T("Section.Advanced"));
+	toggle->setCheckable(true);
+	toggle->setAutoRaise(true);
+	toggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+	toggle->setArrowType(Qt::RightArrow);
+	toggle->setToolTip(T("Constraint.HTooltip"));
+	body->setVisible(false);
+	connect(toggle, &QToolButton::toggled, this, [toggle, body](bool on) {
+		toggle->setArrowType(on ? Qt::DownArrow : Qt::RightArrow);
+		body->setVisible(on);
+	});
+	bl2->addWidget(toggle);
+	bl2->addWidget(body);
+	return box;
 }
 
 /* ------------------------------------------------------------ auto layout */
@@ -981,11 +1265,14 @@ bool InspectorDock::eventFilter(QObject *obj, QEvent *event)
 		} else if (obj == presetSection_) {
 			hoverPreset_ = true;
 			previewPreset(true);
+		} else if (obj == broadcastSection_) {
+			hoverBroadcast_ = true;
+			previewBroadcast(true);
 		}
 	} else if ((event->type() == QEvent::Leave || event->type() == QEvent::Hide) &&
-		   (obj == layoutSection_ || obj == presetSection_)) {
+		   (obj == layoutSection_ || obj == presetSection_ || obj == broadcastSection_)) {
 		/* Hide too: a section hidden under the mouse never receives Leave. */
-		(obj == layoutSection_ ? hoverLayout_ : hoverPreset_) = false;
+		(obj == layoutSection_ ? hoverLayout_ : obj == presetSection_ ? hoverPreset_ : hoverBroadcast_) = false;
 		clearPreviewIfIdle();
 	}
 	return QWidget::eventFilter(obj, event);
@@ -1000,6 +1287,8 @@ void InspectorDock::clearPreviewIfIdle()
 		keep = hoverLayout_ && layoutSection_->isVisible();
 	else if (previewOwner_ == 2)
 		keep = (hoverPreset_ && presetSection_->isVisible()) || preset_->view()->isVisible();
+	else if (previewOwner_ == 3)
+		keep = hoverBroadcast_ && broadcastSection_->isVisible();
 	if (!keep) {
 		previewOwner_ = 0;
 		commands::showPreview({});
@@ -1008,7 +1297,7 @@ void InspectorDock::clearPreviewIfIdle()
 
 void InspectorDock::hideEvent(QHideEvent *e)
 {
-	hoverLayout_ = hoverPreset_ = false;
+	hoverLayout_ = hoverPreset_ = hoverBroadcast_ = false;
 	commands::showPreview({});
 	QWidget::hideEvent(e);
 }

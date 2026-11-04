@@ -7,6 +7,16 @@
   to the OBS window any more and nothing opens by itself at startup. Replaces the two docks of 0.1.
 - Guides are undoable: adding, moving, locking, deleting or clearing guides is one entry in Edit > Undo
   (a whole drag included); Escape during a drag puts the guide back.
+- **Broadcast layouts**: select your guests and screens, pick a TV-style layout and apply it, or
+  create a new scene with it. 23 layouts for 1 to 6 cameras, with or without one or two screens:
+  full screen, duo, three columns, host + 2, 2 × 2, host + 3, 2 + 3, host + 4, 3 × 2, screen +
+  picture in picture, screen + guests on the side or below, two screens. Cameras fill their tile
+  (cropped, keeping the top of the frame where faces are); screens are always shown whole. Cameras
+  are detected (video capture devices, NDI, DeckLink, AJA), or count everything as cameras or as
+  screens. Gap and margin settings, previewed on the Canvas.
+- **Lock the layout** (on by default): applied sources are locked so they can't be dragged by
+  accident, and scale with the canvas if its resolution changes.
+- Constraints moved into a collapsed "Advanced" part of the Inspector.
 - Fixed: a crash when the cursor rested over the Inspector while it refreshed.
 - Fixed: a violet preview frame could stay on the Canvas after the selection changed.
 

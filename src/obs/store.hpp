@@ -66,6 +66,10 @@ struct ViewSettings {
 	core::PresetSpec preset;   /* margins of composition presets */
 	QByteArray windowGeometry; /* Layouts window */
 	QByteArray splitterState;
+	double broadcastGap = 8; /* broadcast layouts */
+	double broadcastMargin = 0;
+	bool broadcastLock = true;
+	int broadcastKinds = 0; /* 0 auto, 1 all cameras, 2 all screens */
 	QColor guideColor{0xFF, 0x3D, 0x71};
 };
 

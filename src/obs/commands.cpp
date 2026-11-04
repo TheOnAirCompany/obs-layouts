@@ -19,12 +19,17 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "commands.hpp"
 
 #include "edit-context.hpp"
+#include "constraints.hpp"
 #include "edit-session.hpp"
+#include "obs-convert.hpp"
 #include "store.hpp"
 
+#include <obs-frontend-api.h>
 #include <obs-module.h>
 
 #include <cmath>
+#include <algorithm>
+#include <cstring>
 #include <functional>
 #include <memory>
 
@@ -514,6 +519,199 @@ bool applyPreset(core::Preset preset, const core::PresetSpec &spec)
 	const std::vector<core::Frame> frames = presetFrames(preset, spec);
 	showPreview({});
 	return applyFrames("Undo.Preset", sel, frames);
+}
+
+/* ------------------------------------------------------------ broadcast */
+
+namespace {
+
+bool isCameraSource(obs_source_t *src)
+{
+	const char *id = src ? obs_source_get_unversioned_id(src) : nullptr;
+	if (!id)
+		return false;
+	static const char *kCameraIds[] = {"av_capture_input", "macos-avcapture", "dshow_input", "v4l2_input",
+					   "decklink-input",   "ndi_source",      "aja_source"};
+	for (const char *c : kCameraIds) {
+		if (strncmp(id, c, strlen(c)) == 0)
+			return true;
+	}
+	return false;
+}
+
+struct Placed {
+	ItemEntry entry;
+	core::SlotKind kind;
+	core::Rect cell;
+};
+
+std::vector<ItemEntry> topLevelSelection()
+{
+	std::vector<ItemEntry> out;
+	for (const ItemEntry &e : selectionCopy()) {
+		if (e.groupId == 0)
+			out.push_back(e);
+	}
+	return out;
+}
+
+std::vector<Placed> assignSlots(const std::string &key, const core::BroadcastSpec &spec, KindMode mode)
+{
+	const std::vector<ItemEntry> items = topLevelSelection();
+	const std::vector<core::SlotKind> kinds = selectionKinds(mode);
+	const std::vector<core::Slot> targets = core::buildBroadcast(key, EditContext::instance().canvasRect(), spec);
+	std::vector<Placed> out;
+	std::vector<bool> used(items.size(), false);
+	for (const core::Slot &slot : targets) {
+		for (size_t i = 0; i < items.size(); i++) {
+			if (!used[i] && kinds[i] == slot.kind) {
+				used[i] = true;
+				out.push_back({items[i], slot.kind, slot.cell});
+				break;
+			}
+		}
+	}
+	return out;
+}
+
+/* Transform that places a source in a slot: cameras fill it (cropped), screens fit. */
+core::ItemTransform slotTransform(const core::ItemModel &m, core::SlotKind kind, const core::Rect &cell)
+{
+	core::ItemTransform t;
+	t.align = core::kAlignLeft | core::kAlignTop;
+	t.rot = 0;
+	t.boundsType = core::BoundsType::None;
+	if (m.sourceWidth == 0 || m.sourceHeight == 0)
+		return m.t;
+	if (kind == core::SlotKind::Camera) {
+		const core::CoverResult c = core::coverCell(m.sourceWidth, m.sourceHeight, cell.w, cell.h);
+		t.crop = c.crop;
+		t.scale = c.scale;
+		t.pos = {cell.x, cell.y};
+	} else {
+		const core::Frame f = core::fitInCell((double)m.sourceWidth / m.sourceHeight, cell, core::FitMode::Fit);
+		t.scale = {f.width / m.sourceWidth, f.height / m.sourceHeight};
+		const core::Rect r = f.rect();
+		t.pos = {r.x, r.y};
+	}
+	return t;
+}
+
+void lockItem(obs_sceneitem_t *item)
+{
+	obs_sceneitem_set_locked(item, true);
+	/* Keep the same proportions if the canvas resolution ever changes. */
+	setConstraints(item, core::HConstraint::Scale, core::VConstraint::Scale);
+}
+
+} // namespace
+
+std::vector<core::SlotKind> selectionKinds(KindMode mode)
+{
+	std::vector<core::SlotKind> kinds;
+	for (const ItemEntry &e : topLevelSelection()) {
+		if (mode == KindMode::AllCameras)
+			kinds.push_back(core::SlotKind::Camera);
+		else if (mode == KindMode::AllScreens)
+			kinds.push_back(core::SlotKind::Screen);
+		else
+			kinds.push_back(isCameraSource(obs_sceneitem_get_source(e.item)) ? core::SlotKind::Camera
+											 : core::SlotKind::Screen);
+	}
+	return kinds;
+}
+
+std::vector<core::Frame> broadcastFrames(const std::string &key, const core::BroadcastSpec &spec, KindMode mode)
+{
+	std::vector<core::Frame> frames;
+	for (const Placed &p : assignSlots(key, spec, mode)) {
+		const core::ItemModel m{slotTransform(p.entry.model, p.kind, p.cell), p.entry.model.sourceWidth,
+					p.entry.model.sourceHeight};
+		core::ItemModel full = p.entry.model;
+		full.t = m.t;
+		const core::VisualFrame f = core::visualFrame(full);
+		frames.push_back({f.center(), f.width, f.height});
+	}
+	return frames;
+}
+
+bool applyBroadcast(const std::string &key, const core::BroadcastSpec &spec, KindMode mode, bool lock)
+{
+	const std::vector<Placed> placed = assignSlots(key, spec, mode);
+	if (placed.empty())
+		return false;
+	std::vector<Change> changes;
+	for (const Placed &p : placed)
+		changes.push_back({p.entry.item, slotTransform(p.entry.model, p.kind, p.cell)});
+	showPreview({});
+	if (!EditSession::run(tr("Undo.Broadcast"), changes))
+		return false;
+	if (key.find("Pip") != std::string::npos) {
+		/* The inset camera overlaps the screen: bring it to the front. */
+		for (const Placed &p : placed) {
+			if (p.kind == core::SlotKind::Camera)
+				obs_sceneitem_set_order(p.entry.item, OBS_ORDER_MOVE_TOP);
+		}
+	}
+	if (lock) {
+		for (const Placed &p : placed)
+			lockItem(p.entry.item);
+		obs_frontend_save();
+	}
+	EditContext::instance().markDirty();
+	return true;
+}
+
+QString createBroadcastScene(const std::string &key, const QString &sceneName, const core::BroadcastSpec &spec,
+			     KindMode mode, bool lock)
+{
+	const std::vector<Placed> placed = assignSlots(key, spec, mode);
+	if (placed.empty())
+		return QString();
+
+	/* A unique name: "Duo 50/50", "Duo 50/50 2"... */
+	QString name = sceneName;
+	for (int i = 2;; i++) {
+		OBSSourceAutoRelease existing = obs_get_source_by_name(name.toUtf8().constData());
+		if (!existing)
+			break;
+		name = sceneName + " " + QString::number(i);
+	}
+
+	obs_canvas_t *canvas = EditContext::instance().sceneSource()
+				       ? obs_source_get_canvas(EditContext::instance().sceneSource())
+				       : obs_get_main_canvas();
+	obs_scene_t *scene = canvas ? obs_canvas_scene_create(canvas, name.toUtf8().constData())
+				    : obs_scene_create(name.toUtf8().constData());
+	if (canvas)
+		obs_canvas_release(canvas);
+	if (!scene)
+		return QString();
+
+	/* Screens first, cameras on top (a picture-in-picture camera must stay visible). */
+	std::vector<Placed> stacked = placed;
+	std::stable_partition(stacked.begin(), stacked.end(),
+			      [](const Placed &p) { return p.kind == core::SlotKind::Screen; });
+	for (const Placed &p : stacked) {
+		obs_sceneitem_t *item = obs_scene_add(scene, obs_sceneitem_get_source(p.entry.item));
+		if (!item)
+			continue;
+		obs_transform_info info = {};
+		obs_sceneitem_crop crop = {};
+		obs_sceneitem_get_info2(item, &info);
+		toObs(slotTransform(p.entry.model, p.kind, p.cell), info, crop);
+		obs_sceneitem_set_info2(item, &info);
+		obs_sceneitem_set_crop(item, &crop);
+		if (lock)
+			lockItem(item);
+	}
+	obs_source_t *source = obs_scene_get_source(scene);
+	if (obs_frontend_preview_program_mode_active())
+		obs_frontend_set_current_preview_scene(source);
+	EditContext::instance().pin(source);
+	obs_scene_release(scene);
+	obs_frontend_save();
+	return name;
 }
 
 void showPreview(const std::vector<core::Frame> &frames)

@@ -46,6 +46,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QImage>
 #include <QMainWindow>
 #include <QKeyEvent>
+#include <QListWidget>
 #include <QMouseEvent>
 #include <QTimer>
 
@@ -686,6 +687,118 @@ void testLayoutsV02()
 		 "multi-resize-keeps-ratio", rectStr(b0) + " -> " + rectStr(b1));
 }
 
+void unlockAll(std::initializer_list<const char *> names)
+{
+	for (const char *n : names) {
+		if (const ItemEntry *e = entry(n)) {
+			obs_sceneitem_set_locked(e->item, false);
+			setConstraints(e->item, core::HConstraint::Left, core::VConstraint::Top);
+		}
+	}
+	EditContext::instance().markDirty();
+}
+
+void testBroadcast()
+{
+	EditContext &ctx = EditContext::instance();
+	resetItem("A", 100, 100);
+	resetItem("B", 700, 400);
+	resetItem("C", 1300, 250);
+	ctx.markDirty();
+
+	/* Color sources count as screens when detected, as cameras when forced. */
+	selectNames({"A", "B"});
+	int screens = 0;
+	for (core::SlotKind k : commands::selectionKinds(commands::KindMode::Auto))
+		screens += k == core::SlotKind::Screen;
+	R->check(screens == 2, "broadcast-detects-screens", QString::number(screens));
+
+	/* Duo split, cameras: each half filled edge to edge (cropped), then locked. */
+	core::BroadcastSpec spec;
+	spec.gap = 8;
+	commands::applyBroadcast("Cam2Split", spec, commands::KindMode::AllCameras, true);
+	ctx.markDirty();
+	const core::Rect a = box("A"), b = box("B");
+	const double half = (1920 - 8) / 2.0;
+	R->check(std::fabs(a.x) < 0.6 && std::fabs(a.y) < 0.6 && std::fabs(a.w - half) < 1.0 &&
+			 std::fabs(a.h - 1080) < 1.0 && std::fabs(b.x - (half + 8)) < 1.0 &&
+			 std::fabs(b.right() - 1920) < 1.0 && std::fabs(b.h - 1080) < 1.0,
+		 "broadcast-duo-fills-halves", rectStr(a) + rectStr(b));
+	const ItemEntry *ea = entry("A");
+	obs_sceneitem_crop crop = {};
+	if (ea)
+		obs_sceneitem_get_crop(ea->item, &crop);
+	core::HConstraint h;
+	core::VConstraint v;
+	if (ea)
+		getConstraints(ea->item, h, v);
+	R->check(ea && crop.left > 0 && crop.right > 0 && obs_sceneitem_locked(ea->item) &&
+			 h == core::HConstraint::Scale && v == core::VConstraint::Scale,
+		 "broadcast-camera-cropped-and-locked", QString("crop %1/%2").arg(crop.left).arg(crop.right));
+
+	/* Same items as screens: never cropped, whole content inside the half. */
+	unlockAll({"A", "B"});
+	commands::applyBroadcast("Screen2Split", spec, commands::KindMode::AllScreens, false);
+	ctx.markDirty();
+	obs_sceneitem_crop crop2 = {};
+	if ((ea = entry("A")))
+		obs_sceneitem_get_crop(ea->item, &crop2);
+	const core::Rect a2 = box("A");
+	R->check(ea && crop2.left == 0 && crop2.right == 0 && crop2.top == 0 && crop2.bottom == 0 &&
+			 std::fabs(a2.w / a2.h - 2.0) < 0.01 && a2.right() <= half + 0.6 &&
+			 !obs_sceneitem_locked(ea->item),
+		 "broadcast-screen-fit-uncropped", rectStr(a2));
+
+	/* The Inspector lists the templates for the selection. */
+	Store::instance().settings().broadcastKinds = 1;
+	selectNames({"A", "B", "C"});
+	emit ctx.itemsChanged();
+	auto *gallery = g_window->findChild<QListWidget *>();
+	R->check(gallery && gallery->count() == 2, "broadcast-gallery-three-guests",
+		 gallery ? QString::number(gallery->count()) : "no gallery");
+	Store::instance().settings().broadcastKinds = 0;
+	emit ctx.itemsChanged();
+	R->check(gallery && !gallery->isVisible(), "broadcast-gallery-empty-for-three-screens");
+}
+
+void testBroadcastScene()
+{
+	EditContext &ctx = EditContext::instance();
+	ctx.follow();
+	const QString before = ctx.sceneName();
+	selectNames({"A", "B", "C"});
+	core::BroadcastSpec spec;
+	const QString name = commands::createBroadcastScene("Cam3Columns", "Three columns", spec,
+							    commands::KindMode::AllCameras, true);
+	OBSSourceAutoRelease src = obs_get_source_by_name(name.toUtf8().constData());
+	obs_scene_t *scene = src ? obs_scene_from_source(src) : nullptr;
+	int count = 0;
+	if (scene)
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+				(*(int *)p) += obs_sceneitem_locked(item) ? 1 : 0;
+				return true;
+			},
+			&count);
+	OBSSourceAutoRelease original = obs_get_source_by_name(before.toUtf8().constData());
+	int originalLocked = 0;
+	if (obs_scene_t *os = original ? obs_scene_from_source(original) : nullptr)
+		obs_scene_enum_items(
+			os,
+			[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+				(*(int *)p) += obs_sceneitem_locked(item) ? 1 : 0;
+				return true;
+			},
+			&originalLocked);
+	R->check(scene && count == 3 && ctx.sceneName() == name && originalLocked == 0, "broadcast-new-scene",
+		 name + " locked " + QString::number(count));
+	if (src)
+		obs_source_remove(src);
+	ctx.pin(original);
+	ctx.markDirty();
+}
+
 void testCropMode()
 {
 	EditContext &ctx = EditContext::instance();
@@ -1142,6 +1255,22 @@ void runSelfTest(ui::LayoutsWindow *window)
 				g_window->setGeometry(0, 380, 1200, 620);
 				return;
 			}
+			if (getenv("LAYOUTS_DEMO_BROADCAST")) {
+				/* Three guests: the Broadcast layouts gallery, first template previewed. */
+				Store::instance().settings().broadcastKinds = 1;
+				selectNames({"Camera", "Guest camera", "Slides"});
+				g_window->setGeometry(0, 120, 1400, 900);
+				QTimer::singleShot(800, [] {
+					core::BroadcastSpec spec;
+					commands::showPreview(commands::broadcastFrames(
+						"Cam3OneTwo", spec, commands::KindMode::AllCameras));
+				});
+				if (const char *grab = getenv("LAYOUTS_DEMO_GRAB"))
+					QTimer::singleShot(2000, [path = QString::fromUtf8(grab)] {
+						g_window->grab().save(path);
+					});
+				return;
+			}
 			selectNames({"Guest camera", "Slides"});
 			if (getenv("LAYOUTS_DEMO_PREVIEW")) {
 				core::PresetSpec ps;
@@ -1171,6 +1300,9 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(300, [] { testUndo(); });
 		R->add(300, [] { testCanvasSnapAndRuler(); });
 		R->add(300, [] { testLayoutsV02(); });
+		R->add(300, [] { testBroadcast(); });
+		R->add(300, [] { testBroadcastScene(); });
+		R->add(300, [] { unlockAll({"A", "B", "C"}); });
 		R->add(300, [] { testCropMode(); });
 		R->add(300, [] { testHotkeys(); });
 		R->add(300, [] { testGroup(); });

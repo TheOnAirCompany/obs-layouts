@@ -33,5 +33,6 @@ Status legend: ✅ done in 0.1.0 · ⏭ next.
 | Crop by dragging handles | ✅ on `dev/0.2`: crop mode (C), since Alt already resizes from the center |
 | Multi-selection resize on the Canvas | ✅ on `dev/0.2` |
 | Configurable shortcuts through OBS hotkeys | ✅ on `dev/0.2` (`obs_hotkey_register_frontend`, bindings in `hotkeys.json`) |
+| Broadcast layouts: 23 TV-style templates for 1–6 cameras and 0–2 screens, camera cover crop, screen fit, lock, new scene | ✅ on `dev/0.2` (`core/broadcast`, Inspector section, self-tests `broadcast-*`) |
 | Design review follow-up | tokens in `src/ui/theme.hpp` |
 | Windows and Linux runtime validation, signed packages | needs certificates |

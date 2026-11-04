@@ -28,6 +28,8 @@ class QButtonGroup;
 class QCheckBox;
 class QComboBox;
 class QLabel;
+class QListWidget;
+class QPushButton;
 class QSpinBox;
 class QToolButton;
 class QVBoxLayout;
@@ -54,6 +56,9 @@ private:
 	QWidget *buildLayoutSection();
 	QWidget *buildPresetSection();
 	QWidget *buildConstraintSection();
+	QWidget *buildBroadcastSection();
+	void syncBroadcast();
+	void previewBroadcast(bool force = false);
 	void syncLayoutControls();
 	void previewLayout(bool force = false);
 	void previewPreset(bool force = false, int index = -1);
@@ -95,7 +100,7 @@ private:
 	bool updating_ = false;
 	bool hoverLayout_ = false;
 	bool refreshing_ = false;
-	int previewOwner_ = 0; /* 0 none, 1 auto layout, 2 presets */
+	int previewOwner_ = 0; /* 0 none, 1 auto layout, 2 presets, 3 broadcast */
 	bool hoverPreset_ = false;
 
 	/* auto layout (multi) */
@@ -117,6 +122,19 @@ private:
 	NumericField *presetGap_ = nullptr;
 	NumericField *presetCorner_ = nullptr;
 	QToolButton *presetApply_ = nullptr;
+
+	/* broadcast layouts */
+	QWidget *broadcastSection_ = nullptr;
+	QLabel *broadcastSummary_ = nullptr;
+	QComboBox *broadcastKinds_ = nullptr;
+	QListWidget *broadcastGallery_ = nullptr;
+	QLabel *broadcastEmpty_ = nullptr;
+	NumericField *broadcastGap_ = nullptr;
+	NumericField *broadcastMargin_ = nullptr;
+	QCheckBox *broadcastLock_ = nullptr;
+	QPushButton *broadcastApply_ = nullptr;
+	QPushButton *broadcastScene_ = nullptr;
+	bool hoverBroadcast_ = false;
 
 	/* constraints */
 	QWidget *constraintSection_ = nullptr;
