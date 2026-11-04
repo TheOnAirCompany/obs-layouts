@@ -139,6 +139,57 @@ void Store::notifySettingsChanged(bool persist)
 	emit settingsChanged();
 }
 
+namespace {
+void undoRedoGuides(const char *data)
+{
+	Store::instance().restoreGuidesJson(data);
+	obs_frontend_save();
+}
+} // namespace
+
+std::string Store::guidesJson()
+{
+	OBSDataAutoRelease d = obs_data_create();
+	saveGuides(d);
+	const char *json = obs_data_get_json(d);
+	return json ? json : "";
+}
+
+void Store::restoreGuidesJson(const char *json)
+{
+	OBSDataAutoRelease d = obs_data_create_from_json(json);
+	if (d)
+		loadGuides(d); /* emits guidesChanged */
+}
+
+void Store::beginGuideEdit()
+{
+	guideBefore_ = guidesJson();
+	guideEditing_ = true;
+}
+
+void Store::endGuideEdit(const QString &undoLabel)
+{
+	notifyGuidesChanged();
+	if (!guideEditing_)
+		return;
+	guideEditing_ = false;
+	const std::string after = guidesJson();
+	if (after != guideBefore_) {
+		obs_frontend_add_undo_redo_action(undoLabel.toUtf8().constData(), undoRedoGuides, undoRedoGuides,
+						  guideBefore_.c_str(), after.c_str(), false);
+		obs_frontend_save(); /* guides live in the scene collection */
+	}
+}
+
+void Store::cancelGuideEdit()
+{
+	if (!guideEditing_)
+		return;
+	guideEditing_ = false;
+	restoreGuidesJson(guideBefore_.c_str());
+}
+
 void Store::saveGuides(obs_data_t *data)
 {
 	guides_.pruneOrphans(aliveSceneUuids());
@@ -251,6 +302,29 @@ void Store::loadSettings()
 	b("block_on_air", s.blockOnAir);
 	b("ratio_lock", s.ratioLock);
 	b("first_run_done", s.firstRunDone);
+	if (obs_data_has_user_value(d, "flow_direction"))
+		s.flow.direction = (core::FlowDirection)std::clamp((int)obs_data_get_int(d, "flow_direction"), 0, 2);
+	f("flow_gap", s.flow.gap, -10000.0, 10000.0);
+	f("flow_padding", s.flow.padding, 0.0, 10000.0);
+	if (obs_data_has_user_value(d, "flow_main_align"))
+		s.flow.mainAlign = (core::FlowAlign)std::clamp((int)obs_data_get_int(d, "flow_main_align"), 0, 2);
+	if (obs_data_has_user_value(d, "flow_cross_align"))
+		s.flow.crossAlign = (core::FlowAlign)std::clamp((int)obs_data_get_int(d, "flow_cross_align"), 0, 2);
+	if (obs_data_has_user_value(d, "flow_sizing"))
+		s.flow.sizing = (core::FlowSizing)std::clamp((int)obs_data_get_int(d, "flow_sizing"), 0, 1);
+	if (obs_data_has_user_value(d, "flow_columns"))
+		s.flow.columns = std::clamp((int)obs_data_get_int(d, "flow_columns"), 1, 50);
+	b("flow_in_canvas", s.flowInCanvas);
+	f("preset_margin", s.preset.margin, 0.0, 10000.0);
+	f("preset_gap", s.preset.gap, 0.0, 10000.0);
+	f("preset_corner_scale", s.preset.cornerScale, 0.05, 1.0);
+	f("broadcast_gap", s.broadcastGap, 0.0, 1000.0);
+	f("broadcast_margin", s.broadcastMargin, 0.0, 1000.0);
+	b("broadcast_lock", s.broadcastLock);
+	if (obs_data_has_user_value(d, "broadcast_kinds"))
+		s.broadcastKinds = std::clamp((int)obs_data_get_int(d, "broadcast_kinds"), 0, 2);
+	s.windowGeometry = QByteArray::fromBase64(obs_data_get_string(d, "window_geometry"));
+	s.splitterState = QByteArray::fromBase64(obs_data_get_string(d, "splitter_state"));
 	if (obs_data_has_user_value(d, "guide_color")) {
 		const QColor c(QString::fromUtf8(obs_data_get_string(d, "guide_color")));
 		if (c.isValid())
@@ -297,6 +371,23 @@ void Store::saveSettings()
 	obs_data_set_bool(d, "block_on_air", s.blockOnAir);
 	obs_data_set_bool(d, "ratio_lock", s.ratioLock);
 	obs_data_set_bool(d, "first_run_done", s.firstRunDone);
+	obs_data_set_int(d, "flow_direction", (int)s.flow.direction);
+	obs_data_set_double(d, "flow_gap", s.flow.gap);
+	obs_data_set_double(d, "flow_padding", s.flow.padding);
+	obs_data_set_int(d, "flow_main_align", (int)s.flow.mainAlign);
+	obs_data_set_int(d, "flow_cross_align", (int)s.flow.crossAlign);
+	obs_data_set_int(d, "flow_sizing", (int)s.flow.sizing);
+	obs_data_set_int(d, "flow_columns", s.flow.columns);
+	obs_data_set_bool(d, "flow_in_canvas", s.flowInCanvas);
+	obs_data_set_double(d, "preset_margin", s.preset.margin);
+	obs_data_set_double(d, "preset_gap", s.preset.gap);
+	obs_data_set_double(d, "preset_corner_scale", s.preset.cornerScale);
+	obs_data_set_double(d, "broadcast_gap", s.broadcastGap);
+	obs_data_set_double(d, "broadcast_margin", s.broadcastMargin);
+	obs_data_set_bool(d, "broadcast_lock", s.broadcastLock);
+	obs_data_set_int(d, "broadcast_kinds", s.broadcastKinds);
+	obs_data_set_string(d, "window_geometry", s.windowGeometry.toBase64().constData());
+	obs_data_set_string(d, "splitter_state", s.splitterState.toBase64().constData());
 	obs_data_set_string(d, "guide_color", s.guideColor.name(QColor::HexRgb).toUtf8().constData());
 
 	if (!obs_data_save_json_safe(d, path.c_str(), "tmp", "bak"))

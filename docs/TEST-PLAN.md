@@ -6,7 +6,7 @@
 cmake -S tests -B build_tests && cmake --build build_tests && ctest --test-dir build_tests
 ```
 
-60 cases, run on every push by CI on Linux, macOS and Windows:
+69 cases (0.2 branch), run on every push to `main` and every pull request by CI on Linux, macOS and Windows:
 
 | Area | Covered |
 |---|---|
@@ -16,6 +16,7 @@ cmake -S tests -B build_tests && cmake --build build_tests && ctest --test-dir b
 | Snapping | canvas edges and center; threshold; tier priority (guide > grid > item > canvas); disabled; centered between neighbours; same gap as neighbours; single value snapping; measurements (gap and containment) |
 | Grid & rulers | 1-2-5 ticks per zoom, subdivisions, square lines and nearest line, column tracks stretch / fixed / invalid |
 | Expressions | arithmetic, precedence, parentheses, comma decimals, relative operators, `=` absolute, percentages, units, every error path (empty, letters, division by zero, unbalanced, overflow, depth, length) |
+| Layout (0.2) | selection scaling, fit / fill / stretch in a cell, horizontal / vertical / grid flow (order, gap, padding, alignment, fill sizing), presets (corner, split screen, picture in picture, 2 × 2), constraints (pins, stretch, center, scale, none) and OBS's relative mapping round trip |
 | Guides | add / move / lock / remove, invalid positions, scene ↔ global, records round trip, v0 migration, rejected entries, future versions, adopt by name, orphan pruning |
 
 ## 2. In-OBS self-test
@@ -42,7 +43,11 @@ CFFIXED_USER_HOME=/tmp/obs-test-home OBS_PLUGINS_PATH=/tmp/obs-test-plugins \
 | live | Studio Mode duplicate is *Off*; program is *Program*; program while recording is *On air*; blocking refuses an edit; allowing applies it |
 | canvas | OBS 33 additional canvas 1080×1920: canvas size, align right/bottom in that canvas |
 | dock | the Canvas keeps rendering after being docked and floated again |
+| core (0.2) | auto layout horizontal and grid, preview shown and cleared, hovering the presets section previews, corner and split-screen presets, mouse-driven multi-selection resize keeps the ratio, crop mode drag crops 50 source px with the image in place, hotkeys (toggle grid, align left) |
+| canvas (0.2) | constraints on an extra canvas reset from 1920×1080 to 1280×720: right/bottom keeps its margins, left-and-right/top stretches, unconstrained follows OBS's own mapping |
 | perf | 10 / 50 / 100 / 250 items: Canvas draw time, OBS frame time, lagged frames, no rendering when hidden |
+
+Result on the 0.2 branch, complete suite: **77 checks, 0 failures, no crash**.
 
 Result for 0.1.0 on macOS 27 / Apple Silicon / OBS 33.0.1, complete suite on the final code:
 **60 checks, 0 failures, no crash** (the Studio Mode duplicate check runs only when Studio Mode is

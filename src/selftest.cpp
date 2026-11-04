@@ -25,11 +25,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "core/expression.hpp"
 #include "obs/commands.hpp"
+#include "obs/constraints.hpp"
 #include "obs/edit-context.hpp"
+#include "obs/hotkeys.hpp"
 #include "obs/obs-convert.hpp"
 #include "obs/store.hpp"
 #include "ui/canvas-dock.hpp"
 #include "ui/canvas-view.hpp"
+#include "ui/inspector-dock.hpp"
+#include "ui/layouts-window.hpp"
 #include "ui/ruler.hpp"
 
 #include <obs-frontend-api.h>
@@ -38,10 +42,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <QAction>
 #include <QApplication>
-#include <QDockWidget>
 #include <QFile>
 #include <QImage>
 #include <QMainWindow>
+#include <QKeyEvent>
+#include <QListWidget>
 #include <QMouseEvent>
 #include <QTimer>
 
@@ -87,6 +92,7 @@ struct Runner {
 
 Runner *R = nullptr;
 ui::CanvasDock *g_dock = nullptr;
+ui::LayoutsWindow *g_window = nullptr;
 
 OBSSourceAutoRelease colorSource(const char *name, uint32_t w, uint32_t h, uint32_t abgr)
 {
@@ -557,6 +563,288 @@ void testCanvasSnapAndRuler()
 	const size_t afterCount = store.guides().sceneGuides(ctx.sceneUuid().toStdString()).size();
 	R->check(ruler && afterCount == before + 1, "ruler-drag-creates-guide",
 		 QString("%1 -> %2").arg(before).arg(afterCount));
+
+	/* Guide edits are one OBS undo entry each. */
+	QAction *undo = findAction(QKeySequence(QKeySequence::Undo));
+	QAction *redo = findAction(QKeySequence(QKeySequence::Redo));
+	if (undo && redo) {
+		undo->trigger();
+		const size_t afterUndo = store.guides().sceneGuides(ctx.sceneUuid().toStdString()).size();
+		redo->trigger();
+		const size_t afterRedo = store.guides().sceneGuides(ctx.sceneUuid().toStdString()).size();
+		R->check(afterUndo == before && afterRedo == before + 1, "guide-undo-redo",
+			 QString("undo %1, redo %2").arg(afterUndo).arg(afterRedo));
+	}
+}
+
+void testLayoutsV02()
+{
+	EditContext &ctx = EditContext::instance();
+	resetItem("A", 100, 100);
+	resetItem("B", 700, 400);
+	resetItem("C", 1300, 250);
+	ctx.markDirty();
+
+	/* Auto layout: horizontal, gap 30, inside the canvas, vertically centered. */
+	selectNames({"A", "B", "C"});
+	core::FlowSpec fs;
+	fs.direction = core::FlowDirection::Horizontal;
+	fs.gap = 30;
+	fs.padding = 40;
+	fs.crossAlign = core::FlowAlign::Center;
+	commands::autoLayout(fs, true);
+	ctx.markDirty();
+	R->check(box("A").x == 40 && std::fabs(box("B").x - (40 + 400 + 30)) < 0.6 &&
+			 std::fabs(box("C").x - (40 + 400 + 30 + 300 + 30)) < 0.6 &&
+			 std::fabs(box("B").centerY() - 540) < 0.6,
+		 "auto-layout-horizontal", rectStr(box("A")) + rectStr(box("B")) + rectStr(box("C")));
+
+	/* Grid of 2 columns in the selection. */
+	fs.direction = core::FlowDirection::Grid;
+	fs.columns = 2;
+	fs.gap = 10;
+	fs.padding = 0;
+	fs.crossAlign = core::FlowAlign::Start;
+	commands::autoLayout(fs, false);
+	ctx.markDirty();
+	R->check(std::fabs(box("C").y - (box("A").y + 300 + 10)) < 0.6, "auto-layout-grid",
+		 rectStr(box("A")) + rectStr(box("B")) + rectStr(box("C")));
+
+	/* A stray preview (nothing hovered) goes away at the next selection change. */
+	for (const char *name : {"LayoutsAutoLayoutSection", "LayoutsPresetSection"}) {
+		if (QWidget *sec = g_window->findChild<QWidget *>(name)) {
+			QEvent leave(QEvent::Leave); /* the real cursor may sit over the window */
+			QApplication::sendEvent(sec, &leave);
+		}
+	}
+	commands::showPreview(commands::flowFrames(fs, true));
+	emit ctx.itemsChanged();
+	R->check(ctx.preview().empty(), "stray-preview-cleared", QString::number(ctx.preview().size()));
+
+	/* Hovering the presets section of the Inspector previews on the Canvas. */
+	selectNames({"A", "B"});
+	emit ctx.itemsChanged(); /* let the Inspector list the presets for 2 items */
+	if (QWidget *sec = g_window->findChild<QWidget *>("LayoutsPresetSection")) {
+		QEvent enter(QEvent::Enter);
+		QApplication::sendEvent(sec, &enter);
+		const size_t shown = ctx.preview().size();
+		/* Selection cleared while hovering: the section hides, the preview must go. */
+		ctx.clearSelection();
+		emit ctx.itemsChanged();
+		R->check(shown == 2 && ctx.preview().empty(), "preview-cleared-when-selection-cleared",
+			 QString::number(ctx.preview().size()));
+		selectNames({"A", "B"});
+		emit ctx.itemsChanged();
+		QApplication::sendEvent(sec, &enter);
+		QEvent leave(QEvent::Leave);
+		QApplication::sendEvent(sec, &leave);
+		R->check(shown == 2 && ctx.preview().empty(), "preset-hover-preview", QString::number(shown));
+	} else {
+		R->check(false, "preset-hover-preview", "section not found");
+	}
+
+	/* Presets. */
+	resetItem("B", 700, 400);
+	ctx.markDirty();
+	selectNames({"B"});
+	core::PresetSpec ps;
+	ps.margin = 40;
+	ps.cornerScale = 0.25;
+	commands::applyPreset(core::Preset::CornerBottomRight, ps);
+	ctx.markDirty();
+	R->check(std::fabs(box("B").right() - 1880) < 0.6 && std::fabs(box("B").bottom() - 1040) < 0.6 &&
+			 std::fabs(box("B").w - 480) < 0.6,
+		 "preset-corner", rectStr(box("B")));
+	resetItem("A", 0, 0);
+	resetItem("B", 0, 0);
+	ctx.markDirty();
+	selectNames({"A", "B"});
+	ps.gap = 20;
+	commands::applyPreset(core::Preset::SplitScreen, ps);
+	ctx.markDirty();
+	R->check(box("A").right() < box("B").left() && std::fabs(box("A").w - 910) < 0.6 &&
+			 std::fabs(box("A").w / box("A").h - 2.0) < 0.01,
+		 "preset-split-keeps-ratio", rectStr(box("A")) + rectStr(box("B")));
+
+	/* Multi-selection resize with the bottom-right handle, mouse driven. */
+	resetItem("A", 100, 100);
+	resetItem("B", 700, 400);
+	ctx.markDirty();
+	selectNames({"A", "B"});
+	ui::CanvasView *v = g_dock->view();
+	v->rebuildOverlay();
+	const core::Rect b0 = box("A").united(box("B"));
+	const QPointF h = v->worldToView({b0.right(), b0.bottom()});
+	const double d = 100 * v->zoom(); /* +100 canvas px on x */
+	sendMouse(v, QEvent::MouseButtonPress, h, Qt::LeftButton);
+	for (int i = 1; i <= 10; i++)
+		sendMouse(v, QEvent::MouseMove, h + QPointF(d * i / 10.0, 0), Qt::LeftButton, Qt::ControlModifier);
+	sendMouse(v, QEvent::MouseButtonRelease, h + QPointF(d, 0), Qt::NoButton, Qt::ControlModifier);
+	ctx.markDirty();
+	const core::Rect b1 = box("A").united(box("B"));
+	const double k = (b0.w + 100) / b0.w;
+	R->check(std::fabs(b1.x - b0.x) < 0.6 && std::fabs(b1.w - b0.w * k) < 1.5 && std::fabs(b1.h - b0.h * k) < 1.5,
+		 "multi-resize-keeps-ratio", rectStr(b0) + " -> " + rectStr(b1));
+}
+
+void unlockAll(std::initializer_list<const char *> names)
+{
+	for (const char *n : names) {
+		if (const ItemEntry *e = entry(n)) {
+			obs_sceneitem_set_locked(e->item, false);
+			setConstraints(e->item, core::HConstraint::Left, core::VConstraint::Top);
+		}
+	}
+	EditContext::instance().markDirty();
+}
+
+void testBroadcast()
+{
+	EditContext &ctx = EditContext::instance();
+	resetItem("A", 100, 100);
+	resetItem("B", 700, 400);
+	resetItem("C", 1300, 250);
+	ctx.markDirty();
+
+	/* Color sources count as screens when detected, as cameras when forced. */
+	selectNames({"A", "B"});
+	int screens = 0;
+	for (core::SlotKind k : commands::selectionKinds(commands::KindMode::Auto))
+		screens += k == core::SlotKind::Screen;
+	R->check(screens == 2, "broadcast-detects-screens", QString::number(screens));
+
+	/* Duo split, cameras: each half filled edge to edge (cropped), then locked. */
+	core::BroadcastSpec spec;
+	spec.gap = 8;
+	commands::applyBroadcast("Cam2Split", spec, commands::KindMode::AllCameras, true);
+	ctx.markDirty();
+	const core::Rect a = box("A"), b = box("B");
+	const double half = (1920 - 8) / 2.0;
+	R->check(std::fabs(a.x) < 0.6 && std::fabs(a.y) < 0.6 && std::fabs(a.w - half) < 1.0 &&
+			 std::fabs(a.h - 1080) < 1.0 && std::fabs(b.x - (half + 8)) < 1.0 &&
+			 std::fabs(b.right() - 1920) < 1.0 && std::fabs(b.h - 1080) < 1.0,
+		 "broadcast-duo-fills-halves", rectStr(a) + rectStr(b));
+	const ItemEntry *ea = entry("A");
+	obs_sceneitem_crop crop = {};
+	if (ea)
+		obs_sceneitem_get_crop(ea->item, &crop);
+	core::HConstraint h;
+	core::VConstraint v;
+	if (ea)
+		getConstraints(ea->item, h, v);
+	R->check(ea && crop.left > 0 && crop.right > 0 && obs_sceneitem_locked(ea->item) &&
+			 h == core::HConstraint::Scale && v == core::VConstraint::Scale,
+		 "broadcast-camera-cropped-and-locked", QString("crop %1/%2").arg(crop.left).arg(crop.right));
+
+	/* Same items as screens: never cropped, whole content inside the half. */
+	unlockAll({"A", "B"});
+	commands::applyBroadcast("Screen2Split", spec, commands::KindMode::AllScreens, false);
+	ctx.markDirty();
+	obs_sceneitem_crop crop2 = {};
+	if ((ea = entry("A")))
+		obs_sceneitem_get_crop(ea->item, &crop2);
+	const core::Rect a2 = box("A");
+	R->check(ea && crop2.left == 0 && crop2.right == 0 && crop2.top == 0 && crop2.bottom == 0 &&
+			 std::fabs(a2.w / a2.h - 2.0) < 0.01 && a2.right() <= half + 0.6 &&
+			 !obs_sceneitem_locked(ea->item),
+		 "broadcast-screen-fit-uncropped", rectStr(a2));
+
+	/* The Inspector lists the templates for the selection. */
+	Store::instance().settings().broadcastKinds = 1;
+	selectNames({"A", "B", "C"});
+	emit ctx.itemsChanged();
+	auto *gallery = g_window->findChild<QListWidget *>();
+	R->check(gallery && gallery->count() == 2, "broadcast-gallery-three-guests",
+		 gallery ? QString::number(gallery->count()) : "no gallery");
+	Store::instance().settings().broadcastKinds = 0;
+	emit ctx.itemsChanged();
+	R->check(gallery && !gallery->isVisible(), "broadcast-gallery-empty-for-three-screens");
+}
+
+void testBroadcastScene()
+{
+	EditContext &ctx = EditContext::instance();
+	ctx.follow();
+	const QString before = ctx.sceneName();
+	selectNames({"A", "B", "C"});
+	core::BroadcastSpec spec;
+	const QString name = commands::createBroadcastScene("Cam3Columns", "Three columns", spec,
+							    commands::KindMode::AllCameras, true);
+	OBSSourceAutoRelease src = obs_get_source_by_name(name.toUtf8().constData());
+	obs_scene_t *scene = src ? obs_scene_from_source(src) : nullptr;
+	int count = 0;
+	if (scene)
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+				(*(int *)p) += obs_sceneitem_locked(item) ? 1 : 0;
+				return true;
+			},
+			&count);
+	OBSSourceAutoRelease original = obs_get_source_by_name(before.toUtf8().constData());
+	int originalLocked = 0;
+	if (obs_scene_t *os = original ? obs_scene_from_source(original) : nullptr)
+		obs_scene_enum_items(
+			os,
+			[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+				(*(int *)p) += obs_sceneitem_locked(item) ? 1 : 0;
+				return true;
+			},
+			&originalLocked);
+	R->check(scene && count == 3 && ctx.sceneName() == name && originalLocked == 0, "broadcast-new-scene",
+		 name + " locked " + QString::number(count));
+	if (src)
+		obs_source_remove(src);
+	ctx.pin(original);
+	ctx.markDirty();
+}
+
+void testCropMode()
+{
+	EditContext &ctx = EditContext::instance();
+	resetItem("A", 100, 100);
+	ctx.markDirty();
+	selectNames({"A"});
+	ui::CanvasView *v = g_dock->view();
+	v->setFocus();
+	QKeyEvent kc(QEvent::KeyPress, Qt::Key_C, Qt::NoModifier, "c");
+	QApplication::sendEvent(v, &kc);
+	v->rebuildOverlay();
+	/* Drag the left-middle handle 50 canvas px inwards: crop 50 source px on the left. */
+	const core::Rect b = box("A");
+	const QPointF h = v->worldToView({b.left(), b.centerY()});
+	const double d = 50 * v->zoom();
+	sendMouse(v, QEvent::MouseButtonPress, h, Qt::LeftButton);
+	for (int i = 1; i <= 10; i++)
+		sendMouse(v, QEvent::MouseMove, h + QPointF(d * i / 10.0, 0), Qt::LeftButton, Qt::ControlModifier);
+	sendMouse(v, QEvent::MouseButtonRelease, h + QPointF(d, 0), Qt::NoButton, Qt::ControlModifier);
+	ctx.markDirty();
+	const ItemEntry *a = entry("A");
+	R->check(a && a->model.t.crop.left == 50 && std::fabs(box("A").x - 150) < 0.6 &&
+			 std::fabs(box("A").w - 350) < 0.6,
+		 "crop-mode-drag", rectStr(box("A")) + QString(" crop.left=%1").arg(a ? a->model.t.crop.left : -1));
+	QKeyEvent esc(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+	QApplication::sendEvent(v, &esc);
+	resetItem("A", 100, 100);
+	ctx.markDirty();
+}
+
+void testHotkeys()
+{
+	const bool grid = Store::instance().settings().grid;
+	const bool ok = hotkeys::trigger("layouts.toggle_grid");
+	R->check(ok && Store::instance().settings().grid != grid, "hotkey-toggle-grid");
+	hotkeys::trigger("layouts.toggle_grid");
+	resetItem("A", 100, 100);
+	resetItem("B", 700, 400);
+	EditContext::instance().markDirty();
+	selectNames({"A", "B"});
+	commands::setAlignTarget(core::AlignTarget::Selection);
+	hotkeys::trigger("layouts.align_left");
+	EditContext::instance().markDirty();
+	R->check(box("B").x == 100, "hotkey-align-left", rectStr(box("B")));
+	resetItem("B", 700, 400);
+	EditContext::instance().markDirty();
 }
 
 void testGroup()
@@ -742,6 +1030,77 @@ void cleanupCanvas()
 	}
 }
 
+obs_canvas_t *g_cc = nullptr;
+OBSSourceAutoRelease g_ccScene;
+
+void constraintsSetup()
+{
+	obs_video_info ovi = {};
+	obs_get_video_info(&ovi);
+	ovi.base_width = ovi.output_width = 1920;
+	ovi.base_height = ovi.output_height = 1080;
+	g_cc = obs_frontend_add_canvas("Layouts Constraints", &ovi, PROGRAM);
+	R->check(g_cc != nullptr, "constraints-canvas-created");
+	if (!g_cc)
+		return;
+	obs_scene_t *s = obs_canvas_scene_create(g_cc, "Constraints Scene");
+	obs_sceneitem_t *r = addColor(s, "KR", 160, 120, 0xFF00AAFF, 1720, 920);
+	obs_sceneitem_t *l = addColor(s, "KL", 1840, 100, 0xFFAA00FF, 40, 40);
+	addColor(s, "KU", 200, 200, 0xFFFFAA00, 860, 440);
+	setConstraints(r, core::HConstraint::Right, core::VConstraint::Bottom);
+	setConstraints(l, core::HConstraint::LeftRight, core::VConstraint::Top);
+	g_ccScene = obs_scene_get_source(s); /* takes the create reference */
+	ConstraintWatcher::instance().recordSizes();
+}
+
+void constraintsReset()
+{
+	if (!g_cc)
+		return;
+	obs_video_info ovi = {};
+	obs_canvas_get_video_info(g_cc, &ovi);
+	ovi.base_width = ovi.output_width = 1280;
+	ovi.base_height = ovi.output_height = 720;
+	R->check(obs_canvas_reset_video(g_cc, &ovi), "constraints-canvas-reset");
+}
+
+core::Rect itemRect(const char *name)
+{
+	obs_sceneitem_t *it = obs_scene_find_source(obs_scene_from_source(g_ccScene), name);
+	if (!it)
+		return {};
+	obs_transform_info info = {};
+	obs_sceneitem_crop crop = {};
+	obs_sceneitem_get_info2(it, &info);
+	obs_sceneitem_get_crop(it, &crop);
+	core::ItemModel m;
+	m.t = fromObs(info, crop);
+	obs_source_t *src = obs_sceneitem_get_source(it);
+	m.sourceWidth = obs_source_get_width(src);
+	m.sourceHeight = obs_source_get_height(src);
+	return core::visualFrame(m).quad.bounds();
+}
+
+void constraintsCheck()
+{
+	if (!g_cc)
+		return;
+	const core::Rect r = itemRect("KR"), l = itemRect("KL"), u = itemRect("KU");
+	R->check(std::fabs(r.right() - 1240) < 1 && std::fabs(r.bottom() - 680) < 1 && std::fabs(r.w - 160) < 1,
+		 "constraint-right-bottom", rectStr(r));
+	R->check(std::fabs(l.x - 40) < 1 && std::fabs(l.right() - 1240) < 1 && std::fabs(l.y - 40) < 1,
+		 "constraint-left-right-top", rectStr(l));
+	/* Unconstrained: OBS's own behavior (center offset and size follow the height ratio). */
+	const core::Rect expected =
+		core::obsRelativeMapping(core::Rect{860, 440, 200, 200}, 1920, 1080, 1280, 720, true);
+	R->check(std::fabs(u.x - expected.x) < 1 && std::fabs(u.w - expected.w) < 1, "constraint-none-is-obs-default",
+		 rectStr(u) + " expected " + rectStr(expected));
+	g_ccScene = nullptr;
+	obs_frontend_remove_canvas(g_cc);
+	obs_canvas_release(g_cc);
+	g_cc = nullptr;
+}
+
 /* ---- performance ---- */
 
 OBSSourceAutoRelease g_perfScene;
@@ -808,8 +1167,10 @@ void perfReport(const char *label)
 
 void setCanvasVisible(bool visible)
 {
-	if (auto *d = qobject_cast<QDockWidget *>(g_dock->parentWidget()))
-		d->setVisible(visible);
+	if (visible)
+		g_window->open();
+	else
+		g_window->hide();
 }
 
 void addPerfSteps(int count)
@@ -848,11 +1209,12 @@ static bool enabled(const char *group)
 	return QString::fromUtf8(only).split(',').contains(QString::fromUtf8(group));
 }
 
-void runSelfTest(ui::CanvasDock *dock)
+void runSelfTest(ui::LayoutsWindow *window)
 {
 	static Runner runner;
 	R = &runner;
-	g_dock = dock;
+	g_window = window;
+	g_dock = window->canvas();
 	obs_log(LOG_INFO, "[selftest] START");
 	if (!getenv("LAYOUTS_SELFTEST_HIDDEN"))
 		setCanvasVisible(true);
@@ -886,9 +1248,35 @@ void runSelfTest(ui::CanvasDock *dock)
 			obs_frontend_save();
 		});
 		R->add(500, [] {
+			if (getenv("LAYOUTS_DEMO_CROP")) {
+				selectNames({"Camera"});
+				QKeyEvent kc(QEvent::KeyPress, Qt::Key_C, Qt::NoModifier, "c");
+				QApplication::sendEvent(g_dock->view(), &kc);
+				g_window->setGeometry(0, 380, 1200, 620);
+				return;
+			}
+			if (getenv("LAYOUTS_DEMO_BROADCAST")) {
+				/* Three guests: the Broadcast layouts gallery, first template previewed. */
+				Store::instance().settings().broadcastKinds = 1;
+				selectNames({"Camera", "Guest camera", "Slides"});
+				g_window->setGeometry(0, 120, 1400, 900);
+				QTimer::singleShot(800, [] {
+					core::BroadcastSpec spec;
+					commands::showPreview(commands::broadcastFrames(
+						"Cam3OneTwo", spec, commands::KindMode::AllCameras));
+				});
+				if (const char *grab = getenv("LAYOUTS_DEMO_GRAB"))
+					QTimer::singleShot(2000, [path = QString::fromUtf8(grab)] {
+						g_window->grab().save(path);
+					});
+				return;
+			}
 			selectNames({"Guest camera", "Slides"});
-			if (auto *d = qobject_cast<QDockWidget *>(g_dock->parentWidget()))
-				d->setGeometry(0, 560, 820, 440);
+			if (getenv("LAYOUTS_DEMO_PREVIEW")) {
+				core::PresetSpec ps;
+				commands::showPreview(commands::presetFrames(core::Preset::SplitScreen, ps));
+			}
+			g_window->setGeometry(0, 380, 1200, 620);
 		});
 		R->run();
 		return;
@@ -911,31 +1299,40 @@ void runSelfTest(ui::CanvasDock *dock)
 		R->add(300, [] { testCommands(); });
 		R->add(300, [] { testUndo(); });
 		R->add(300, [] { testCanvasSnapAndRuler(); });
+		R->add(300, [] { testLayoutsV02(); });
+		R->add(300, [] { testBroadcast(); });
+		R->add(300, [] { testBroadcastScene(); });
+		R->add(300, [] { unlockAll({"A", "B", "C"}); });
+		R->add(300, [] { testCropMode(); });
+		R->add(300, [] { testHotkeys(); });
 		R->add(300, [] { testGroup(); });
 		R->add(500, [] { testGroupCheck(); });
 	}
-	if (enabled("dock")) {
-		/* Docking re-parents the native surface: the display must come back. */
+	if (enabled("window")) {
+		/* The Layouts window is a regular window holding the Canvas and the Inspector. */
 		static uint64_t frames0 = 0;
 		R->add(300, [] {
-			auto *d = qobject_cast<QDockWidget *>(g_dock->parentWidget());
-			auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-			d->setFloating(false);
-			main->addDockWidget(Qt::BottomDockWidgetArea, d);
-			d->show();
+			R->check(g_window->isWindow() && g_dock->window() == g_window &&
+					 g_window->inspector()->window() == g_window,
+				 "window-holds-canvas-and-inspector");
+			g_window->hide();
+		});
+		R->add(800, [] { frames0 = g_dock->view()->frames(); });
+		R->add(800, [] {
+			R->check(g_dock->view()->frames() == frames0, "window-hidden-no-render");
+			g_window->open();
+		});
+		R->add(1200, [] { frames0 = g_dock->view()->frames(); });
+		R->add(1000, [] {
+			R->check(g_dock->view()->frames() - frames0 > 10, "window-reopened-renders",
+				 QString::number(g_dock->view()->frames() - frames0));
+			g_window->showMaximized();
 		});
 		R->add(1500, [] { frames0 = g_dock->view()->frames(); });
 		R->add(1000, [] {
-			const uint64_t f = g_dock->view()->frames() - frames0;
-			R->check(f > 10, "canvas-renders-when-docked", QString::number(f));
-			auto *d = qobject_cast<QDockWidget *>(g_dock->parentWidget());
-			d->setFloating(true);
-			d->resize(900, 600);
-		});
-		R->add(1500, [] { frames0 = g_dock->view()->frames(); });
-		R->add(1000, [] {
-			const uint64_t f = g_dock->view()->frames() - frames0;
-			R->check(f > 10, "canvas-renders-when-floating-again", QString::number(f));
+			R->check(g_window->isMaximized() && g_dock->view()->frames() - frames0 > 10,
+				 "window-maximized-renders", QString::number(g_dock->view()->frames() - frames0));
+			g_window->showNormal();
 		});
 	}
 	if (enabled("collections")) {
@@ -981,6 +1378,9 @@ void runSelfTest(ui::CanvasDock *dock)
 	if (enabled("canvas")) {
 		R->add(1500, [] { testMultiCanvas(); });
 		R->add(800, [] { cleanupCanvas(); });
+		R->add(500, [] { constraintsSetup(); });
+		R->add(800, [] { constraintsReset(); });
+		R->add(1000, [] { constraintsCheck(); });
 	}
 	if (enabled("perf")) {
 		for (int n : {10, 50, 100, 250})

@@ -10,7 +10,7 @@ Layouts for OBS is a native OBS Studio plugin that brings the composition tools 
 
 </div>
 
-![Layouts for OBS in OBS Studio 33](docs/images/overview.png)
+![The Layouts window: Canvas with rulers and guides, Inspector on the right](docs/images/layouts-window.png)
 
 > **Status: 0.1.0 preview.** Tested in OBS Studio 33.0.1 on macOS (Apple Silicon). Windows and Linux packages are built by CI but not tested at runtime yet. Packages are unsigned. Keep a backup of your scene collection and report anything odd in [Issues](https://github.com/TheOnAirCompany/obs-layouts/issues).
 
@@ -18,7 +18,7 @@ Layouts for OBS is a native OBS Studio plugin that brings the composition tools 
 
 ### Inspector
 
-A dock that always shows the selection of the edited scene.
+The right panel of the Layouts window. It always shows the selection of the edited scene.
 
 - **Position, size, rotation** in canvas pixels, from a **reference point** you pick on a 3×3 grid. W and H are the size you see, after scale, crop and bounding box.
 - **Math in every field**: `1920/2`, `100% - 120`, `+20`, `-10`, `*1.5`, `=-10` for an absolute negative value. Drag a field label to scrub (Shift ×10, Alt ×0.1).
@@ -26,26 +26,25 @@ A dock that always shows the selection of the edited scene.
 - **Crop** in source pixels (the image stays in place), **bounding box** type and alignment.
 - **Multiple selection**: align to the selection, the canvas or a **key object**; distribute centers or spacing; type an **exact gap**; same width / height / size; **Mixed** values.
 - **Copy / paste properties** (position, size, rotation, crop, bounding box).
-
-<img src="docs/images/inspector.png" alt="Inspector" width="290" align="right">
+- **Broadcast layouts**: select 1 to 6 cameras and up to 2 screens, pick a TV-style layout (duo, three columns, host + guests, grids, screen + guests on the side or below, picture in picture) and apply it, or make a new scene with it. Cameras fill their tile, screens are never cropped. **Lock the layout** keeps everything in place.
+- **Auto layout**: rows, columns or a grid, with gap, padding and alignment, inside the selection or the whole canvas, previewed on the Canvas before you apply it.
+- **Presets**: corners, centered, full screen, lower third area, picture in picture, split screen, one large + two small, 2 × 2 grid, with margins you set.
+- **Constraints** (Advanced): pin elements to an edge, the center, both edges or scale them, so they keep their place when the canvas resolution changes.
 
 ### Layouts Canvas
 
-An editing surface for the scene, next to the OBS preview.
+The editing surface in the middle of the Layouts window, next to the OBS preview.
 
 - **Rulers** in canvas pixels that follow zoom and pan, with the selection highlighted.
 - **Guides**: drag them out of the rulers, move, lock, type an exact position, delete by dragging back. Per scene, or **global** for every scene. Saved with the scene collection.
 - **Layout grids**: square grid (presets 8 to 64 px), columns, rows.
 - **Smart snapping**: guides, grid, other elements (edges, centers, **equal spacing**), canvas — with red smart guides. Hold Ctrl/Cmd to bypass it, as in OBS.
 - **Measurements**: hold Alt to see the distances to the hovered element or to the canvas.
-- **Direct manipulation**: select, Shift-select, rubber band, move, resize from 8 handles (Alt from the center), rotate just outside a corner, nudge with the arrows.
+- **Direct manipulation**: select, Shift-select, rubber band, move, resize from 8 handles (Alt from the center), rotate just outside a corner, nudge with the arrows. With several elements selected, the handles scale the whole selection.
+- **Crop mode** (C): the handles crop the source and the image stays in place.
 - **Zoom** (fit, 100 %, selection, pinch, Ctrl/Cmd + wheel) and **pan** (Space + drag, wheel).
 - **Safe areas**, center lines and custom margins.
 - Edit the scene OBS shows, or **pin any scene**, including scenes of other OBS 33 canvases (vertical...).
-
-<br clear="right">
-
-![Layouts Canvas](docs/images/canvas.png)
 
 ### Made for live shows
 
@@ -64,7 +63,7 @@ Download the file for your system from the [releases](https://github.com/TheOnAi
 | Windows 10/11 x64 | `obs-layouts-<version>-windows-x64.zip` | Extract the `obs-layouts` folder into `C:\ProgramData\obs-studio\plugins\`. |
 | Ubuntu x86_64 | `obs-layouts-<version>-x86_64-linux-gnu.deb` | `sudo apt install ./obs-layouts-<version>-x86_64-linux-gnu.deb`. Needs the `obs-studio` package **33 or later** installed system-wide. |
 
-Restart OBS. On first launch the **Inspector** docks on the right and the **Layouts Canvas** opens as a floating window. Both can be moved, docked or hidden from OBS's **Docks** menu.
+Restart OBS, then open **Tools > Layouts**. Layouts is a regular window (resize it, maximize it, put it in full screen) with the Canvas in the middle and the Inspector on the right. It never adds anything to the OBS window. You can also give it a key in **Settings > Hotkeys** ("Layouts: Open the Layouts window").
 
 To uninstall, remove the plugin. Your scenes and sources are never touched; Layouts only stores its guides in its own section of the scene collection.
 
@@ -80,7 +79,10 @@ To uninstall, remove the plugin. Your scenes and sources are never touched; Layo
 | Shift + 0 / 1 / 2 | zoom 100 % / fit / selection |
 | + / − | zoom in / out |
 | Shift + R, Shift + G, Ctrl/Cmd + ; | rulers, grid, guides |
-| Esc | cancel a drag, clear the selection |
+| C | crop mode for the selected element |
+| Esc | cancel a drag, leave crop mode, clear the selection |
+
+Rulers, guides, grid, safe areas, snapping, the six alignments, distribution and zoom to fit can also get global keys in OBS **Settings > Hotkeys** (entries starting with "Layouts:").
 
 ## Documentation
 

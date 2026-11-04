@@ -128,7 +128,7 @@ protected:
 	void contextMenuEvent(QContextMenuEvent *e) override;
 
 private:
-	enum class Mode { Idle, Pan, Rubber, Move, Resize, Rotate, Guide };
+	enum class Mode { Idle, Pan, Rubber, Move, Resize, ResizeMulti, Rotate, Guide };
 
 	void createDisplay();
 	void destroyDisplay();
@@ -145,12 +145,19 @@ private:
 	int handleAt(const QPointF &p, const ItemEntry &e) const; /* -1 none, 0..7 handles, 8 rotate */
 	std::optional<uint64_t> guideAt(const QPointF &p) const;
 	const ItemEntry *singleEditable();
+	/* Bounds of a multi-selection that can be resized (2+ items, one unlocked). */
+	std::optional<core::Rect> multiResizable();
+	int handleAtRect(const QPointF &p, const core::Rect &r) const; /* -1 none, 0..7 */
+	void startResizeMulti();
+	void updateResizeMulti(const QPointF &p, Qt::KeyboardModifiers mods);
 	void updateHoverCursor(const QPointF &p);
 
 	/* interactions */
 	void startMove(const QPointF &p);
 	void updateMove(const QPointF &p, Qt::KeyboardModifiers mods);
 	void updateResize(const QPointF &p, Qt::KeyboardModifiers mods);
+	void updateCrop(const QPointF &p);
+	bool canCrop();
 	void updateRotate(const QPointF &p, Qt::KeyboardModifiers mods);
 	void updateGuide(const QPointF &p, Qt::KeyboardModifiers mods);
 	void finishGuide(const QPointF &p);
@@ -203,6 +210,7 @@ private:
 	std::pair<int64_t, int64_t> hover_{-1, -1};
 	bool spaceHeld_ = false;
 	bool altHeld_ = false;
+	bool cropMode_ = false; /* C: handles crop the single selected item */
 	bool panning_ = false;
 	QPointF panStart_;
 	QPointF panOrigin_;

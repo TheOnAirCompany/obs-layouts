@@ -55,6 +55,10 @@ target_sources(
     src/core/expression.hpp
     src/core/guides.cpp
     src/core/guides.hpp
+    src/core/layout.cpp
+    src/core/layout.hpp
+    src/core/broadcast.cpp
+    src/core/broadcast.hpp
     src/obs/obs-convert.hpp
     src/obs/store.cpp
     src/obs/store.hpp
@@ -63,6 +67,10 @@ target_sources(
     src/obs/edit-session.cpp
     src/obs/edit-session.hpp
     src/obs/commands.cpp
+    src/obs/constraints.cpp
+    src/obs/constraints.hpp
+    src/obs/hotkeys.cpp
+    src/obs/hotkeys.hpp
     src/obs/commands.hpp
     src/ui/theme.cpp
     src/ui/theme.hpp
@@ -76,6 +84,8 @@ target_sources(
     src/ui/ruler.hpp
     src/ui/canvas-dock.cpp
     src/ui/canvas-dock.hpp
+    src/ui/layouts-window.cpp
+    src/ui/layouts-window.hpp
     resources/layouts.qrc
 )
 

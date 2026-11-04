@@ -21,6 +21,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "theme.hpp"
 
 #include "core/expression.hpp"
+#include "core/layout.hpp"
 #include "obs/commands.hpp"
 #include "obs/store.hpp"
 
@@ -185,6 +186,7 @@ CanvasView::CanvasView(QWidget *parent) : QWidget(parent)
 	EditContext &ctx = EditContext::instance();
 	connect(&ctx, &EditContext::sceneChanged, this, &CanvasView::onSceneChanged);
 	connect(&ctx, &EditContext::itemsChanged, this, &CanvasView::rebuildOverlay);
+	connect(&ctx, &EditContext::previewChanged, this, &CanvasView::rebuildOverlay);
 	connect(&ctx, &EditContext::liveStateChanged, this, &CanvasView::rebuildOverlay);
 	connect(&Store::instance(), &Store::guidesChanged, this, &CanvasView::rebuildOverlay);
 	connect(&Store::instance(), &Store::settingsChanged, this, &CanvasView::rebuildOverlay);
@@ -599,6 +601,8 @@ void CanvasView::addLabel(RenderSnapshot &s, const QString &text, QRgb bg, float
 
 void CanvasView::rebuildOverlay()
 {
+	if (cropMode_ && mode_ == Mode::Idle && !canCrop())
+		cropMode_ = false;
 	EditContext &ctx = EditContext::instance();
 	const ViewSettings &vs = Store::instance().settings();
 	const double r = dpr();
@@ -734,6 +738,15 @@ void CanvasView::rebuildOverlay()
 				worldRect(*b, one, tokens::kSelection);
 		}
 
+		/* ---- preview of a preset / auto layout ---- */
+		for (const core::Quad &q : ctx.preview()) {
+			const core::Rect b = q.bounds();
+			const QPointF a = dev({b.left(), b.top()}), c = dev({b.right(), b.bottom()});
+			rect((float)a.x(), (float)a.y(), (float)(c.x() - a.x()), (float)(c.y() - a.y()),
+			     tokens::kPreviewFill);
+			quad(q, 2 * one, tokens::kPreview);
+		}
+
 		/* ---- guides ---- */
 		if (vs.guides) {
 			const std::string uuid = ctx.sceneUuid().toStdString();
@@ -772,7 +785,7 @@ void CanvasView::rebuildOverlay()
 			else
 				line(dev({sl.from, sl.pos}), dev({sl.to, sl.pos}), one, tokens::kSmartGuide);
 		};
-		if (mode_ == Mode::Move || mode_ == Mode::Resize) {
+		if (mode_ == Mode::Move || mode_ == Mode::Resize || mode_ == Mode::ResizeMulti) {
 			for (const core::SnapLine &sl : snap_.lines)
 				snapLine(sl);
 			for (const core::SpacingHint &h : snap_.spacings) {
@@ -787,7 +800,7 @@ void CanvasView::rebuildOverlay()
 				}
 			}
 		}
-		if (valueSnap_ && (mode_ == Mode::Guide || mode_ == Mode::Resize))
+		if (valueSnap_ && (mode_ == Mode::Guide || mode_ == Mode::Resize || mode_ == Mode::ResizeMulti))
 			snapLine(*valueSnap_);
 
 		/* ---- measurements (Alt) ---- */
@@ -833,9 +846,21 @@ void CanvasView::rebuildOverlay()
 		/* ---- handles and size label ---- */
 		if (sel.size() == 1 && !sel.front()->locked) {
 			const ItemEntry *e = sel.front();
+			const bool crop = cropMode_ && canCrop();
+			const uint32_t hc = crop ? tokens::kCrop : tokens::kSelection;
+			if (crop)
+				quad(e->frame.quad, 2 * one, tokens::kCrop);
 			const float hs = (float)(tokens::kHandleSize * r);
 			for (const core::RefPoint &hr : kHandleRefs) {
 				const QPointF p = dev(e->frame.point(hr));
+				rect((float)p.x() - hs / 2, (float)p.y() - hs / 2, hs, hs, crop ? hc : 0xFFFFFFFF);
+				outline((float)p.x() - hs / 2, (float)p.y() - hs / 2, hs, hs, one, hc);
+			}
+		}
+		if (const auto mb = multiResizable()) {
+			const float hs = (float)(tokens::kHandleSize * r);
+			for (const core::RefPoint &hr : kHandleRefs) {
+				const QPointF p = dev(core::pointInRect(*mb, hr));
 				rect((float)p.x() - hs / 2, (float)p.y() - hs / 2, hs, hs, 0xFFFFFFFF);
 				outline((float)p.x() - hs / 2, (float)p.y() - hs / 2, hs, hs, one, tokens::kSelection);
 			}
@@ -936,6 +961,17 @@ void CanvasView::updateHoverCursor(const QPointF &p)
 			return;
 		}
 	}
+	if (const auto mb = multiResizable()) {
+		const int h = handleAtRect(p, *mb);
+		if (h >= 0) {
+			static const Qt::CursorShape shapes[8] = {Qt::SizeFDiagCursor, Qt::SizeVerCursor,
+								  Qt::SizeBDiagCursor, Qt::SizeHorCursor,
+								  Qt::SizeFDiagCursor, Qt::SizeVerCursor,
+								  Qt::SizeBDiagCursor, Qt::SizeHorCursor};
+			setCursor(shapes[h]);
+			return;
+		}
+	}
 	if (const auto g = guideAt(p)) {
 		const auto ref = Store::instance().guides().find(*g);
 		if (ref && !ref->guide.locked) {
@@ -1024,10 +1060,21 @@ void CanvasView::mousePressEvent(QMouseEvent *e)
 		}
 	}
 
+	/* Handles of a multi-selection. */
+	if (const auto mb = multiResizable()) {
+		const int h = handleAtRect(p, *mb);
+		if (h >= 0) {
+			handle_ = h;
+			mode_ = Mode::ResizeMulti;
+			return;
+		}
+	}
+
 	/* Guides. */
 	if (const auto g = guideAt(p)) {
 		const auto ref = Store::instance().guides().find(*g);
 		if (ref && !ref->guide.locked) {
+			Store::instance().beginGuideEdit();
 			mode_ = Mode::Guide;
 			guideId_ = *g;
 			guideIsNew_ = false;
@@ -1131,6 +1178,10 @@ void CanvasView::updateMove(const QPointF &p, Qt::KeyboardModifiers mods)
 
 void CanvasView::updateResize(const QPointF &p, Qt::KeyboardModifiers mods)
 {
+	if (cropMode_ && canCrop()) {
+		updateCrop(p);
+		return;
+	}
 	if (!session_ || dragItems_.empty())
 		return;
 	const ItemEntry &e = dragItems_.front();
@@ -1264,8 +1315,7 @@ void CanvasView::finishGuide(const QPointF &p)
 	guideId_ = 0;
 	guideIsNew_ = false;
 	valueSnap_.reset();
-	Store::instance().notifyGuidesChanged();
-	obs_frontend_save(); /* guides live in the collection */
+	Store::instance().endGuideEdit(T("Undo.Guides")); /* guides live in the collection */
 }
 
 void CanvasView::updateRubber(const QPointF &p)
@@ -1294,8 +1344,8 @@ void CanvasView::cancelInteraction()
 		session_->cancel();
 		session_.reset();
 	}
-	if (mode_ == Mode::Guide && !guideIsNew_ && guideId_)
-		Store::instance().notifyGuidesChanged();
+	if (mode_ == Mode::Guide)
+		Store::instance().cancelGuideEdit(); /* Escape puts a dragged guide back */
 	mode_ = Mode::Idle;
 	dragItems_.clear();
 	snap_ = core::SnapResult();
@@ -1326,9 +1376,13 @@ void CanvasView::mouseMoveEvent(QMouseEvent *e)
 		dragStarted_ = true;
 		if (mode_ == Mode::Move) {
 			startMove(p);
+		} else if (mode_ == Mode::ResizeMulti) {
+			startResizeMulti();
 		} else if (mode_ == Mode::Resize || mode_ == Mode::Rotate) {
 			session_ = std::make_unique<EditSession>();
-			if (!session_->begin(T(mode_ == Mode::Resize ? "Undo.Size" : "Undo.Rotation"))) {
+			const char *undoKey = mode_ == Mode::Resize ? (cropMode_ ? "Undo.Crop" : "Undo.Size")
+								    : "Undo.Rotation";
+			if (!session_->begin(T(undoKey))) {
 				session_.reset();
 				mode_ = Mode::Idle;
 			}
@@ -1341,6 +1395,9 @@ void CanvasView::mouseMoveEvent(QMouseEvent *e)
 		break;
 	case Mode::Resize:
 		updateResize(p, e->modifiers());
+		break;
+	case Mode::ResizeMulti:
+		updateResizeMulti(p, e->modifiers());
 		break;
 	case Mode::Rotate:
 		updateRotate(p, e->modifiers());
@@ -1374,10 +1431,12 @@ void CanvasView::mouseReleaseEvent(QMouseEvent *e)
 		return;
 	}
 	if (mode_ == Mode::Guide) {
-		if (dragStarted_ || guideIsNew_)
+		if (dragStarted_ || guideIsNew_) {
 			finishGuide(e->position());
-		else
+		} else {
 			mode_ = Mode::Idle;
+			Store::instance().endGuideEdit(T("Undo.Guides")); /* a click without a move: no entry */
+		}
 	}
 	if (session_) {
 		session_->commit();
@@ -1409,9 +1468,9 @@ void CanvasView::mouseDoubleClickEvent(QMouseEvent *e)
 				core::parseExpression(text.toStdString(), ref->guide.axis == core::Axis::X ? c.w : c.h);
 			double v = 0;
 			if (ex.apply(ref->guide.pos, v)) {
+				Store::instance().beginGuideEdit();
 				Store::instance().guides().move(*g, v);
-				Store::instance().notifyGuidesChanged();
-				obs_frontend_save();
+				Store::instance().endGuideEdit(T("Undo.Guides"));
 			}
 		}
 		return;
@@ -1500,10 +1559,19 @@ void CanvasView::keyPressEvent(QKeyEvent *e)
 	case Qt::Key_Escape:
 		if (mode_ != Mode::Idle)
 			cancelInteraction();
+		else if (cropMode_)
+			cropMode_ = false;
 		else
 			ctx.clearSelection();
 		rebuildOverlay();
 		return;
+	case Qt::Key_C:
+		if (!(e->modifiers() & (Qt::ControlModifier | Qt::MetaModifier | Qt::AltModifier))) {
+			cropMode_ = !cropMode_ && canCrop();
+			rebuildOverlay();
+			return;
+		}
+		break;
 	case Qt::Key_Left:
 		commands::nudge(shift ? -10 : -1, 0);
 		return;
@@ -1589,6 +1657,188 @@ void CanvasView::keyReleaseEvent(QKeyEvent *e)
 	QWidget::keyReleaseEvent(e);
 }
 
+bool CanvasView::canCrop()
+{
+	const ItemEntry *e = singleEditable();
+	/* Cropping by dragging is offered for items without a bounding box, where the
+	 * source pixels map directly to the canvas. */
+	return e && e->model.t.boundsType == core::BoundsType::None && e->model.sourceWidth > 0 &&
+	       e->model.sourceHeight > 0;
+}
+
+void CanvasView::updateCrop(const QPointF &p)
+{
+	if (!session_ || dragItems_.empty())
+		return;
+	const ItemEntry &e = dragItems_.front();
+	const core::VisualFrame &f = e.frame;
+	const core::ItemGeometry g = core::computeGeometry(e.model);
+	if (f.width <= 0 || f.height <= 0 || g.croppedWidth == 0 || g.croppedHeight == 0)
+		return;
+	const core::Vec2 ex = (f.quad.p[1] - f.quad.p[0]) / f.width;
+	const core::Vec2 ey = (f.quad.p[3] - f.quad.p[0]) / f.height;
+	const core::Vec2 d = viewToWorld(p) - f.quad.p[0];
+	const double u = d.x * ex.x + d.y * ex.y, v = d.x * ey.x + d.y * ey.y;
+	const double kx = f.width / g.croppedWidth; /* canvas px per source px */
+	const double ky = f.height / g.croppedHeight;
+	const core::RefPoint hr = kHandleRefs[handle_];
+	const bool flipU = g.boxScale.x < 0, flipV = g.boxScale.y < 0;
+
+	core::Crop c = e.model.t.crop;
+	auto addEdge = [](int &edge, double sourcePx) {
+		edge = std::max(0, edge + (int)std::lround(sourcePx));
+	};
+	if (hr.fx == 0.0)
+		addEdge(flipU ? c.right : c.left, u / kx);
+	else if (hr.fx == 1.0)
+		addEdge(flipU ? c.left : c.right, (f.width - u) / kx);
+	if (hr.fy == 0.0)
+		addEdge(flipV ? c.bottom : c.top, v / ky);
+	else if (hr.fy == 1.0)
+		addEdge(flipV ? c.top : c.bottom, (f.height - v) / ky);
+
+	session_->apply({{e.item, core::setCrop(e.model, e.parent, c, core::RefPoint{0, 0})}});
+	rebuildOverlay();
+}
+
+std::optional<core::Rect> CanvasView::multiResizable()
+{
+	const auto sel = EditContext::instance().selection();
+	if (sel.size() < 2)
+		return std::nullopt;
+	const bool anyMovable = std::any_of(sel.begin(), sel.end(), [](const ItemEntry *e) { return !e->locked; });
+	if (!anyMovable)
+		return std::nullopt;
+	return selectionBounds();
+}
+
+int CanvasView::handleAtRect(const QPointF &p, const core::Rect &r) const
+{
+	for (int i = 0; i < 8; i++) {
+		const QPointF h = worldToView(core::pointInRect(r, kHandleRefs[i]));
+		if (std::hypot(h.x() - p.x(), h.y() - p.y()) <= tokens::kHandleHit)
+			return i;
+	}
+	return -1;
+}
+
+void CanvasView::startResizeMulti()
+{
+	EditContext &ctx = EditContext::instance();
+	dragItems_.clear();
+	std::optional<core::Rect> u;
+	for (const ItemEntry *e : ctx.selection()) {
+		if (e->locked)
+			continue;
+		if (e->groupId) {
+			const ItemEntry *g = ctx.find(e->groupId, 0);
+			if (g && g->selected)
+				continue;
+		}
+		dragItems_.push_back(*e);
+		const core::Rect b = e->frame.quad.bounds();
+		u = u ? u->united(b) : b;
+	}
+	dragUnion_ = u.value_or(core::Rect());
+	session_ = std::make_unique<EditSession>();
+	if (dragItems_.empty() || !(dragUnion_.w > 0) || !(dragUnion_.h > 0) || !session_->begin(T("Undo.Size"))) {
+		session_.reset();
+		dragItems_.clear();
+		mode_ = Mode::Idle;
+	}
+}
+
+void CanvasView::updateResizeMulti(const QPointF &p, Qt::KeyboardModifiers mods)
+{
+	if (!session_ || dragItems_.empty())
+		return;
+	const core::Rect b0 = dragUnion_;
+	const core::RefPoint hr = kHandleRefs[handle_];
+	const bool fromCenter = mods & Qt::AltModifier;
+	core::Vec2 w = viewToWorld(p);
+
+	/* Snap the moving edges. */
+	valueSnap_.reset();
+	snap_ = core::SnapResult();
+	core::SnapSettings ss = Store::instance().settings().snap;
+	if (ss.enabled && !(mods & Qt::ControlModifier)) {
+		const core::SnapContext ctx = snapContext(true);
+		const double th = ss.thresholdPx / zoom_;
+		if (hr.fx != 0.5) {
+			const core::ValueSnap vx =
+				core::snapValue(w.x, core::Axis::X, ctx, ss, th, b0.top(), b0.bottom());
+			if (vx.snapped) {
+				w.x = vx.value;
+				if (vx.line)
+					snap_.lines.push_back(*vx.line);
+			}
+		}
+		if (hr.fy != 0.5) {
+			const core::ValueSnap vy =
+				core::snapValue(w.y, core::Axis::Y, ctx, ss, th, b0.left(), b0.right());
+			if (vy.snapped) {
+				w.y = vy.value;
+				if (vy.line)
+					snap_.lines.push_back(*vy.line);
+			}
+		}
+	}
+
+	double l = b0.left(), t = b0.top(), r = b0.right(), bt = b0.bottom();
+	const core::Vec2 c = b0.center();
+	if (hr.fx == 1.0) {
+		r = w.x;
+		if (fromCenter)
+			l = 2 * c.x - w.x;
+	} else if (hr.fx == 0.0) {
+		l = w.x;
+		if (fromCenter)
+			r = 2 * c.x - w.x;
+	}
+	if (hr.fy == 1.0) {
+		bt = w.y;
+		if (fromCenter)
+			t = 2 * c.y - w.y;
+	} else if (hr.fy == 0.0) {
+		t = w.y;
+		if (fromCenter)
+			bt = 2 * c.y - w.y;
+	}
+	core::Rect target = core::Rect::fromEdges(std::min(l, r), std::min(t, bt), std::max(l, r), std::max(t, bt));
+	target.w = std::max(1.0, target.w);
+	target.h = std::max(1.0, target.h);
+
+	/* Corners keep the ratio of the selection, like a single element; Shift frees it.
+	 * The anchor is the opposite corner, or the center with Alt. */
+	const bool corner = hr.fx != 0.5 && hr.fy != 0.5;
+	if (corner && !(mods & Qt::ShiftModifier)) {
+		const double k = std::max(target.w / b0.w, target.h / b0.h);
+		const double nw = b0.w * k, nh = b0.h * k;
+		const double ax = fromCenter ? 0.5 : 1.0 - hr.fx;
+		const double ay = fromCenter ? 0.5 : 1.0 - hr.fy;
+		const core::Vec2 anchor = core::pointInRect(b0, {ax, ay});
+		target = {anchor.x - nw * ax, anchor.y - nh * ay, nw, nh};
+	}
+
+	std::vector<core::Frame> frames;
+	for (const ItemEntry &e : dragItems_)
+		frames.push_back({e.frame.center(), e.frame.width, e.frame.height});
+	const std::vector<core::Frame> out = core::scaleFrames(frames, b0, target);
+
+	std::vector<Change> changes;
+	const core::RefPoint center{0.5, 0.5};
+	for (size_t i = 0; i < dragItems_.size(); i++) {
+		const ItemEntry &e = dragItems_[i];
+		core::ItemModel m = e.model;
+		m.t = core::setWorldSize(m, e.parent, std::max(1.0, out[i].width), std::max(1.0, out[i].height),
+					 center);
+		m.t = core::moveRefTo(m, e.parent, center, out[i].center);
+		changes.push_back({e.item, m.t});
+	}
+	session_->apply(changes);
+	rebuildOverlay();
+}
+
 /* ============================================================ rulers API */
 
 void CanvasView::beginGuideDrag(core::Axis axis, const QPoint &globalPos)
@@ -1596,6 +1846,7 @@ void CanvasView::beginGuideDrag(core::Axis axis, const QPoint &globalPos)
 	if (!EditContext::instance().sceneSource())
 		return;
 	cancelInteraction();
+	Store::instance().beginGuideEdit();
 	mode_ = Mode::Guide;
 	guideIsNew_ = true;
 	guideId_ = 0;
@@ -1651,27 +1902,27 @@ void CanvasView::contextMenuEvent(QContextMenuEvent *e)
 					text.toStdString(), ref->guide.axis == core::Axis::X ? c.w : c.h);
 				double v = 0;
 				if (ex.apply(ref->guide.pos, v)) {
+					Store::instance().beginGuideEdit();
 					Store::instance().guides().move(id, v);
-					Store::instance().notifyGuidesChanged();
-					obs_frontend_save();
+					Store::instance().endGuideEdit(T("Undo.Guides"));
 				}
 			});
 			menu.addAction(ref->guide.locked ? T("Guide.Unlock") : T("Guide.Lock"), this, [id, ref] {
+				Store::instance().beginGuideEdit();
 				Store::instance().guides().setLocked(id, !ref->guide.locked);
-				Store::instance().notifyGuidesChanged();
-				obs_frontend_save();
+				Store::instance().endGuideEdit(T("Undo.Guides"));
 			});
 			menu.addAction(ref->global ? T("Guide.MakeScene") : T("Guide.MakeGlobal"), this, [id, ref] {
 				EditContext &c = EditContext::instance();
+				Store::instance().beginGuideEdit();
 				Store::instance().guides().setGlobal(id, c.sceneUuid().toStdString(),
 								     c.sceneName().toStdString(), !ref->global);
-				Store::instance().notifyGuidesChanged();
-				obs_frontend_save();
+				Store::instance().endGuideEdit(T("Undo.Guides"));
 			});
 			menu.addAction(T("Guide.Delete"), this, [id] {
+				Store::instance().beginGuideEdit();
 				Store::instance().guides().remove(id);
-				Store::instance().notifyGuidesChanged();
-				obs_frontend_save();
+				Store::instance().endGuideEdit(T("Undo.Guides"));
 			});
 			menu.addSeparator();
 		}
@@ -1694,6 +1945,14 @@ void CanvasView::contextMenuEvent(QContextMenuEvent *e)
 			paste->addAction(T(key), this, [m] { commands::pasteProperties(m); });
 		}
 		menu.addAction(T("Canvas.ZoomSelection"), this, [this] { zoomSelection(); });
+		if (canCrop()) {
+			QAction *crop = menu.addAction(T("Canvas.CropMode"), this, [this] {
+				cropMode_ = !cropMode_;
+				rebuildOverlay();
+			});
+			crop->setCheckable(true);
+			crop->setChecked(cropMode_);
+		}
 		menu.addSeparator();
 	}
 
@@ -1701,31 +1960,31 @@ void CanvasView::contextMenuEvent(QContextMenuEvent *e)
 	const std::string name = ctx.sceneName().toStdString();
 	const double gx = std::round(w.x), gy = std::round(w.y);
 	menu.addAction(T("Guide.AddVertical").arg(fmt(gx)), this, [uuid, name, gx] {
+		Store::instance().beginGuideEdit();
 		Store::instance().guides().add(uuid, name, core::Axis::X, gx, false);
-		Store::instance().notifyGuidesChanged();
-		obs_frontend_save();
+		Store::instance().endGuideEdit(T("Undo.Guides"));
 	});
 	menu.addAction(T("Guide.AddHorizontal").arg(fmt(gy)), this, [uuid, name, gy] {
+		Store::instance().beginGuideEdit();
 		Store::instance().guides().add(uuid, name, core::Axis::Y, gy, false);
-		Store::instance().notifyGuidesChanged();
-		obs_frontend_save();
+		Store::instance().endGuideEdit(T("Undo.Guides"));
 	});
 	menu.addAction(T("Guide.AddCenter"), this, [uuid, name] {
 		const core::Rect c = EditContext::instance().canvasRect();
+		Store::instance().beginGuideEdit();
 		Store::instance().guides().add(uuid, name, core::Axis::X, c.w / 2.0, false);
 		Store::instance().guides().add(uuid, name, core::Axis::Y, c.h / 2.0, false);
-		Store::instance().notifyGuidesChanged();
-		obs_frontend_save();
+		Store::instance().endGuideEdit(T("Undo.Guides"));
 	});
 	menu.addAction(T("Guide.ClearScene"), this, [uuid] {
+		Store::instance().beginGuideEdit();
 		Store::instance().guides().clearScene(uuid);
-		Store::instance().notifyGuidesChanged();
-		obs_frontend_save();
+		Store::instance().endGuideEdit(T("Undo.Guides"));
 	});
 	menu.addAction(T("Guide.ClearGlobal"), this, [] {
+		Store::instance().beginGuideEdit();
 		Store::instance().guides().globalGuidesMutable().clear();
-		Store::instance().notifyGuidesChanged();
-		obs_frontend_save();
+		Store::instance().endGuideEdit(T("Undo.Guides"));
 	});
 	menu.exec(e->globalPos());
 }

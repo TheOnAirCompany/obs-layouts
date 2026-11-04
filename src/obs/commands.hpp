@@ -26,8 +26,13 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "core/arrange.hpp"
 #include "core/expression.hpp"
 #include "core/item-model.hpp"
+#include "core/broadcast.hpp"
+#include "core/layout.hpp"
 
 #include <optional>
+#include <string>
+
+#include <QString>
 
 namespace layouts {
 
@@ -66,6 +71,29 @@ bool setBoundsAlignment(uint32_t align);
 bool setCropToBounds(bool crop);
 bool setLocked(bool locked);
 bool nudge(double dx, double dy);
+
+/* ---- layouts on several items (selection order) ---- */
+/* Target frames for the current selection, without applying them (previews). */
+std::vector<core::Frame> flowFrames(const core::FlowSpec &spec, bool inCanvas);
+std::vector<core::Frame> presetFrames(core::Preset preset, const core::PresetSpec &spec);
+bool autoLayout(const core::FlowSpec &spec, bool inCanvas);
+bool applyPreset(core::Preset preset, const core::PresetSpec &spec);
+/* ---- broadcast layouts (cameras + screens, TV style) ---- */
+enum class KindMode { Auto, AllCameras, AllScreens };
+/* Kind of each selected top-level item, in selection order. */
+std::vector<core::SlotKind> selectionKinds(KindMode mode);
+/* Target frames (one per selected item that gets a slot) for a template. */
+std::vector<core::Frame> broadcastFrames(const std::string &key, const core::BroadcastSpec &spec, KindMode mode);
+/* Applies a template to the selection (one undo entry). lock: lock the items and
+ * pin them with "scale" constraints so the layout never moves. */
+bool applyBroadcast(const std::string &key, const core::BroadcastSpec &spec, KindMode mode, bool lock);
+/* Creates a new scene with the selected sources arranged by the template (the
+ * sources are shared, never duplicated). Returns the new scene name, empty on failure. */
+QString createBroadcastScene(const std::string &key, const QString &sceneName, const core::BroadcastSpec &spec,
+			     KindMode mode, bool lock);
+
+/* Shows the frames as a ghost preview on the Canvas (empty clears it). */
+void showPreview(const std::vector<core::Frame> &frames);
 
 /* ---- properties clipboard ---- */
 enum PasteMask : unsigned {

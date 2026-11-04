@@ -27,12 +27,17 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "core/grid.hpp"
 #include "core/guides.hpp"
+#include "core/layout.hpp"
 #include "core/snapping.hpp"
 
 #include <obs.h>
 
+#include <QByteArray>
 #include <QColor>
 #include <QObject>
+#include <QString>
+
+#include <string>
 
 namespace layouts {
 
@@ -56,6 +61,15 @@ struct ViewSettings {
 	bool blockOnAir = false; /* refuse edits on a scene that is on air */
 	bool ratioLock = false;
 	bool firstRunDone = false; /* docks placed on first launch */
+	core::FlowSpec flow;       /* auto layout parameters */
+	bool flowInCanvas = false; /* auto layout container: canvas instead of selection */
+	core::PresetSpec preset;   /* margins of composition presets */
+	QByteArray windowGeometry; /* Layouts window */
+	QByteArray splitterState;
+	double broadcastGap = 8; /* broadcast layouts */
+	double broadcastMargin = 0;
+	bool broadcastLock = true;
+	int broadcastKinds = 0; /* 0 auto, 1 all cameras, 2 all screens */
 	QColor guideColor{0xFF, 0x3D, 0x71};
 };
 
@@ -75,6 +89,13 @@ public:
 	void saveGuides(obs_data_t *data);
 	void loadGuides(obs_data_t *data);
 
+	/* Guide transactions: one OBS undo entry per user action (a whole drag included). */
+	void beginGuideEdit();
+	void endGuideEdit(const QString &undoLabel);
+	void cancelGuideEdit();
+	std::string guidesJson();
+	void restoreGuidesJson(const char *json);
+
 	/* Call after any change to guides / settings so every view refreshes. */
 	void notifyGuidesChanged();
 	void notifySettingsChanged(bool persist = true);
@@ -87,6 +108,8 @@ private:
 	Store() = default;
 	core::GuideDocument guides_;
 	ViewSettings settings_;
+	std::string guideBefore_;
+	bool guideEditing_ = false;
 };
 
 } // namespace layouts

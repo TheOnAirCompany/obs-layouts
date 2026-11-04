@@ -3,14 +3,16 @@
 Layouts brings design-tool composition to OBS while keeping OBS conventions where they already
 exist. This document describes the behavior of version 0.1.0.
 
-## Docks
+## The Layouts window (0.2)
 
-| Dock | Default placement | Purpose |
-|---|---|---|
-| Inspector | docked on the right, shown on first launch | properties of the selection |
-| Layouts Canvas | floating, 1100 × 700, shown on first launch | visual editing with rulers and guides |
+One regular top-level window titled **Layouts**: the Canvas in the middle, the Inspector in a
+resizable panel on the right. It can be resized, maximized and put in full screen; double-clicking
+its title bar maximizes it like any macOS window and never docks it into OBS. It is opened from
+**Tools > Layouts** or the "Layouts: Open the Layouts window" hotkey, never by itself at startup.
+Closing it only hides it; its size, position and panel width are remembered. Nothing is added to
+the OBS main window.
 
-Both are standard OBS docks (*Docks* menu): movable, resizable, dockable, floatable, closable.
+(0.1 used two OBS docks instead: an Inspector docked on the right and a floating Canvas.)
 
 ## Edited scene
 
@@ -54,6 +56,28 @@ Header shows "N elements selected" and the number of locked items. Adds:
 
 Every field shows *Mixed* when values differ. A typed value applies to every element; a relative
 expression (`+20`) applies to each element's own value.
+
+### Auto layout (0.2, multiple selection)
+Direction Horizontal | Vertical | Grid; area *In the selection* or *In the canvas*; *Keep sizes* or
+*Fill* (equal share of the main axis, ratio kept); alignment of the group on the main axis and of each
+element on the cross axis (inside its cell for a grid); gap, padding, grid columns. Elements are placed
+in reading order. Hovering the section shows the result as violet ghost frames on the Canvas;
+*Apply layout* applies it as one undo entry.
+
+### Presets (0.2)
+The list shows the presets available for the number of selected elements, used in selection order:
+corners (4), centered, full screen, lower third area (1 element); picture in picture, split screen,
+stacked (2); one large + two small (3); 2 × 2 grid (4). Settings: margin, gap, corner size (percent of
+the canvas width). Aspect ratios are kept, except full screen and the picture-in-picture background,
+which fill the canvas. Hovering the section or an entry of the list previews on the Canvas.
+
+### Constraints (0.2)
+Two lists: horizontal (OBS default, left, right, center, left and right, scale) and vertical (OBS
+default, top, bottom, center, top and bottom, scale). Stored with each item in the scene collection.
+When a canvas resolution changes, every constrained item of every scene of that canvas is placed
+again: pinned edges keep their margin, center keeps the offset from the center, left and right (top
+and bottom) stretch, scale follows the canvas. *OBS default* keeps OBS's own behavior (offset from the
+center and size follow the canvas height).
 
 ### Locked elements
 - Arrange (align, distribute, spacing, same size) and mouse manipulation never move them.
@@ -103,7 +127,7 @@ and refused actions show the reason.
 | Shift while dragging | constrain to the main axis |
 | Ctrl/Cmd while dragging | bypass snapping (OBS convention) |
 | Drag on empty canvas | rubber band selection (Shift adds) |
-| Drag a handle | resize; corners keep the ratio, Shift frees it (OBS convention); Alt resizes from the center |
+| Drag a handle | resize; corners keep the ratio, Shift frees it (OBS convention); Alt resizes from the center. With several elements selected, the handles are on the selection box and scale every element (0.2) |
 | Drag just outside a corner | rotate around the center; Shift = 15° steps; snaps to 0/90/180/270 within 2° (Ctrl/Cmd disables) |
 | Drag a guide | move it; drop it on a ruler to delete it |
 | Double-click a guide | type its exact position (math accepted) |
@@ -118,13 +142,20 @@ and refused actions show the reason.
 | Keys | Action |
 |---|---|
 | Arrows / Shift + arrows | move 1 / 10 px (consecutive moves merge into one undo entry) |
-| Escape | cancel the current drag, or clear the selection |
+| C | crop mode for the selected item (0.2): orange handles crop the source, the image stays in place |
+| Escape | cancel the current drag, leave crop mode, or clear the selection |
 | Shift + 0 / 1 / 2 | zoom 100 % / fit / selection |
 | + / − | zoom in / out |
 | Shift + R | rulers |
 | Shift + G | layout grid |
 | Ctrl/Cmd + ; | guides |
 | Ctrl/Cmd + Z, Ctrl/Cmd + Shift + Z | OBS undo / redo (OBS shortcuts, untouched) |
+
+### Global hotkeys (0.2)
+In OBS *Settings > Hotkeys*, under names starting with "Layouts:": show or hide rulers, guides, grid
+and safe areas, turn snapping on or off, the six alignments, distribute horizontal and vertical
+spacing, zoom the Canvas to fit. No key is bound by default; bindings are saved in the plugin
+configuration. They work even when the Canvas does not have the focus.
 
 ### Rulers
 Horizontal and vertical, in canvas pixels, adaptive 1-2-5 graduation (labeled ticks at least 64 px

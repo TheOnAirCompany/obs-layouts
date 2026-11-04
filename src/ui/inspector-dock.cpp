@@ -21,8 +21,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "theme.hpp"
 #include "widgets.hpp"
 
+#include "obs/constraints.hpp"
 #include "obs/edit-context.hpp"
 #include "obs/store.hpp"
+
+#include <obs-frontend-api.h>
+#include <obs-module.h>
 
 #include <QButtonGroup>
 #include <QCheckBox>
@@ -30,7 +34,14 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QGridLayout>
 #include <QLabel>
 #include <QMenu>
+#include <QResizeEvent>
+#include <QPushButton>
+#include <QPainter>
+#include <QListWidget>
 #include <QScrollArea>
+#include <QSpinBox>
+#include <QAbstractItemView>
+#include <QEvent>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -191,6 +202,9 @@ void InspectorDock::build()
 	empty_->setWordWrap(true);
 	empty_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
 	v->addWidget(empty_);
+
+	broadcastSection_ = buildBroadcastSection();
+	v->addWidget(broadcastSection_);
 
 	/* ---- align ---- */
 	{
@@ -432,6 +446,13 @@ void InspectorDock::build()
 		v->addWidget(arrangeSection_);
 	}
 
+	layoutSection_ = buildLayoutSection();
+	v->addWidget(layoutSection_);
+	presetSection_ = buildPresetSection();
+	v->addWidget(presetSection_);
+	constraintSection_ = buildConstraintSection();
+	v->addWidget(constraintSection_);
+
 	/* ---- crop ---- */
 	{
 		auto *body = new QWidget(content_);
@@ -512,6 +533,13 @@ void InspectorDock::updateLive()
 
 void InspectorDock::refresh()
 {
+	if (refreshing_)
+		return; /* re-entered through a Qt event sent while refreshing */
+	refreshing_ = true;
+	struct Reset {
+		bool &flag;
+		~Reset() { flag = false; }
+	} reset{refreshing_};
 	updating_ = true;
 	EditContext &ctx = EditContext::instance();
 	const std::vector<const ItemEntry *> sel = ctx.selection();
@@ -553,17 +581,25 @@ void InspectorDock::refresh()
 	paste_->setVisible(n > 0);
 	paste_->setEnabled(commands::canPaste());
 
+	/* Set each visibility once: hiding then showing a section would send synthetic
+	 * enter/leave events (and previews) on every refresh. */
 	for (QWidget *w : content_->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly)) {
-		if (w != title_->parentWidget() && w != live_ && w != empty_)
-			w->setVisible(n > 0);
+		if (w == title_->parentWidget() || w == live_ || w == empty_)
+			continue;
+		bool visible = n > 0;
+		if (w == arrangeSection_ || w == layoutSection_)
+			visible = multi;
+		if (w->isVisibleTo(content_) != visible)
+			w->setVisible(visible);
 	}
-	arrangeSection_->setVisible(multi);
-	alignTargetRow_->setVisible(multi);
-	cropSection_->setVisible(n > 0);
-	boundsSection_->setVisible(n > 0);
+	if (alignTargetRow_->isVisibleTo(content_) != multi)
+		alignTargetRow_->setVisible(multi);
+	syncLayoutControls();
+	syncBroadcast();
 
 	if (n == 0) {
 		updating_ = false;
+		clearPreviewIfIdle();
 		return;
 	}
 
@@ -615,6 +651,20 @@ void InspectorDock::refresh()
 		keyObject_->setCurrentIndex(commands::keyIndex());
 	}
 
+	/* Constraints */
+	{
+		std::vector<double> hs, vs;
+		for (const ItemEntry *e : sel) {
+			core::HConstraint h;
+			core::VConstraint v;
+			getConstraints(e->item, h, v);
+			hs.push_back((double)h);
+			vs.push_back((double)v);
+		}
+		constraintH_->setCurrentIndex(allEqual(hs) ? (int)hs.front() : -1);
+		constraintV_->setCurrentIndex(allEqual(vs) ? (int)vs.front() : -1);
+	}
+
 	/* Bounds */
 	std::vector<double> types, aligns, crops;
 	for (const ItemEntry *e : sel) {
@@ -642,7 +692,615 @@ void InspectorDock::refresh()
 	else
 		cropToBounds_->setCheckState(Qt::PartiallyChecked);
 
+	clearPreviewIfIdle();
 	updating_ = false;
+}
+
+/* ------------------------------------------------------ broadcast layouts */
+
+namespace {
+
+/* A wrapping gallery whose height always shows every row (no inner scrolling). */
+class Gallery : public QListWidget {
+public:
+	using QListWidget::QListWidget;
+	void fitRows()
+	{
+		const QSize cell = gridSize();
+		const int cols = std::max(1, viewport()->width() / std::max(1, cell.width()));
+		const int rows = std::max(1, (count() + cols - 1) / cols);
+		setFixedHeight(rows * cell.height() + 2 * frameWidth() + 2 * spacing());
+	}
+
+protected:
+	void resizeEvent(QResizeEvent *e) override
+	{
+		QListWidget::resizeEvent(e);
+		fitRows();
+	}
+};
+
+QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor &screen, const QColor &bg)
+{
+	const QSize size(112, 63);
+	QIcon icon;
+	for (qreal dpr : {1.0, 2.0}) {
+		QPixmap pm(size * dpr);
+		pm.setDevicePixelRatio(dpr);
+		pm.fill(Qt::transparent);
+		QPainter p(&pm);
+		p.setRenderHint(QPainter::Antialiasing);
+		p.setPen(Qt::NoPen);
+		p.setBrush(bg);
+		p.drawRoundedRect(QRectF(0, 0, size.width(), size.height()), 3, 3);
+		core::BroadcastSpec spec;
+		spec.gap = 2;
+		for (const core::Slot &s :
+		     core::buildBroadcast(key, {0, 0, (double)size.width(), (double)size.height()}, spec)) {
+			p.setBrush(s.kind == core::SlotKind::Camera ? camera : screen);
+			p.drawRoundedRect(QRectF(s.cell.x + 0.5, s.cell.y + 0.5, s.cell.w - 1, s.cell.h - 1), 1.5, 1.5);
+			if (s.kind == core::SlotKind::Camera) {
+				/* a head and shoulders */
+				const QPointF c(s.cell.x + s.cell.w / 2, s.cell.y + s.cell.h * 0.42);
+				const double r = std::min(s.cell.w, s.cell.h) * 0.16;
+				p.setBrush(bg);
+				p.drawEllipse(c, r, r);
+				p.drawChord(QRectF(c.x() - r * 2, c.y() + r * 1.3, r * 4, r * 3.2), 0, 180 * 16);
+			}
+		}
+		p.end();
+		icon.addPixmap(pm);
+		icon.addPixmap(pm, QIcon::Selected); /* no tint: the outline shows the selection */
+	}
+	return icon;
+}
+
+} // namespace
+
+QWidget *InspectorDock::buildBroadcastSection()
+{
+	auto *body = new QWidget(content_);
+	auto *bl = new QVBoxLayout(body);
+	bl->setContentsMargins(0, 0, 0, 0);
+	bl->setSpacing(tokens::kRowSpacing);
+
+	auto *top = new QWidget(body);
+	auto *tl = row(top);
+	broadcastSummary_ = new QLabel(top);
+	broadcastSummary_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+	broadcastKinds_ = new QComboBox(top);
+	broadcastKinds_->addItems({T("Broadcast.KindsAuto"), T("Broadcast.KindsCameras"), T("Broadcast.KindsScreens")});
+	broadcastKinds_->setToolTip(T("Broadcast.KindsTooltip"));
+	broadcastKinds_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+	broadcastKinds_->setMinimumContentsLength(6);
+	tl->addWidget(broadcastKinds_, 1);
+	bl->addWidget(broadcastSummary_);
+	bl->addWidget(top);
+
+	broadcastGallery_ = new Gallery(body);
+	broadcastGallery_->setViewMode(QListView::IconMode);
+	broadcastGallery_->setIconSize(QSize(112, 63));
+	broadcastGallery_->setResizeMode(QListView::Adjust);
+	broadcastGallery_->setMovement(QListView::Static);
+	broadcastGallery_->setWrapping(true);
+	broadcastGallery_->setGridSize(QSize(124, 96));
+	broadcastGallery_->setUniformItemSizes(true);
+	broadcastGallery_->setWordWrap(true);
+	broadcastGallery_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	/* Selection as an outline so the thumbnail keeps its colors. */
+	broadcastGallery_->setStyleSheet(
+		QString("QListWidget { background: transparent; }"
+			"QListWidget::item { border: 2px solid transparent; border-radius: 4px; }"
+			"QListWidget::item:selected { background: transparent; border-color: %1; }"
+			"QListWidget::item:hover:!selected { border-color: palette(mid); }")
+			.arg(QColor::fromRgba(tokens::kSelection).name()));
+	broadcastGallery_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	broadcastGallery_->setFrameShape(QFrame::NoFrame);
+	broadcastGallery_->setSelectionMode(QAbstractItemView::SingleSelection);
+	bl->addWidget(broadcastGallery_);
+
+	broadcastEmpty_ = new QLabel(body);
+	broadcastEmpty_->setWordWrap(true);
+	bl->addWidget(broadcastEmpty_);
+
+	auto *nums = new QWidget(body);
+	auto *nl = row(nums);
+	broadcastGap_ = new NumericField(QString::fromUtf8("\xE2\x86\x94"), T("Broadcast.Gap"), nums);
+	broadcastMargin_ = new NumericField("M", T("Broadcast.Margin"), nums);
+	nl->addWidget(broadcastGap_);
+	nl->addWidget(broadcastMargin_);
+	bl->addWidget(nums);
+
+	broadcastLock_ = new QCheckBox(T("Broadcast.Lock"), body);
+	broadcastLock_->setToolTip(T("Broadcast.LockTooltip"));
+	bl->addWidget(broadcastLock_);
+
+	auto *buttons = new QWidget(body);
+	auto *btl = row(buttons);
+	broadcastApply_ = new QPushButton(T("Broadcast.Apply"), buttons);
+	broadcastApply_->setDefault(true);
+	broadcastScene_ = new QPushButton(T("Broadcast.NewScene"), buttons);
+	broadcastScene_->setToolTip(T("Broadcast.NewSceneTooltip"));
+	btl->addWidget(broadcastApply_, 1);
+	btl->addWidget(broadcastScene_, 1);
+	bl->addWidget(buttons);
+
+	auto spec = [] {
+		core::BroadcastSpec s;
+		s.gap = Store::instance().settings().broadcastGap;
+		s.margin = Store::instance().settings().broadcastMargin;
+		return s;
+	};
+	auto kinds = [] {
+		return (commands::KindMode)Store::instance().settings().broadcastKinds;
+	};
+
+	connect(broadcastKinds_, &QComboBox::activated, this, [this](int i) {
+		Store::instance().settings().broadcastKinds = std::clamp(i, 0, 2);
+		Store::instance().saveSettings();
+		syncBroadcast();
+		previewBroadcast(true);
+	});
+	connect(broadcastGallery_, &QListWidget::currentItemChanged, this, [this] {
+		if (!updating_)
+			previewBroadcast(true);
+	});
+	auto number = [this](double ViewSettings::*field) {
+		return [this, field](const core::Expression &e) {
+			ViewSettings &s = Store::instance().settings();
+			double v = 0;
+			if (!e.apply(s.*field, v))
+				return;
+			s.*field = std::clamp(v, 0.0, 1000.0);
+			Store::instance().saveSettings();
+			syncBroadcast();
+			previewBroadcast(true);
+		};
+	};
+	connect(broadcastGap_, &NumericField::committed, this, number(&ViewSettings::broadcastGap));
+	connect(broadcastMargin_, &NumericField::committed, this, number(&ViewSettings::broadcastMargin));
+	connect(broadcastLock_, &QCheckBox::toggled, this, [this](bool on) {
+		if (updating_)
+			return;
+		Store::instance().settings().broadcastLock = on;
+		Store::instance().saveSettings();
+	});
+	connect(broadcastApply_, &QPushButton::clicked, this, [this, spec, kinds] {
+		QListWidgetItem *it = broadcastGallery_->currentItem();
+		if (it)
+			commands::applyBroadcast(it->data(Qt::UserRole).toString().toStdString(), spec(), kinds(),
+						 Store::instance().settings().broadcastLock);
+	});
+	connect(broadcastScene_, &QPushButton::clicked, this, [this, spec, kinds] {
+		QListWidgetItem *it = broadcastGallery_->currentItem();
+		if (it)
+			commands::createBroadcastScene(it->data(Qt::UserRole).toString().toStdString(), it->text(),
+						       spec(), kinds(), Store::instance().settings().broadcastLock);
+	});
+
+	QWidget *sec = section(T("Section.Broadcast"), body);
+	sec->setObjectName("LayoutsBroadcastSection");
+	sec->installEventFilter(this);
+	return sec;
+}
+
+void InspectorDock::syncBroadcast()
+{
+	const bool was = updating_;
+	updating_ = true;
+	const ViewSettings &s = Store::instance().settings();
+	broadcastKinds_->setCurrentIndex(s.broadcastKinds);
+	broadcastGap_->setValue(s.broadcastGap);
+	broadcastMargin_->setValue(s.broadcastMargin);
+	broadcastLock_->setChecked(s.broadcastLock);
+
+	int cams = 0, screens = 0;
+	for (core::SlotKind k : commands::selectionKinds((commands::KindMode)s.broadcastKinds))
+		(k == core::SlotKind::Camera ? cams : screens)++;
+	broadcastSummary_->setText(T("Broadcast.Summary").arg(cams).arg(screens));
+
+	const std::vector<core::BroadcastTemplate> list = core::templatesFor(cams, screens);
+	QStringList keys;
+	for (const core::BroadcastTemplate &t : list)
+		keys << QString::fromStdString(t.key);
+	QStringList shown;
+	for (int i = 0; i < broadcastGallery_->count(); i++)
+		shown << broadcastGallery_->item(i)->data(Qt::UserRole).toString();
+	if (keys != shown) {
+		const QString current = broadcastGallery_->currentItem()
+						? broadcastGallery_->currentItem()->data(Qt::UserRole).toString()
+						: QString();
+		broadcastGallery_->clear();
+		const QColor cam = QColor::fromRgba(tokens::kThumbCamera);
+		const QColor scr = QColor::fromRgba(tokens::kThumbScreen);
+		const QColor bg = palette().color(QPalette::Base);
+		for (const QString &k : keys) {
+			auto *item = new QListWidgetItem(broadcastThumb(k.toStdString(), cam, scr, bg),
+							 T(("Broadcast." + k.toStdString()).c_str()),
+							 broadcastGallery_);
+			item->setData(Qt::UserRole, k);
+			item->setToolTip(item->text());
+			if (k == current)
+				broadcastGallery_->setCurrentItem(item);
+		}
+		if (!broadcastGallery_->currentItem() && broadcastGallery_->count() > 0)
+			broadcastGallery_->setCurrentRow(0);
+		static_cast<Gallery *>(broadcastGallery_)->fitRows();
+	}
+	const bool any = !keys.isEmpty();
+	broadcastGallery_->setVisible(any);
+	broadcastEmpty_->setVisible(!any);
+	broadcastEmpty_->setText(T("Broadcast.None"));
+	broadcastApply_->setEnabled(any);
+	broadcastScene_->setEnabled(any);
+	updating_ = was;
+}
+
+void InspectorDock::previewBroadcast(bool force)
+{
+	if (!force && !hoverBroadcast_)
+		return;
+	QListWidgetItem *it = broadcastGallery_->currentItem();
+	if (!it || !broadcastGallery_->isVisible()) {
+		commands::showPreview({});
+		return;
+	}
+	core::BroadcastSpec spec;
+	spec.gap = Store::instance().settings().broadcastGap;
+	spec.margin = Store::instance().settings().broadcastMargin;
+	previewOwner_ = 3;
+	commands::showPreview(
+		commands::broadcastFrames(it->data(Qt::UserRole).toString().toStdString(), spec,
+					  (commands::KindMode)Store::instance().settings().broadcastKinds));
+}
+
+/* ------------------------------------------------------------ constraints */
+
+QWidget *InspectorDock::buildConstraintSection()
+{
+	auto *body = new QWidget(content_);
+	auto *bl = new QVBoxLayout(body);
+	bl->setContentsMargins(0, 0, 0, 0);
+	bl->setSpacing(tokens::kRowSpacing);
+
+	constraintH_ = new QComboBox(body);
+	for (const char *k : {"Constraint.Default", "Constraint.Left", "Constraint.Right", "Constraint.Center",
+			      "Constraint.LeftRight", "Constraint.Scale"})
+		constraintH_->addItem(T(k));
+	constraintV_ = new QComboBox(body);
+	for (const char *k : {"Constraint.Default", "Constraint.Top", "Constraint.Bottom", "Constraint.Center",
+			      "Constraint.TopBottom", "Constraint.Scale"})
+		constraintV_->addItem(T(k));
+	for (QComboBox *c : {constraintH_, constraintV_}) {
+		c->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+		c->setMinimumContentsLength(6);
+	}
+	constraintH_->setToolTip(T("Constraint.HTooltip"));
+	constraintV_->setToolTip(T("Constraint.VTooltip"));
+
+	auto *w = new QWidget(body);
+	auto *l = row(w);
+	l->addWidget(constraintH_, 1);
+	l->addWidget(constraintV_, 1);
+	bl->addWidget(w);
+	auto *hint = new QLabel(T("Constraint.Hint"), body);
+	hint->setWordWrap(true);
+	QPalette p = hint->palette();
+	p.setColor(QPalette::WindowText, p.color(QPalette::Disabled, QPalette::WindowText));
+	hint->setPalette(p);
+	bl->addWidget(hint);
+
+	auto apply = [this](bool horizontal, int index) {
+		if (updating_ || index < 0)
+			return;
+		for (const ItemEntry *e : EditContext::instance().selection()) {
+			core::HConstraint h;
+			core::VConstraint v;
+			getConstraints(e->item, h, v);
+			if (horizontal)
+				h = (core::HConstraint)index;
+			else
+				v = (core::VConstraint)index;
+			setConstraints(e->item, h, v);
+		}
+		obs_frontend_save();
+		refresh();
+	};
+	connect(constraintH_, &QComboBox::activated, this, [apply](int i) { apply(true, i); });
+	connect(constraintV_, &QComboBox::activated, this, [apply](int i) { apply(false, i); });
+	/* Advanced: most people only need "Lock the layout" in Broadcast layouts. */
+	auto *box = new QWidget(content_);
+	auto *bl2 = new QVBoxLayout(box);
+	bl2->setContentsMargins(0, 0, 0, 0);
+	bl2->setSpacing(tokens::kRowSpacing);
+	auto *toggle = new QToolButton(box);
+	toggle->setText(T("Section.Advanced"));
+	toggle->setCheckable(true);
+	toggle->setAutoRaise(true);
+	toggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+	toggle->setArrowType(Qt::RightArrow);
+	toggle->setToolTip(T("Constraint.HTooltip"));
+	body->setVisible(false);
+	connect(toggle, &QToolButton::toggled, this, [toggle, body](bool on) {
+		toggle->setArrowType(on ? Qt::DownArrow : Qt::RightArrow);
+		body->setVisible(on);
+	});
+	bl2->addWidget(toggle);
+	bl2->addWidget(body);
+	return box;
+}
+
+/* ------------------------------------------------------------ auto layout */
+
+QWidget *InspectorDock::buildLayoutSection()
+{
+	auto *body = new QWidget(content_);
+	auto *bl = new QVBoxLayout(body);
+	bl->setContentsMargins(0, 0, 0, 0);
+	bl->setSpacing(tokens::kRowSpacing);
+
+	auto *seg = new QWidget(body);
+	flowDir_ = segmented({T("Flow.Horizontal"), T("Flow.Vertical"), T("Flow.Grid")}, seg);
+	bl->addWidget(seg);
+
+	auto combo = [body](std::initializer_list<const char *> keys, const char *tip) {
+		auto *c = new QComboBox(body);
+		for (const char *k : keys)
+			c->addItem(T(k));
+		c->setToolTip(T(tip));
+		c->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+		c->setMinimumContentsLength(6);
+		return c;
+	};
+	flowContainer_ = combo({"Flow.InSelection", "Flow.InCanvas"}, "Flow.ContainerTooltip");
+	flowSizing_ = combo({"Flow.Keep", "Flow.Fill"}, "Flow.SizingTooltip");
+	flowMain_ = combo({"Flow.Start", "Flow.Center", "Flow.End"}, "Flow.MainTooltip");
+	flowCross_ = combo({"Flow.Start", "Flow.Center", "Flow.End"}, "Flow.CrossTooltip");
+
+	auto pair = [body](QWidget *a, QWidget *b) {
+		auto *w = new QWidget(body);
+		auto *l = row(w);
+		l->addWidget(a, 1);
+		l->addWidget(b, 1);
+		return w;
+	};
+	bl->addWidget(pair(flowContainer_, flowSizing_));
+	bl->addWidget(pair(flowMain_, flowCross_));
+
+	flowGap_ = new NumericField(QString::fromUtf8("\xE2\x86\x94"), T("Flow.Gap"), body);
+	flowPadding_ = new NumericField(QString::fromUtf8("\xE2\x96\xA2"), T("Flow.Padding"), body);
+	bl->addWidget(pair(flowGap_, flowPadding_));
+
+	columnsRow_ = new QWidget(body);
+	auto *cr = row(columnsRow_);
+	auto *cl = new QLabel(T("Flow.Columns"), columnsRow_);
+	flowColumns_ = new QSpinBox(columnsRow_);
+	flowColumns_->setRange(1, 50);
+	cr->addWidget(cl);
+	cr->addWidget(flowColumns_, 1);
+	bl->addWidget(columnsRow_);
+
+	auto *apply = new QToolButton(body);
+	apply->setText(T("Flow.Apply"));
+	apply->setToolTip(T("Flow.ApplyTooltip"));
+	apply->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	apply->setMinimumHeight(tokens::kFieldHeight);
+	bl->addWidget(apply);
+
+	auto changed = [this] {
+		if (updating_)
+			return;
+		ViewSettings &s = Store::instance().settings();
+		s.flow.direction = (core::FlowDirection)std::max(0, flowDir_->checkedId());
+		s.flowInCanvas = flowContainer_->currentIndex() == 1;
+		s.flow.sizing = (core::FlowSizing)std::max(0, flowSizing_->currentIndex());
+		s.flow.mainAlign = (core::FlowAlign)std::max(0, flowMain_->currentIndex());
+		s.flow.crossAlign = (core::FlowAlign)std::max(0, flowCross_->currentIndex());
+		s.flow.columns = flowColumns_->value();
+		Store::instance().saveSettings();
+		columnsRow_->setVisible(s.flow.direction == core::FlowDirection::Grid);
+		previewLayout();
+	};
+	connect(flowDir_, &QButtonGroup::idClicked, this, changed);
+	for (QComboBox *c : {flowContainer_, flowSizing_, flowMain_, flowCross_})
+		connect(c, &QComboBox::activated, this, changed);
+	connect(flowColumns_, &QSpinBox::valueChanged, this, changed);
+	auto number = [this](double core::FlowSpec::*field, double lo) {
+		return [this, field, lo](const core::Expression &e) {
+			ViewSettings &s = Store::instance().settings();
+			double v = 0;
+			if (!e.apply(s.flow.*field, v))
+				return;
+			s.flow.*field = std::max(lo, v);
+			Store::instance().saveSettings();
+			syncLayoutControls();
+			previewLayout();
+		};
+	};
+	connect(flowGap_, &NumericField::committed, this, number(&core::FlowSpec::gap, -10000.0));
+	connect(flowPadding_, &NumericField::committed, this, number(&core::FlowSpec::padding, 0.0));
+	connect(apply, &QToolButton::clicked, this, [] {
+		const ViewSettings &s = Store::instance().settings();
+		commands::autoLayout(s.flow, s.flowInCanvas);
+	});
+
+	QWidget *sec = section(T("Section.Layout"), body);
+	sec->setObjectName("LayoutsAutoLayoutSection");
+	sec->installEventFilter(this);
+	return sec;
+}
+
+QWidget *InspectorDock::buildPresetSection()
+{
+	auto *body = new QWidget(content_);
+	auto *bl = new QVBoxLayout(body);
+	bl->setContentsMargins(0, 0, 0, 0);
+	bl->setSpacing(tokens::kRowSpacing);
+
+	preset_ = new QComboBox(body);
+	preset_->setToolTip(T("Preset.Tooltip"));
+	preset_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+	preset_->setMinimumContentsLength(10);
+	bl->addWidget(preset_);
+
+	auto *nums = new QWidget(body);
+	auto *nl = row(nums);
+	presetMargin_ = new NumericField("M", T("Preset.Margin"), nums);
+	presetGap_ = new NumericField(QString::fromUtf8("\xE2\x86\x94"), T("Preset.Gap"), nums);
+	presetCorner_ = new NumericField("%", T("Preset.Corner"), nums);
+	nl->addWidget(presetMargin_);
+	nl->addWidget(presetGap_);
+	nl->addWidget(presetCorner_);
+	bl->addWidget(nums);
+
+	presetApply_ = new QToolButton(body);
+	presetApply_->setText(T("Preset.Apply"));
+	presetApply_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	presetApply_->setMinimumHeight(tokens::kFieldHeight);
+	bl->addWidget(presetApply_);
+
+	connect(preset_, &QComboBox::activated, this, [this] { previewPreset(true); });
+	connect(preset_, &QComboBox::highlighted, this, [this](int i) { previewPreset(true, i); });
+	auto number = [this](double core::PresetSpec::*field, double lo, double hi, double scale) {
+		return [this, field, lo, hi, scale](const core::Expression &e) {
+			ViewSettings &s = Store::instance().settings();
+			double v = 0;
+			if (!e.apply(s.preset.*field * scale, v))
+				return;
+			s.preset.*field = std::clamp(v / scale, lo, hi);
+			Store::instance().saveSettings();
+			syncLayoutControls();
+			previewPreset();
+		};
+	};
+	connect(presetMargin_, &NumericField::committed, this, number(&core::PresetSpec::margin, 0.0, 10000.0, 1.0));
+	connect(presetGap_, &NumericField::committed, this, number(&core::PresetSpec::gap, 0.0, 10000.0, 1.0));
+	connect(presetCorner_, &NumericField::committed, this,
+		number(&core::PresetSpec::cornerScale, 0.05, 1.0, 100.0));
+	connect(presetApply_, &QToolButton::clicked, this, [this] {
+		const auto p = core::presetFromKey(preset_->currentData().toString().toStdString());
+		if (p)
+			commands::applyPreset(*p, Store::instance().settings().preset);
+	});
+
+	QWidget *sec = section(T("Section.Presets"), body);
+	sec->setObjectName("LayoutsPresetSection");
+	sec->installEventFilter(this);
+	return sec;
+}
+
+void InspectorDock::syncLayoutControls()
+{
+	const bool was = updating_;
+	updating_ = true;
+	const ViewSettings &s = Store::instance().settings();
+	if (QAbstractButton *b = flowDir_->button((int)s.flow.direction))
+		b->setChecked(true);
+	flowContainer_->setCurrentIndex(s.flowInCanvas ? 1 : 0);
+	flowSizing_->setCurrentIndex((int)s.flow.sizing);
+	flowMain_->setCurrentIndex((int)s.flow.mainAlign);
+	flowCross_->setCurrentIndex((int)s.flow.crossAlign);
+	flowColumns_->setValue(s.flow.columns);
+	columnsRow_->setVisible(s.flow.direction == core::FlowDirection::Grid);
+	flowGap_->setValue(s.flow.gap);
+	flowPadding_->setValue(s.flow.padding);
+	presetMargin_->setValue(s.preset.margin);
+	presetGap_->setValue(s.preset.gap);
+	presetCorner_->setValue(s.preset.cornerScale * 100.0);
+
+	/* Presets available for the number of selected items. */
+	const int n = (int)EditContext::instance().selection().size();
+	QStringList keys;
+	for (const core::PresetInfo &p : core::presets()) {
+		if (n >= p.minItems && n <= p.maxItems)
+			keys << QString::fromUtf8(p.key);
+	}
+	QStringList shown;
+	for (int i = 0; i < preset_->count(); i++)
+		shown << preset_->itemData(i).toString();
+	if (keys != shown) {
+		const QString current = preset_->currentData().toString();
+		preset_->clear();
+		for (const QString &k : keys)
+			preset_->addItem(T(("Preset." + k.toStdString()).c_str()), k);
+		const int idx = preset_->findData(current);
+		preset_->setCurrentIndex(idx >= 0 ? idx : 0);
+	}
+	presetApply_->setEnabled(preset_->count() > 0);
+	preset_->setEnabled(preset_->count() > 0);
+	if (preset_->count() == 0)
+		preset_->setPlaceholderText(T("Preset.None"));
+	updating_ = was;
+}
+
+void InspectorDock::previewLayout(bool force)
+{
+	if (!force && !hoverLayout_)
+		return;
+	const ViewSettings &s = Store::instance().settings();
+	previewOwner_ = 1;
+	commands::showPreview(commands::flowFrames(s.flow, s.flowInCanvas));
+}
+
+void InspectorDock::previewPreset(bool force, int index)
+{
+	if (!force && !hoverPreset_ && !preset_->view()->isVisible())
+		return;
+	const int i = index >= 0 ? index : preset_->currentIndex();
+	const auto p = core::presetFromKey(preset_->itemData(i).toString().toStdString());
+	if (!p) {
+		commands::showPreview({});
+		return;
+	}
+	std::vector<core::Frame> frames = commands::presetFrames(*p, Store::instance().settings().preset);
+	previewOwner_ = 2;
+	commands::showPreview(frames);
+}
+
+bool InspectorDock::eventFilter(QObject *obj, QEvent *event)
+{
+	if (event->type() == QEvent::Enter) {
+		if (obj == layoutSection_) {
+			hoverLayout_ = true;
+			previewLayout(true);
+		} else if (obj == presetSection_) {
+			hoverPreset_ = true;
+			previewPreset(true);
+		} else if (obj == broadcastSection_) {
+			hoverBroadcast_ = true;
+			previewBroadcast(true);
+		}
+	} else if ((event->type() == QEvent::Leave || event->type() == QEvent::Hide) &&
+		   (obj == layoutSection_ || obj == presetSection_ || obj == broadcastSection_)) {
+		/* Hide too: a section hidden under the mouse never receives Leave. */
+		(obj == layoutSection_ ? hoverLayout_ : obj == presetSection_ ? hoverPreset_ : hoverBroadcast_) = false;
+		clearPreviewIfIdle();
+	}
+	return QWidget::eventFilter(obj, event);
+}
+
+void InspectorDock::clearPreviewIfIdle()
+{
+	/* The preview belongs to the section that showed it: only that section's hover
+	 * state keeps it alive. */
+	bool keep = false;
+	if (previewOwner_ == 1)
+		keep = hoverLayout_ && layoutSection_->isVisible();
+	else if (previewOwner_ == 2)
+		keep = (hoverPreset_ && presetSection_->isVisible()) || preset_->view()->isVisible();
+	else if (previewOwner_ == 3)
+		keep = hoverBroadcast_ && broadcastSection_->isVisible();
+	if (!keep) {
+		previewOwner_ = 0;
+		commands::showPreview({});
+	}
+}
+
+void InspectorDock::hideEvent(QHideEvent *e)
+{
+	hoverLayout_ = hoverPreset_ = hoverBroadcast_ = false;
+	commands::showPreview({});
+	QWidget::hideEvent(e);
 }
 
 } // namespace layouts::ui
