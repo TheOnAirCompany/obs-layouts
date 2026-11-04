@@ -582,6 +582,7 @@ void InspectorDock::refresh()
 
 	if (n == 0) {
 		updating_ = false;
+		clearPreviewIfIdle();
 		return;
 	}
 
@@ -674,6 +675,7 @@ void InspectorDock::refresh()
 	else
 		cropToBounds_->setCheckState(Qt::PartiallyChecked);
 
+	clearPreviewIfIdle();
 	updating_ = false;
 }
 
@@ -939,7 +941,7 @@ void InspectorDock::syncLayoutControls()
 
 void InspectorDock::previewLayout(bool force)
 {
-	if (!force && !layoutSection_->underMouse())
+	if (!force && !hoverLayout_)
 		return;
 	const ViewSettings &s = Store::instance().settings();
 	commands::showPreview(commands::flowFrames(s.flow, s.flowInCanvas));
@@ -947,7 +949,7 @@ void InspectorDock::previewLayout(bool force)
 
 void InspectorDock::previewPreset(bool force, int index)
 {
-	if (!force && !presetSection_->underMouse() && !preset_->view()->isVisible())
+	if (!force && !hoverPreset_ && !preset_->view()->isVisible())
 		return;
 	const int i = index >= 0 ? index : preset_->currentIndex();
 	const auto p = core::presetFromKey(preset_->itemData(i).toString().toStdString());
@@ -962,14 +964,35 @@ void InspectorDock::previewPreset(bool force, int index)
 bool InspectorDock::eventFilter(QObject *obj, QEvent *event)
 {
 	if (event->type() == QEvent::Enter) {
-		if (obj == layoutSection_)
+		if (obj == layoutSection_) {
+			hoverLayout_ = true;
 			previewLayout(true);
-		else if (obj == presetSection_)
+		} else if (obj == presetSection_) {
+			hoverPreset_ = true;
 			previewPreset(true);
-	} else if (event->type() == QEvent::Leave && (obj == layoutSection_ || obj == presetSection_)) {
-		commands::showPreview({});
+		}
+	} else if ((event->type() == QEvent::Leave || event->type() == QEvent::Hide) &&
+		   (obj == layoutSection_ || obj == presetSection_)) {
+		/* Hide too: a section hidden under the mouse never receives Leave. */
+		(obj == layoutSection_ ? hoverLayout_ : hoverPreset_) = false;
+		clearPreviewIfIdle();
 	}
 	return QWidget::eventFilter(obj, event);
+}
+
+void InspectorDock::clearPreviewIfIdle()
+{
+	const bool layoutActive = hoverLayout_ && layoutSection_->isVisible();
+	const bool presetActive = (hoverPreset_ && presetSection_->isVisible()) || preset_->view()->isVisible();
+	if (!layoutActive && !presetActive)
+		commands::showPreview({});
+}
+
+void InspectorDock::hideEvent(QHideEvent *e)
+{
+	hoverLayout_ = hoverPreset_ = false;
+	commands::showPreview({});
+	QWidget::hideEvent(e);
 }
 
 } // namespace layouts::ui

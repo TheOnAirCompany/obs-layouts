@@ -2,7 +2,8 @@
 
 ## Overview
 
-Layouts is a native OBS module (C++17, Qt 6, libobs, obs-frontend-api) made of two docks:
+Layouts is a native OBS module (C++17, Qt 6, libobs, obs-frontend-api). Since 0.2 both parts live in
+one regular window, **Layouts** (`ui/layouts-window`), opened from Tools > Layouts:
 
 - **Inspector**: a properties panel for the selection (position, size, rotation, crop, bounding
   box, alignment, distribution, spacing).
@@ -32,6 +33,7 @@ src/
 │   ├── theme          design tokens, icons, localized text
 │   ├── widgets        numeric field with math + scrub label, reference point picker
 │   ├── inspector-dock
+│   ├── layouts-window the top-level window: Canvas + Inspector in a splitter
 │   ├── canvas-dock    toolbar, scene picker, rulers, status bar, settings dialog
 │   ├── canvas-view    obs_display surface, rendering, interactions
 │   └── ruler

@@ -22,7 +22,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <cstring>
 
-#include <QDockWidget>
 #include <QMainWindow>
 #include <QPointer>
 #include <QTimer>
@@ -34,6 +33,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "ui/canvas-dock.hpp"
 #include "ui/canvas-view.hpp"
 #include "ui/inspector-dock.hpp"
+#include "ui/layouts-window.hpp"
 #include "ui/theme.hpp"
 
 OBS_DECLARE_MODULE()
@@ -51,41 +51,18 @@ MODULE_EXPORT const char *obs_module_name(void)
 
 #ifdef LAYOUTS_SELFTEST
 namespace layouts {
-void runSelfTest(ui::CanvasDock *canvas);
+void runSelfTest(ui::LayoutsWindow *window);
 }
 #endif
 
 namespace {
 
-constexpr const char *kInspectorId = "layouts-inspector";
-constexpr const char *kCanvasId = "layouts-canvas";
+QPointer<layouts::ui::LayoutsWindow> g_window;
 
-QPointer<layouts::ui::InspectorDock> g_inspector;
-QPointer<layouts::ui::CanvasDock> g_canvas;
-
-void placeDocksOnFirstRun()
+void openWindow()
 {
-	layouts::ViewSettings &s = layouts::Store::instance().settings();
-	if (s.firstRunDone)
-		return;
-	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-	if (g_inspector) {
-		if (auto *d = qobject_cast<QDockWidget *>(g_inspector->parentWidget())) {
-			d->setFloating(false);
-			main->addDockWidget(Qt::RightDockWidgetArea, d);
-			d->show();
-			main->resizeDocks({d}, {layouts::tokens::kInspectorWidth}, Qt::Horizontal);
-		}
-	}
-	if (g_canvas) {
-		if (auto *d = qobject_cast<QDockWidget *>(g_canvas->parentWidget())) {
-			d->setFloating(true);
-			d->resize(1100, 700);
-			d->show();
-		}
-	}
-	s.firstRunDone = true;
-	layouts::Store::instance().saveSettings();
+	if (g_window)
+		g_window->open();
 }
 
 void onFrontendEvent(enum obs_frontend_event event, void *)
@@ -106,10 +83,9 @@ void onFrontendEvent(enum obs_frontend_event event, void *)
 	}
 	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING) {
 		layouts::ConstraintWatcher::instance().start();
-		placeDocksOnFirstRun();
 #ifdef LAYOUTS_SELFTEST
 		if (getenv("LAYOUTS_SELFTEST"))
-			QTimer::singleShot(1500, [] { layouts::runSelfTest(g_canvas); });
+			QTimer::singleShot(1500, [] { layouts::runSelfTest(g_window); });
 #endif
 	}
 }
@@ -156,23 +132,17 @@ bool obs_module_load(void)
 	}
 #endif
 
-	g_inspector = new layouts::ui::InspectorDock(main);
-	if (!obs_frontend_add_dock_by_id(kInspectorId, obs_module_text("Inspector.Title"), g_inspector.data())) {
-		obs_log(LOG_ERROR, "could not register the Inspector dock");
-		delete g_inspector.data();
-		return false;
-	}
-	g_canvas = new layouts::ui::CanvasDock(main);
-	if (!obs_frontend_add_dock_by_id(kCanvasId, obs_module_text("Canvas.Title"), g_canvas.data())) {
-		obs_log(LOG_ERROR, "could not register the Canvas dock");
-		delete g_canvas.data();
-		return false;
-	}
+	/* A regular window, not a dock: it can be resized, maximized and put in full
+	 * screen freely, and never docks into the OBS window. */
+	g_window = new layouts::ui::LayoutsWindow(main);
+	obs_frontend_add_tools_menu_item(obs_module_text("Menu.Open"), [](void *) { openWindow(); }, nullptr);
 
-	layouts::hotkeys::registerAll([] {
-		if (g_canvas)
-			g_canvas->view()->zoomFit();
-	});
+	layouts::hotkeys::registerAll(
+		[] {
+			if (g_window)
+				g_window->canvas()->view()->zoomFit();
+		},
+		[] { openWindow(); });
 
 	obs_frontend_add_event_callback(onFrontendEvent, nullptr);
 	obs_frontend_add_save_callback(onSave, nullptr);

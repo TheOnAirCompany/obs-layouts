@@ -32,6 +32,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <obs.h>
 
+#include <QByteArray>
 #include <QColor>
 #include <QObject>
 
@@ -60,6 +61,8 @@ struct ViewSettings {
 	core::FlowSpec flow;       /* auto layout parameters */
 	bool flowInCanvas = false; /* auto layout container: canvas instead of selection */
 	core::PresetSpec preset;   /* margins of composition presets */
+	QByteArray windowGeometry; /* Layouts window */
+	QByteArray splitterState;
 	QColor guideColor{0xFF, 0x3D, 0x71};
 };
 

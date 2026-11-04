@@ -57,9 +57,11 @@ private:
 	void syncLayoutControls();
 	void previewLayout(bool force = false);
 	void previewPreset(bool force = false, int index = -1);
+	void clearPreviewIfIdle();
 
 protected:
 	bool eventFilter(QObject *obj, QEvent *event) override;
+	void hideEvent(QHideEvent *e) override;
 
 private:
 	QLabel *title_ = nullptr;
@@ -91,6 +93,8 @@ private:
 	QComboBox *boundsAlign_ = nullptr;
 	QCheckBox *cropToBounds_ = nullptr;
 	bool updating_ = false;
+	bool hoverLayout_ = false;
+	bool hoverPreset_ = false;
 
 	/* auto layout (multi) */
 	QWidget *layoutSection_ = nullptr;

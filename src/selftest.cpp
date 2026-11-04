@@ -32,6 +32,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/store.hpp"
 #include "ui/canvas-dock.hpp"
 #include "ui/canvas-view.hpp"
+#include "ui/inspector-dock.hpp"
+#include "ui/layouts-window.hpp"
 #include "ui/ruler.hpp"
 
 #include <obs-frontend-api.h>
@@ -40,7 +42,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <QAction>
 #include <QApplication>
-#include <QDockWidget>
 #include <QFile>
 #include <QImage>
 #include <QMainWindow>
@@ -90,6 +91,7 @@ struct Runner {
 
 Runner *R = nullptr;
 ui::CanvasDock *g_dock = nullptr;
+ui::LayoutsWindow *g_window = nullptr;
 
 OBSSourceAutoRelease colorSource(const char *name, uint32_t w, uint32_t h, uint32_t abgr)
 {
@@ -595,20 +597,25 @@ void testLayoutsV02()
 	R->check(std::fabs(box("C").y - (box("A").y + 300 + 10)) < 0.6, "auto-layout-grid",
 		 rectStr(box("A")) + rectStr(box("B")) + rectStr(box("C")));
 
-	/* Preview frames are shown and cleared. */
+	/* A preview only lives while a section of the Inspector is hovered. */
 	commands::showPreview(commands::flowFrames(fs, true));
-	R->check(ctx.preview().size() == 3, "preview-shown");
-	commands::showPreview({});
-	R->check(ctx.preview().empty(), "preview-cleared");
+	R->check(ctx.preview().empty(), "preview-needs-hover", QString::number(ctx.preview().size()));
 
 	/* Hovering the presets section of the Inspector previews on the Canvas. */
 	selectNames({"A", "B"});
 	emit ctx.itemsChanged(); /* let the Inspector list the presets for 2 items */
-	if (QWidget *sec = static_cast<QWidget *>(obs_frontend_get_main_window())
-				   ->findChild<QWidget *>("LayoutsPresetSection")) {
+	if (QWidget *sec = g_window->findChild<QWidget *>("LayoutsPresetSection")) {
 		QEvent enter(QEvent::Enter);
 		QApplication::sendEvent(sec, &enter);
 		const size_t shown = ctx.preview().size();
+		/* Selection cleared while hovering: the section hides, the preview must go. */
+		ctx.clearSelection();
+		emit ctx.itemsChanged();
+		R->check(shown == 2 && ctx.preview().empty(), "preview-cleared-when-selection-cleared",
+			 QString::number(ctx.preview().size()));
+		selectNames({"A", "B"});
+		emit ctx.itemsChanged();
+		QApplication::sendEvent(sec, &enter);
 		QEvent leave(QEvent::Leave);
 		QApplication::sendEvent(sec, &leave);
 		R->check(shown == 2 && ctx.preview().empty(), "preset-hover-preview", QString::number(shown));
@@ -1028,8 +1035,10 @@ void perfReport(const char *label)
 
 void setCanvasVisible(bool visible)
 {
-	if (auto *d = qobject_cast<QDockWidget *>(g_dock->parentWidget()))
-		d->setVisible(visible);
+	if (visible)
+		g_window->open();
+	else
+		g_window->hide();
 }
 
 void addPerfSteps(int count)
@@ -1068,11 +1077,12 @@ static bool enabled(const char *group)
 	return QString::fromUtf8(only).split(',').contains(QString::fromUtf8(group));
 }
 
-void runSelfTest(ui::CanvasDock *dock)
+void runSelfTest(ui::LayoutsWindow *window)
 {
 	static Runner runner;
 	R = &runner;
-	g_dock = dock;
+	g_window = window;
+	g_dock = window->canvas();
 	obs_log(LOG_INFO, "[selftest] START");
 	if (!getenv("LAYOUTS_SELFTEST_HIDDEN"))
 		setCanvasVisible(true);
@@ -1110,8 +1120,7 @@ void runSelfTest(ui::CanvasDock *dock)
 				selectNames({"Camera"});
 				QKeyEvent kc(QEvent::KeyPress, Qt::Key_C, Qt::NoModifier, "c");
 				QApplication::sendEvent(g_dock->view(), &kc);
-				if (auto *d = qobject_cast<QDockWidget *>(g_dock->parentWidget()))
-					d->setGeometry(0, 560, 820, 440);
+				g_window->setGeometry(0, 380, 1200, 620);
 				return;
 			}
 			selectNames({"Guest camera", "Slides"});
@@ -1119,8 +1128,7 @@ void runSelfTest(ui::CanvasDock *dock)
 				core::PresetSpec ps;
 				commands::showPreview(commands::presetFrames(core::Preset::SplitScreen, ps));
 			}
-			if (auto *d = qobject_cast<QDockWidget *>(g_dock->parentWidget()))
-				d->setGeometry(0, 560, 820, 440);
+			g_window->setGeometry(0, 380, 1200, 620);
 		});
 		R->run();
 		return;
@@ -1149,28 +1157,31 @@ void runSelfTest(ui::CanvasDock *dock)
 		R->add(300, [] { testGroup(); });
 		R->add(500, [] { testGroupCheck(); });
 	}
-	if (enabled("dock")) {
-		/* Docking re-parents the native surface: the display must come back. */
+	if (enabled("window")) {
+		/* The Layouts window is a regular window holding the Canvas and the Inspector. */
 		static uint64_t frames0 = 0;
 		R->add(300, [] {
-			auto *d = qobject_cast<QDockWidget *>(g_dock->parentWidget());
-			auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-			d->setFloating(false);
-			main->addDockWidget(Qt::BottomDockWidgetArea, d);
-			d->show();
+			R->check(g_window->isWindow() && g_dock->window() == g_window &&
+					 g_window->inspector()->window() == g_window,
+				 "window-holds-canvas-and-inspector");
+			g_window->hide();
+		});
+		R->add(800, [] { frames0 = g_dock->view()->frames(); });
+		R->add(800, [] {
+			R->check(g_dock->view()->frames() == frames0, "window-hidden-no-render");
+			g_window->open();
+		});
+		R->add(1200, [] { frames0 = g_dock->view()->frames(); });
+		R->add(1000, [] {
+			R->check(g_dock->view()->frames() - frames0 > 10, "window-reopened-renders",
+				 QString::number(g_dock->view()->frames() - frames0));
+			g_window->showMaximized();
 		});
 		R->add(1500, [] { frames0 = g_dock->view()->frames(); });
 		R->add(1000, [] {
-			const uint64_t f = g_dock->view()->frames() - frames0;
-			R->check(f > 10, "canvas-renders-when-docked", QString::number(f));
-			auto *d = qobject_cast<QDockWidget *>(g_dock->parentWidget());
-			d->setFloating(true);
-			d->resize(900, 600);
-		});
-		R->add(1500, [] { frames0 = g_dock->view()->frames(); });
-		R->add(1000, [] {
-			const uint64_t f = g_dock->view()->frames() - frames0;
-			R->check(f > 10, "canvas-renders-when-floating-again", QString::number(f));
+			R->check(g_window->isMaximized() && g_dock->view()->frames() - frames0 > 10,
+				 "window-maximized-renders", QString::number(g_dock->view()->frames() - frames0));
+			g_window->showNormal();
 		});
 	}
 	if (enabled("collections")) {

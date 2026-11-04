@@ -3,14 +3,16 @@
 Layouts brings design-tool composition to OBS while keeping OBS conventions where they already
 exist. This document describes the behavior of version 0.1.0.
 
-## Docks
+## The Layouts window (0.2)
 
-| Dock | Default placement | Purpose |
-|---|---|---|
-| Inspector | docked on the right, shown on first launch | properties of the selection |
-| Layouts Canvas | floating, 1100 × 700, shown on first launch | visual editing with rulers and guides |
+One regular top-level window titled **Layouts**: the Canvas in the middle, the Inspector in a
+resizable panel on the right. It can be resized, maximized and put in full screen; double-clicking
+its title bar maximizes it like any macOS window and never docks it into OBS. It is opened from
+**Tools > Layouts** or the "Layouts: Open the Layouts window" hotkey, never by itself at startup.
+Closing it only hides it; its size, position and panel width are remembered. Nothing is added to
+the OBS main window.
 
-Both are standard OBS docks (*Docks* menu): movable, resizable, dockable, floatable, closable.
+(0.1 used two OBS docks instead: an Inspector docked on the right and a floating Canvas.)
 
 ## Edited scene
 

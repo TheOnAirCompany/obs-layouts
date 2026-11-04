@@ -2,6 +2,11 @@
 
 ## 0.2.0 — not released yet
 
+- **Layouts window**: the Canvas and the Inspector now live together in one regular window
+  (resizable, maximizable, full screen), opened from Tools > Layouts or a hotkey. Nothing is added
+  to the OBS window any more and nothing opens by itself at startup. Replaces the two docks of 0.1.
+- Fixed: a violet preview frame could stay on the Canvas after the selection changed.
+
 - Resize several selected elements at once from the selection handles on the Canvas (corners keep the
   ratio, Shift frees it, Alt resizes from the center, edges snap).
 - Auto layout in the Inspector: horizontal, vertical or grid; gap, padding, alignment on both axes,

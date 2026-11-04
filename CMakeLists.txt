@@ -82,6 +82,8 @@ target_sources(
     src/ui/ruler.hpp
     src/ui/canvas-dock.cpp
     src/ui/canvas-dock.hpp
+    src/ui/layouts-window.cpp
+    src/ui/layouts-window.hpp
     resources/layouts.qrc
 )
 

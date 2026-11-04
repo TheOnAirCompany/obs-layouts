@@ -25,8 +25,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace layouts::hotkeys {
 
-/* Registers every action; `zoomFit` is called for the "zoom to fit" action. */
-void registerAll(std::function<void()> zoomFit);
+/* Registers every action; the callbacks serve "zoom to fit" and "open Layouts". */
+void registerAll(std::function<void()> zoomFit, std::function<void()> openWindow);
 void save();
 void unregisterAll();
 

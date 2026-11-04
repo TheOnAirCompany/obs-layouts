@@ -74,7 +74,7 @@ std::function<void()> toggle(bool ViewSettings::*field)
 
 } // namespace
 
-void registerAll(std::function<void()> zoomFit)
+void registerAll(std::function<void()> zoomFit, std::function<void()> openWindow)
 {
 	if (!g_actions.empty())
 		return;
@@ -85,6 +85,7 @@ void registerAll(std::function<void()> zoomFit)
 		a->run = std::move(fn);
 		g_actions.push_back(std::move(a));
 	};
+	add("layouts.open_window", "Hotkey.OpenWindow", std::move(openWindow));
 	add("layouts.toggle_rulers", "Hotkey.Rulers", toggle(&ViewSettings::rulers));
 	add("layouts.toggle_guides", "Hotkey.Guides", toggle(&ViewSettings::guides));
 	add("layouts.toggle_grid", "Hotkey.Grid", toggle(&ViewSettings::grid));

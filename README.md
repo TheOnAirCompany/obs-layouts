@@ -18,7 +18,7 @@ Layouts for OBS is a native OBS Studio plugin that brings the composition tools 
 
 ### Inspector
 
-A dock that always shows the selection of the edited scene.
+The right panel of the Layouts window. It always shows the selection of the edited scene.
 
 - **Position, size, rotation** in canvas pixels, from a **reference point** you pick on a 3×3 grid. W and H are the size you see, after scale, crop and bounding box.
 - **Math in every field**: `1920/2`, `100% - 120`, `+20`, `-10`, `*1.5`, `=-10` for an absolute negative value. Drag a field label to scrub (Shift ×10, Alt ×0.1).
@@ -34,7 +34,7 @@ A dock that always shows the selection of the edited scene.
 
 ### Layouts Canvas
 
-An editing surface for the scene, next to the OBS preview.
+The editing surface in the middle of the Layouts window, next to the OBS preview.
 
 - **Rulers** in canvas pixels that follow zoom and pan, with the selection highlighted.
 - **Guides**: drag them out of the rulers, move, lock, type an exact position, delete by dragging back. Per scene, or **global** for every scene. Saved with the scene collection.
@@ -68,7 +68,7 @@ Download the file for your system from the [releases](https://github.com/TheOnAi
 | Windows 10/11 x64 | `obs-layouts-<version>-windows-x64.zip` | Extract the `obs-layouts` folder into `C:\ProgramData\obs-studio\plugins\`. |
 | Ubuntu x86_64 | `obs-layouts-<version>-x86_64-linux-gnu.deb` | `sudo apt install ./obs-layouts-<version>-x86_64-linux-gnu.deb`. Needs the `obs-studio` package **33 or later** installed system-wide. |
 
-Restart OBS. On first launch the **Inspector** docks on the right and the **Layouts Canvas** opens as a floating window. Both can be moved, docked or hidden from OBS's **Docks** menu.
+Restart OBS, then open **Tools > Layouts**. Layouts is a regular window (resize it, maximize it, put it in full screen) with the Canvas in the middle and the Inspector on the right. It never adds anything to the OBS window. You can also give it a key in **Settings > Hotkeys** ("Layouts: Open the Layouts window").
 
 To uninstall, remove the plugin. Your scenes and sources are never touched; Layouts only stores its guides in its own section of the scene collection.
 
