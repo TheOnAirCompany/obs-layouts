@@ -600,6 +600,8 @@ void CanvasView::addLabel(RenderSnapshot &s, const QString &text, QRgb bg, float
 
 void CanvasView::rebuildOverlay()
 {
+	if (cropMode_ && mode_ == Mode::Idle && !canCrop())
+		cropMode_ = false;
 	EditContext &ctx = EditContext::instance();
 	const ViewSettings &vs = Store::instance().settings();
 	const double r = dpr();
@@ -843,11 +845,15 @@ void CanvasView::rebuildOverlay()
 		/* ---- handles and size label ---- */
 		if (sel.size() == 1 && !sel.front()->locked) {
 			const ItemEntry *e = sel.front();
+			const bool crop = cropMode_ && canCrop();
+			const uint32_t hc = crop ? tokens::kCrop : tokens::kSelection;
+			if (crop)
+				quad(e->frame.quad, 2 * one, tokens::kCrop);
 			const float hs = (float)(tokens::kHandleSize * r);
 			for (const core::RefPoint &hr : kHandleRefs) {
 				const QPointF p = dev(e->frame.point(hr));
-				rect((float)p.x() - hs / 2, (float)p.y() - hs / 2, hs, hs, 0xFFFFFFFF);
-				outline((float)p.x() - hs / 2, (float)p.y() - hs / 2, hs, hs, one, tokens::kSelection);
+				rect((float)p.x() - hs / 2, (float)p.y() - hs / 2, hs, hs, crop ? hc : 0xFFFFFFFF);
+				outline((float)p.x() - hs / 2, (float)p.y() - hs / 2, hs, hs, one, hc);
 			}
 		}
 		if (const auto mb = multiResizable()) {
@@ -1170,6 +1176,10 @@ void CanvasView::updateMove(const QPointF &p, Qt::KeyboardModifiers mods)
 
 void CanvasView::updateResize(const QPointF &p, Qt::KeyboardModifiers mods)
 {
+	if (cropMode_ && canCrop()) {
+		updateCrop(p);
+		return;
+	}
 	if (!session_ || dragItems_.empty())
 		return;
 	const ItemEntry &e = dragItems_.front();
@@ -1369,7 +1379,9 @@ void CanvasView::mouseMoveEvent(QMouseEvent *e)
 			startResizeMulti();
 		} else if (mode_ == Mode::Resize || mode_ == Mode::Rotate) {
 			session_ = std::make_unique<EditSession>();
-			if (!session_->begin(T(mode_ == Mode::Resize ? "Undo.Size" : "Undo.Rotation"))) {
+			const char *undoKey = mode_ == Mode::Resize ? (cropMode_ ? "Undo.Crop" : "Undo.Size")
+								    : "Undo.Rotation";
+			if (!session_->begin(T(undoKey))) {
 				session_.reset();
 				mode_ = Mode::Idle;
 			}
@@ -1544,10 +1556,19 @@ void CanvasView::keyPressEvent(QKeyEvent *e)
 	case Qt::Key_Escape:
 		if (mode_ != Mode::Idle)
 			cancelInteraction();
+		else if (cropMode_)
+			cropMode_ = false;
 		else
 			ctx.clearSelection();
 		rebuildOverlay();
 		return;
+	case Qt::Key_C:
+		if (!(e->modifiers() & (Qt::ControlModifier | Qt::MetaModifier | Qt::AltModifier))) {
+			cropMode_ = !cropMode_ && canCrop();
+			rebuildOverlay();
+			return;
+		}
+		break;
 	case Qt::Key_Left:
 		commands::nudge(shift ? -10 : -1, 0);
 		return;
@@ -1631,6 +1652,50 @@ void CanvasView::keyReleaseEvent(QKeyEvent *e)
 	if (e->key() >= Qt::Key_Left && e->key() <= Qt::Key_Down)
 		return; /* nudges are merged by OBS's repeatable undo */
 	QWidget::keyReleaseEvent(e);
+}
+
+bool CanvasView::canCrop()
+{
+	const ItemEntry *e = singleEditable();
+	/* Cropping by dragging is offered for items without a bounding box, where the
+	 * source pixels map directly to the canvas. */
+	return e && e->model.t.boundsType == core::BoundsType::None && e->model.sourceWidth > 0 &&
+	       e->model.sourceHeight > 0;
+}
+
+void CanvasView::updateCrop(const QPointF &p)
+{
+	if (!session_ || dragItems_.empty())
+		return;
+	const ItemEntry &e = dragItems_.front();
+	const core::VisualFrame &f = e.frame;
+	const core::ItemGeometry g = core::computeGeometry(e.model);
+	if (f.width <= 0 || f.height <= 0 || g.croppedWidth == 0 || g.croppedHeight == 0)
+		return;
+	const core::Vec2 ex = (f.quad.p[1] - f.quad.p[0]) / f.width;
+	const core::Vec2 ey = (f.quad.p[3] - f.quad.p[0]) / f.height;
+	const core::Vec2 d = viewToWorld(p) - f.quad.p[0];
+	const double u = d.x * ex.x + d.y * ex.y, v = d.x * ey.x + d.y * ey.y;
+	const double kx = f.width / g.croppedWidth; /* canvas px per source px */
+	const double ky = f.height / g.croppedHeight;
+	const core::RefPoint hr = kHandleRefs[handle_];
+	const bool flipU = g.boxScale.x < 0, flipV = g.boxScale.y < 0;
+
+	core::Crop c = e.model.t.crop;
+	auto addEdge = [](int &edge, double sourcePx) {
+		edge = std::max(0, edge + (int)std::lround(sourcePx));
+	};
+	if (hr.fx == 0.0)
+		addEdge(flipU ? c.right : c.left, u / kx);
+	else if (hr.fx == 1.0)
+		addEdge(flipU ? c.left : c.right, (f.width - u) / kx);
+	if (hr.fy == 0.0)
+		addEdge(flipV ? c.bottom : c.top, v / ky);
+	else if (hr.fy == 1.0)
+		addEdge(flipV ? c.top : c.bottom, (f.height - v) / ky);
+
+	session_->apply({{e.item, core::setCrop(e.model, e.parent, c, core::RefPoint{0, 0})}});
+	rebuildOverlay();
 }
 
 std::optional<core::Rect> CanvasView::multiResizable()
@@ -1876,6 +1941,14 @@ void CanvasView::contextMenuEvent(QContextMenuEvent *e)
 			paste->addAction(T(key), this, [m] { commands::pasteProperties(m); });
 		}
 		menu.addAction(T("Canvas.ZoomSelection"), this, [this] { zoomSelection(); });
+		if (canCrop()) {
+			QAction *crop = menu.addAction(T("Canvas.CropMode"), this, [this] {
+				cropMode_ = !cropMode_;
+				rebuildOverlay();
+			});
+			crop->setCheckable(true);
+			crop->setChecked(cropMode_);
+		}
 		menu.addSeparator();
 	}
 

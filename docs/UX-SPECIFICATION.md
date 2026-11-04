@@ -140,7 +140,8 @@ and refused actions show the reason.
 | Keys | Action |
 |---|---|
 | Arrows / Shift + arrows | move 1 / 10 px (consecutive moves merge into one undo entry) |
-| Escape | cancel the current drag, or clear the selection |
+| C | crop mode for the selected item (0.2): orange handles crop the source, the image stays in place |
+| Escape | cancel the current drag, leave crop mode, or clear the selection |
 | Shift + 0 / 1 / 2 | zoom 100 % / fit / selection |
 | + / − | zoom in / out |
 | Shift + R | rulers |

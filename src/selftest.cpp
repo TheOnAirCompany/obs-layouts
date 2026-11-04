@@ -43,6 +43,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QFile>
 #include <QImage>
 #include <QMainWindow>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QTimer>
 
@@ -658,6 +659,36 @@ void testLayoutsV02()
 		 "multi-resize-keeps-ratio", rectStr(b0) + " -> " + rectStr(b1));
 }
 
+void testCropMode()
+{
+	EditContext &ctx = EditContext::instance();
+	resetItem("A", 100, 100);
+	ctx.markDirty();
+	selectNames({"A"});
+	ui::CanvasView *v = g_dock->view();
+	v->setFocus();
+	QKeyEvent kc(QEvent::KeyPress, Qt::Key_C, Qt::NoModifier, "c");
+	QApplication::sendEvent(v, &kc);
+	v->rebuildOverlay();
+	/* Drag the left-middle handle 50 canvas px inwards: crop 50 source px on the left. */
+	const core::Rect b = box("A");
+	const QPointF h = v->worldToView({b.left(), b.centerY()});
+	const double d = 50 * v->zoom();
+	sendMouse(v, QEvent::MouseButtonPress, h, Qt::LeftButton);
+	for (int i = 1; i <= 10; i++)
+		sendMouse(v, QEvent::MouseMove, h + QPointF(d * i / 10.0, 0), Qt::LeftButton, Qt::ControlModifier);
+	sendMouse(v, QEvent::MouseButtonRelease, h + QPointF(d, 0), Qt::NoButton, Qt::ControlModifier);
+	ctx.markDirty();
+	const ItemEntry *a = entry("A");
+	R->check(a && a->model.t.crop.left == 50 && std::fabs(box("A").x - 150) < 0.6 &&
+			 std::fabs(box("A").w - 350) < 0.6,
+		 "crop-mode-drag", rectStr(box("A")) + QString(" crop.left=%1").arg(a ? a->model.t.crop.left : -1));
+	QKeyEvent esc(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+	QApplication::sendEvent(v, &esc);
+	resetItem("A", 100, 100);
+	ctx.markDirty();
+}
+
 void testGroup()
 {
 	EditContext &ctx = EditContext::instance();
@@ -1082,6 +1113,7 @@ void runSelfTest(ui::CanvasDock *dock)
 		R->add(300, [] { testUndo(); });
 		R->add(300, [] { testCanvasSnapAndRuler(); });
 		R->add(300, [] { testLayoutsV02(); });
+		R->add(300, [] { testCropMode(); });
 		R->add(300, [] { testGroup(); });
 		R->add(500, [] { testGroupCheck(); });
 	}

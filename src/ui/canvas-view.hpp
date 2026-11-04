@@ -156,6 +156,8 @@ private:
 	void startMove(const QPointF &p);
 	void updateMove(const QPointF &p, Qt::KeyboardModifiers mods);
 	void updateResize(const QPointF &p, Qt::KeyboardModifiers mods);
+	void updateCrop(const QPointF &p);
+	bool canCrop();
 	void updateRotate(const QPointF &p, Qt::KeyboardModifiers mods);
 	void updateGuide(const QPointF &p, Qt::KeyboardModifiers mods);
 	void finishGuide(const QPointF &p);
@@ -208,6 +210,7 @@ private:
 	std::pair<int64_t, int64_t> hover_{-1, -1};
 	bool spaceHeld_ = false;
 	bool altHeld_ = false;
+	bool cropMode_ = false; /* C: handles crop the single selected item */
 	bool panning_ = false;
 	QPointF panStart_;
 	QPointF panOrigin_;
