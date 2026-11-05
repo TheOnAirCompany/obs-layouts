@@ -1009,7 +1009,6 @@ bool setRatio(double ratio)
 
 namespace {
 
-constexpr const char *kStyleKey = "layouts_style";
 
 /* An item with its parent transform: from the edited scene when it is there (groups
  * included), otherwise a top-level item of any scene. */
