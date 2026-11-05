@@ -131,7 +131,7 @@ struct Ref {
 
 void add(std::vector<Slot> &out, const Rect &cell, bool host = false)
 {
-	Slot s{SlotKind::Camera, cell};
+	Slot s{SlotKind::Camera, cell, 0, SlotShape::Rect, {}};
 	s.host = host;
 	out.push_back(s);
 }
@@ -167,14 +167,14 @@ struct CamTemplate {
 /* Display order: the templates validated on the 0.5 review first, then the new ones by
  * number of cameras. */
 const CamTemplate kTemplates[] = {
-	{"Cam2Portrait", 2},   {"Cam2Square", 2},     {"Cam3Square", 3},      {"Cam2HostPip", 2},
-	{"Cam1Strip2", 3},     {"Cam1Strip3", 4},     {"Cam1Strip4", 5},      {"Cam1Strip5", 6},
-	{"Cam1Framed", 1},     {"Cam1Square", 1},     {"Cam1Portrait", 1},    {"Cam1TitleRight", 1},
-	{"Cam1TitleBottom", 1}, {"Cam1Cinema", 1},    {"Cam2Stacked", 2},     {"Cam2Wide", 2},
-	{"Cam2GuestPip", 2},   {"Cam2Cinema", 2},     {"Cam3Portrait", 3},    {"Cam3HostPip2", 3},
-	{"Cam3HostColumn", 3}, {"Cam3TwoOne", 3},     {"Cam3Rows", 3},        {"Cam4Portrait", 4},
-	{"Cam4SquareRow", 4},  {"Cam4SquareGrid", 4}, {"Cam4HostColumn", 4},  {"Cam5Portrait", 5},
-	{"Cam5Square", 5},     {"Cam5HostColumn", 5}, {"Cam6Square", 6},      {"Cam6HostL", 6},
+	{"Cam2Portrait", 2},    {"Cam2Square", 2},     {"Cam3Square", 3},     {"Cam2HostPip", 2},
+	{"Cam1Strip2", 3},      {"Cam1Strip3", 4},     {"Cam1Strip4", 5},     {"Cam1Strip5", 6},
+	{"Cam1Framed", 1},      {"Cam1Square", 1},     {"Cam1Portrait", 1},   {"Cam1TitleRight", 1},
+	{"Cam1TitleBottom", 1}, {"Cam1Cinema", 1},     {"Cam2Stacked", 2},    {"Cam2Wide", 2},
+	{"Cam2GuestPip", 2},    {"Cam2Cinema", 2},     {"Cam3Portrait", 3},   {"Cam3HostPip2", 3},
+	{"Cam3HostColumn", 3},  {"Cam3TwoOne", 3},     {"Cam3Rows", 3},       {"Cam4Portrait", 4},
+	{"Cam4SquareRow", 4},   {"Cam4SquareGrid", 4}, {"Cam4HostColumn", 4}, {"Cam5Portrait", 5},
+	{"Cam5Square", 5},      {"Cam5HostColumn", 5}, {"Cam6Square", 6},     {"Cam6HostL", 6},
 	{"Cam6TwoFour", 6},
 };
 
