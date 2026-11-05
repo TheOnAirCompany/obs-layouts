@@ -32,8 +32,8 @@ namespace layouts::ui {
 
 namespace {
 
-QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor &screen, const QColor &bg,
-		     double aspect)
+QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor &screen, const QColor &chat,
+		     const QColor &bg, double aspect)
 {
 	const QSize size(112, 63);
 	/* The canvas shape inside the thumbnail box (portrait canvases stay portrait). */
@@ -54,7 +54,9 @@ QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor 
 		spec.gap = 2;
 		for (const core::Slot &s :
 		     core::buildBroadcast(key, {area.x(), area.y(), area.width(), area.height()}, spec)) {
-			p.setBrush(s.kind == core::SlotKind::Camera ? camera : screen);
+			p.setBrush(s.kind == core::SlotKind::Camera ? camera
+				   : s.kind == core::SlotKind::Chat ? chat
+								    : screen);
 			p.drawRoundedRect(QRectF(s.cell.x + 0.5, s.cell.y + 0.5, s.cell.w - 1, s.cell.h - 1), 1.5, 1.5);
 			if (s.kind == core::SlotKind::Camera) {
 				/* a head and shoulders */
@@ -109,10 +111,12 @@ void BroadcastGallery::setTemplates(const QStringList &keys, double aspect)
 	clear();
 	const QColor cam = QColor::fromRgba(tokens::kThumbCamera);
 	const QColor scr = QColor::fromRgba(tokens::kThumbScreen);
+	const QColor chat = QColor::fromRgba(tokens::kThumbChat);
 	const QColor bg = palette().color(QPalette::Base);
 	for (const QString &k : keys) {
 		const QString label = broadcastLabel(k.toStdString(), aspect);
-		auto *it = new QListWidgetItem(broadcastThumb(k.toStdString(), cam, scr, bg, aspect), label, this);
+		auto *it =
+			new QListWidgetItem(broadcastThumb(k.toStdString(), cam, scr, chat, bg, aspect), label, this);
 		it->setData(Qt::UserRole, k);
 		it->setToolTip(label);
 		if (k == current)

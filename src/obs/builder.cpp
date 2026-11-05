@@ -120,6 +120,9 @@ Plan plan(const std::vector<OBSSource> &sources, const Options &options, const T
 		case core::Role::Graphics:
 			p.graphics.push_back(s);
 			break;
+		case core::Role::Chat:
+			p.chats.push_back(s);
+			break;
 		case core::Role::None:
 			break;
 		}
@@ -129,18 +132,19 @@ Plan plan(const std::vector<OBSSource> &sources, const Options &options, const T
 
 	if (options.solo) {
 		for (const OBSSource &s : p.cameras)
-			p.scenes.push_back({"Cam1Full", soloName(QString::fromUtf8(obs_source_get_name(s))), {s}, {}});
+			p.scenes.push_back(
+				{"Cam1Full", soloName(QString::fromUtf8(obs_source_get_name(s))), {s}, {}, {}});
 		for (const OBSSource &s : p.screens)
 			p.scenes.push_back(
-				{"Screen1Full", soloName(QString::fromUtf8(obs_source_get_name(s))), {}, {s}});
+				{"Screen1Full", soloName(QString::fromUtf8(obs_source_get_name(s))), {}, {s}, {}});
 	}
 	if (options.layouts) {
 		const core::Rect canvas = EditContext::instance().canvasRect();
-		for (const core::BroadcastTemplate &t :
-		     core::templatesFor((int)p.cameras.size(), (int)p.screens.size(), 0, canvas.h > canvas.w)) {
-			if (t.cameras + t.screens < 2)
+		for (const core::BroadcastTemplate &t : core::templatesFor((int)p.cameras.size(), (int)p.screens.size(),
+									   (int)p.chats.size(), canvas.h > canvas.w)) {
+			if (t.cameras + t.screens + t.chats < 2)
 				continue; /* the same as a full-screen scene */
-			p.scenes.push_back({t.key, templateName(t.key), p.cameras, p.screens});
+			p.scenes.push_back({t.key, templateName(t.key), p.cameras, p.screens, p.chats});
 		}
 	}
 	return p;
@@ -152,7 +156,7 @@ Plan single(const std::vector<OBSSource> &sources, const std::string &key, const
 	none.solo = false;
 	none.layouts = false;
 	Plan p = plan(sources, none, nullptr, nullptr);
-	p.scenes.push_back({key, name, p.cameras, p.screens});
+	p.scenes.push_back({key, name, p.cameras, p.screens, p.chats});
 	return p;
 }
 
@@ -199,6 +203,11 @@ std::vector<QString> create(const Plan &plan, const Options &options)
 		for (const OBSSource &s : spec.screens) {
 			sources.push_back(s);
 			kinds.push_back(core::SlotKind::Screen);
+			hosts.push_back(false);
+		}
+		for (const OBSSource &s : spec.chats) {
+			sources.push_back(s);
+			kinds.push_back(core::SlotKind::Chat);
 			hosts.push_back(false);
 		}
 		const std::vector<int> assigned = core::assignItems(tiles, kinds, hosts);

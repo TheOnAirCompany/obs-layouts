@@ -91,12 +91,16 @@ bool autoLayout(const core::FlowSpec &spec, bool inCanvas);
 bool applyPreset(core::Preset preset, const core::PresetSpec &spec);
 /* ---- broadcast layouts (cameras + screens, TV style) ---- */
 enum class KindMode { Auto, AllCameras, AllScreens };
-/* Kind of each selected top-level item, in selection order. */
+/* Kind of each selected top-level item, in selection order. Chat sources are always
+ * SlotKind::Chat, whatever the mode. */
 std::vector<core::SlotKind> selectionKinds(KindMode mode);
 
 /* Transform that places a source in a broadcast tile: cameras fill it (cropped on the
- * face), screens fit; a flipped source stays flipped. */
-core::ItemTransform slotTransform(const core::ItemModel &m, core::SlotKind kind, const core::Rect &cell);
+ * face), screens fit; a flipped source stays flipped. A chat is never cropped: it fits
+ * inside the cell (scale-inner bounds), at the top of a column cell, centered in a
+ * ticker cell. */
+core::ItemTransform slotTransform(const core::ItemModel &m, core::SlotKind kind, const core::Rect &cell,
+				  bool ticker = false);
 /* Same, turned by the slot rotation around the cell center (0.5). */
 core::ItemTransform slotTransform(const core::ItemModel &m, const core::Slot &slot);
 /* Writes the shape and frame of the slot in the item style override (private setting

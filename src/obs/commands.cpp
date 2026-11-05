@@ -575,13 +575,25 @@ std::vector<Placed> assignSlots(const std::string &key, const core::BroadcastSpe
 
 } // namespace
 
-/* Transform that places a source in a slot: cameras fill it (cropped), screens fit. */
-core::ItemTransform slotTransform(const core::ItemModel &m, core::SlotKind kind, const core::Rect &cell)
+/* Transform that places a source in a slot: cameras fill it (cropped), screens fit,
+ * chats fit inside bounds (their size often changes, a browser source may not be
+ * loaded yet: bounds keep them in the cell whatever their size). */
+core::ItemTransform slotTransform(const core::ItemModel &m, core::SlotKind kind, const core::Rect &cell, bool ticker)
 {
 	core::ItemTransform t;
 	t.align = core::kAlignLeft | core::kAlignTop;
 	t.rot = 0;
 	t.boundsType = core::BoundsType::None;
+	if (kind == core::SlotKind::Chat) {
+		t.pos = {cell.x, cell.y};
+		t.scale = {1, 1};
+		t.boundsType = core::BoundsType::ScaleInner;
+		t.bounds = {cell.w, cell.h};
+		t.boundsAlign = ticker ? core::kAlignCenter : (uint32_t)core::kAlignTop;
+		t.cropToBounds = false;
+		t.crop = {};
+		return t;
+	}
 	if (m.sourceWidth == 0 || m.sourceHeight == 0)
 		return m.t;
 	if (kind == core::SlotKind::Camera) {
@@ -607,7 +619,7 @@ core::ItemTransform slotTransform(const core::ItemModel &m, core::SlotKind kind,
 
 core::ItemTransform slotTransform(const core::ItemModel &m, const core::Slot &slot)
 {
-	const core::ItemTransform t = slotTransform(m, slot.kind, slot.cell);
+	const core::ItemTransform t = slotTransform(m, slot.kind, slot.cell, slot.ticker);
 	if (m.sourceWidth == 0 || m.sourceHeight == 0)
 		return t;
 	/* Both a cover and a fit are centered on the cell: turning around the cell center
@@ -694,14 +706,15 @@ std::vector<core::SlotKind> selectionKinds(KindMode mode)
 {
 	std::vector<core::SlotKind> kinds;
 	for (const ItemEntry &e : topLevelSelection()) {
-		if (mode == KindMode::AllCameras)
+		const core::Role r = roles::role(obs_sceneitem_get_source(e.item));
+		if (r == core::Role::Chat)
+			kinds.push_back(core::SlotKind::Chat);
+		else if (mode == KindMode::AllCameras)
 			kinds.push_back(core::SlotKind::Camera);
 		else if (mode == KindMode::AllScreens)
 			kinds.push_back(core::SlotKind::Screen);
 		else
-			kinds.push_back(core::isCameraRole(roles::role(obs_sceneitem_get_source(e.item)))
-						? core::SlotKind::Camera
-						: core::SlotKind::Screen);
+			kinds.push_back(core::isCameraRole(r) ? core::SlotKind::Camera : core::SlotKind::Screen);
 	}
 	return kinds;
 }
@@ -841,10 +854,15 @@ int createShowScenes(const core::BroadcastSpec &spec, KindMode mode, bool lock,
 {
 	const std::vector<ItemEntry> items = topLevelSelection();
 	const std::vector<core::SlotKind> kinds = selectionKinds(mode);
-	int created = 0, cams = 0, screens = 0;
+	int created = 0, cams = 0, screens = 0, chats = 0;
 	QString name;
-	/* One full-screen scene per source: the close-ups of the show. */
+	/* One full-screen scene per source: the close-ups of the show (a chat alone is not a
+	 * shot: it only appears in the layouts). */
 	for (size_t i = 0; i < items.size(); i++) {
+		if (kinds[i] == core::SlotKind::Chat) {
+			chats++;
+			continue;
+		}
 		const bool camera = kinds[i] == core::SlotKind::Camera;
 		(camera ? cams : screens)++;
 		const std::vector<Placed> placed =
@@ -855,8 +873,8 @@ int createShowScenes(const core::BroadcastSpec &spec, KindMode mode, bool lock,
 	}
 	/* Then every layout made for the whole selection. */
 	const core::Rect canvas = EditContext::instance().canvasRect();
-	for (const core::BroadcastTemplate &t : core::templatesFor(cams, screens, 0, canvas.h > canvas.w)) {
-		if (t.cameras + t.screens < 2)
+	for (const core::BroadcastTemplate &t : core::templatesFor(cams, screens, chats, canvas.h > canvas.w)) {
+		if (t.cameras + t.screens + t.chats < 2)
 			continue; /* the same as the close-up above */
 		const std::vector<Placed> placed = assignSlotsFor(t.key, spec, items, kinds);
 		if (!placed.empty() && makeScene(placed, templateName(t.key), lock, name))
