@@ -56,14 +56,15 @@ browser, media, color, group, scene, audio), name, lock, eye. Hidden sources are
 ## Layouts Builder (0.4)
 Tools > Layouts Builder, or the Scene | Builder switch at the top left of the window (Tools >
 Layouts opens Scene mode; the hotkey keeps the current mode). The Canvas stays in the center.
-- Left: "Sources of the collection", every video input once (scenes and groups excluded), with an
-  include mark (blue check = in the show; sources without a type can't be included), the source
-  icon, the name, the number of scenes that use it, and the type pill (same menu as Layers). Same
-  filter row.
-- Right: "Generate": summary (1 Host · 2 Cam · 1 Screen · 1 BG · 1 CG), gap and margin (shared
-  with broadcast layouts), options (a full-screen scene per host, cam and screen; every broadcast
-  layout that fits; background in every scene; graphics in every scene; lock), the list of scene
-  names, and "Create N scene(s)". The first new scene opens on the Canvas.
+- Left: "Sources of the collection", every video input once (scenes and groups excluded): source
+  icon, name, number of scenes that use it, type pill (same menu as Layers). Same filter row.
+  Select the sources of the scene to make (Cmd / Shift for several, Cmd+A for all).
+- Right: "Broadcast layouts", the same gallery as in Scene mode for the selection (hosts and cams
+  are cameras, screens are screens; sources without a type are ignored and counted), gap and
+  margin (shared), "Background at the back" and "Graphics on top" (enabled when one is selected),
+  lock. "New scene" (or a double-click on a layout) makes the chosen layout; "Create show scenes"
+  makes a full-screen scene per host, cam and screen, then one per layout that fits. The new
+  scene opens on the Canvas.
 - Each scene: the first BG at the back, covering the canvas (bounding box "scale to outer bounds",
   centered, cropped to bounds); screens, then hosts and cams in their tiles (hosts first, so they
   get the large tile), flips kept; CG on top with the transform and crop they have in the first

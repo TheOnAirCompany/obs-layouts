@@ -67,6 +67,10 @@ using SoloName = std::function<QString(const QString &sourceName)>;
 Plan plan(const std::vector<OBSSource> &sources, const Options &options, const TemplateName &templateName,
 	  const SoloName &soloName);
 
+/* One scene with this broadcast template for these sources (background and graphics
+ * among them go at the back and on top). */
+Plan single(const std::vector<OBSSource> &sources, const std::string &key, const QString &name);
+
 /* Creates the planned scenes in the canvas of the edited scene. Returns the names. */
 std::vector<QString> create(const Plan &plan, const Options &options);
 

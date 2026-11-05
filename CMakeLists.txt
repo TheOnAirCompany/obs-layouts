@@ -87,6 +87,8 @@ target_sources(
     src/ui/inspector-dock.cpp
     src/ui/inspector-dock.hpp
     src/ui/layers-panel.cpp
+    src/ui/broadcast-gallery.cpp
+    src/ui/broadcast-gallery.hpp
     src/ui/builder-panel.cpp
     src/ui/builder-panel.hpp
     src/ui/role-ui.cpp

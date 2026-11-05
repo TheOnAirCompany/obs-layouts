@@ -21,12 +21,13 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 /* Layouts Builder (0.4).
  *
  * BuilderSources (left): every source of the collection once, whatever scene it is in,
- * with its type pill (click to change), the scenes that use it and a check box to take
- * it in the show. Filter row by type, as in Layers.
+ * with its type pill (click to change) and the scenes that use it. Select the sources
+ * of the scene to make (Cmd / Shift for several). Filter row by type, as in Layers.
  *
- * BuilderPanel (right): what will be generated (a full-screen scene per host, camera
- * and screen, every broadcast layout that fits, background and graphics in each scene,
- * lock), the list of scene names, and the button that creates them. */
+ * BuilderPanel (right): the broadcast layouts gallery of Scene mode for the selected
+ * sources (types decide cameras and screens), gap, margin, background and graphics in the
+ * scene, lock; "New scene" makes the chosen layout, "Create show scenes" makes a
+ * full-screen scene per source and one per layout that fits. */
 
 #include "obs/builder.hpp"
 
@@ -40,12 +41,14 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 class QCheckBox;
 class QLabel;
+class QListWidget;
 class QPushButton;
 class QTreeWidget;
 class QTreeWidgetItem;
 
 namespace layouts::ui {
 
+class BroadcastGallery;
 class NumericField;
 class RoleFilterBar;
 
@@ -57,9 +60,10 @@ public:
 	~BuilderSources() override;
 
 	void refresh();
-	std::vector<OBSSource> checkedSources() const;
-	/* Takes a source in or out of the show (self-test). */
-	void setIncluded(obs_source_t *source, bool on);
+	/* Selected sources, in list order. */
+	std::vector<OBSSource> selectedSources() const;
+	/* Selects these sources by name (self-test). */
+	void selectNames(const QStringList &names);
 	QTreeWidget *tree() const { return tree_; }
 	RoleFilterBar *filter() const { return filter_; }
 
@@ -78,7 +82,6 @@ private:
 	QTreeWidget *tree_ = nullptr;
 	RoleFilterBar *filter_ = nullptr;
 	QLabel *empty_ = nullptr;
-	std::set<std::string> unchecked_; /* source uuids taken out of the show */
 	QString signature_;
 	bool updating_ = false;
 	bool queued_ = false;
@@ -91,24 +94,27 @@ public:
 	BuilderPanel(BuilderSources *sources, QWidget *parent = nullptr);
 
 	void refresh();
-	builder::Plan plan() const;
-	/* Creates the scenes; returns their names (self-test). */
-	std::vector<QString> create();
+	BroadcastGallery *gallery() const { return gallery_; }
+	/* The chosen layout as a new scene; returns its name (self-test). */
+	QString createScene();
+	/* A full-screen scene per source and one per layout that fits; returns the names. */
+	std::vector<QString> createShow();
 
 private:
 	builder::Options options() const;
+	void flash(QPushButton *button, const QString &text);
 
 	BuilderSources *sources_;
 	QLabel *summary_ = nullptr;
-	QLabel *scenes_ = nullptr;
+	BroadcastGallery *gallery_ = nullptr;
+	QLabel *empty_ = nullptr;
 	NumericField *gap_ = nullptr;
 	NumericField *margin_ = nullptr;
-	QCheckBox *solo_ = nullptr;
-	QCheckBox *layouts_ = nullptr;
 	QCheckBox *background_ = nullptr;
 	QCheckBox *graphics_ = nullptr;
 	QCheckBox *lock_ = nullptr;
-	QPushButton *create_ = nullptr;
+	QPushButton *scene_ = nullptr;
+	QPushButton *show_ = nullptr;
 	bool updating_ = false;
 };
 

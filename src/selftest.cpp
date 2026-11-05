@@ -33,6 +33,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/hotkeys.hpp"
 #include "obs/obs-convert.hpp"
 #include "obs/store.hpp"
+#include "ui/broadcast-gallery.hpp"
 #include "ui/builder-panel.hpp"
 #include "ui/canvas-dock.hpp"
 #include "ui/canvas-view.hpp"
@@ -780,13 +781,31 @@ void testTypes()
 	const int rows = g_window->builderSources()->tree()->topLevelItemCount();
 	R->check(g_window->builderSources()->isVisible() && rows == (int)roles::videoSources().size(),
 		 "builder-lists-collection-sources", QString::number(rows));
+	/* Select sources: the gallery of Scene mode shows the layouts that fit them, and
+	 * "New scene" makes the chosen one with the background and the logo. */
 	ui::BuilderSources *bs = g_window->builderSources();
-	const size_t before = bs->checkedSources().size();
-	bs->setIncluded(b, false);
-	const size_t without = bs->checkedSources().size();
-	bs->setIncluded(b, true);
-	R->check(without + 1 == before && bs->checkedSources().size() == before, "builder-include-toggle",
-		 QString("%1 -> %2").arg(before).arg(without));
+	bs->selectNames({"A", "B", "C", "BG _ TEST", "LOGO _ TEST"});
+	ui::BuilderPanel *bp = g_window->builderPanel();
+	const int expected = (int)core::templatesFor(2, 1).size();
+	R->check(bs->selectedSources().size() == 5 && bp->gallery()->count() == expected,
+		 "builder-gallery-for-selection",
+		 QString("%1 templates, %2 expected").arg(bp->gallery()->count()).arg(expected));
+	const QString made = bp->createScene();
+	OBSSourceAutoRelease madeScene = obs_get_source_by_name(made.toUtf8().constData());
+	int madeItems = 0;
+	if (obs_scene_t *ms = madeScene ? obs_scene_from_source(madeScene) : nullptr)
+		obs_scene_enum_items(
+			ms,
+			[](obs_scene_t *, obs_sceneitem_t *, void *p) {
+				(*static_cast<int *>(p))++;
+				return true;
+			},
+			&madeItems);
+	R->check(madeScene && madeItems == 5 && ctx.sceneSource() == madeScene.Get(), "builder-new-scene-from-gallery",
+		 made + QString(" %1 items").arg(madeItems));
+	if (madeScene)
+		obs_source_remove(madeScene);
+	ctx.follow();
 
 	/* Plan and create from five typed sources. */
 	builder::Options o;
@@ -932,7 +951,7 @@ void testBroadcast()
 	Store::instance().settings().broadcastKinds = 1;
 	selectNames({"A", "B", "C"});
 	emit ctx.itemsChanged();
-	auto *gallery = g_window->findChild<QListWidget *>();
+	auto *gallery = g_window->inspector()->findChild<QListWidget *>();
 	R->check(gallery && gallery->count() == 2, "broadcast-gallery-three-guests",
 		 gallery ? QString::number(gallery->count()) : "no gallery");
 	Store::instance().settings().broadcastKinds = 0;
@@ -1807,6 +1826,8 @@ void runSelfTest(ui::LayoutsWindow *window)
 				QTimer::singleShot(1500, [base] {
 					g_window->grab().save(base + "-scene.png");
 					g_window->setMode(ui::LayoutsWindow::Mode::Builder);
+					g_window->builderSources()->selectNames(
+						{"BG _ DYNAMIQUE", "CAM _ VALENTIN", "CAM _ GUEST 1", "SCREEN _ RIGHT"});
 				});
 				QTimer::singleShot(3000, [base] {
 					g_window->grab().save(base + "-builder.png");

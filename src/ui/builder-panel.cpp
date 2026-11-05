@@ -18,6 +18,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "builder-panel.hpp"
 
+#include "broadcast-gallery.hpp"
 #include "role-ui.hpp"
 #include "theme.hpp"
 #include "widgets.hpp"
@@ -43,7 +44,7 @@ namespace layouts::ui {
 
 namespace {
 
-enum Column { kUse = 0, kName = 1, kScenes = 2, kType = 3 };
+enum Column { kName = 0, kScenes = 1, kType = 2 };
 enum DataRole { kUuidRole = Qt::UserRole, kRoleRole };
 
 const char *const kSignals[] = {"source_create", "source_remove", "source_rename", "source_destroy"};
@@ -63,7 +64,7 @@ BuilderSources::BuilderSources(QWidget *parent) : QWidget(parent)
 	v->addWidget(filter_);
 
 	tree_ = new QTreeWidget(this);
-	tree_->setColumnCount(4);
+	tree_->setColumnCount(3);
 	tree_->setHeaderHidden(true);
 	tree_->setRootIsDecorated(false);
 	tree_->setUniformRowHeights(true);
@@ -71,8 +72,6 @@ BuilderSources::BuilderSources(QWidget *parent) : QWidget(parent)
 	tree_->setSelectionMode(QAbstractItemView::ExtendedSelection);
 	tree_->setIconSize(QSize(tokens::kIconSize, tokens::kIconSize));
 	tree_->header()->setStretchLastSection(false);
-	tree_->header()->setSectionResizeMode(kUse, QHeaderView::Fixed);
-	tree_->header()->resizeSection(kUse, tokens::kIconButton);
 	tree_->header()->setSectionResizeMode(kName, QHeaderView::Stretch);
 	tree_->header()->setSectionResizeMode(kScenes, QHeaderView::ResizeToContents);
 	tree_->header()->setSectionResizeMode(kType, QHeaderView::Fixed);
@@ -87,6 +86,10 @@ BuilderSources::BuilderSources(QWidget *parent) : QWidget(parent)
 
 	connect(filter_, &RoleFilterBar::changed, this, &BuilderSources::applyFilter);
 	connect(tree_, &QTreeWidget::itemClicked, this, &BuilderSources::onClicked);
+	connect(tree_, &QTreeWidget::itemSelectionChanged, this, [this] {
+		if (!updating_)
+			emit changed();
+	});
 	EditContext &ctx = EditContext::instance();
 	connect(&ctx, &EditContext::itemsChanged, this, &BuilderSources::refresh);
 	connect(&ctx, &EditContext::sceneChanged, this, &BuilderSources::refresh);
@@ -154,8 +157,6 @@ void BuilderSources::rebuild()
 	const QColor text = palette().color(QPalette::WindowText);
 	QColor dim = text;
 	dim.setAlphaF(0.5);
-	QColor faint = text;
-	faint.setAlphaF(0.2);
 	std::map<core::Role, int> counts;
 	const std::vector<OBSSource> sources = roles::videoSources();
 	for (const OBSSource &s : sources) {
@@ -169,13 +170,6 @@ void BuilderSources::rebuild()
 		row->setData(kName, kUuidRole, QString::fromStdString(uuid));
 		row->setData(kName, kRoleRole, (int)r);
 		row->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-		/* Taken in the show: a check mark; sources without a type can't be. */
-		const bool used = r != core::Role::None && !unchecked_.count(uuid);
-		row->setIcon(kUse,
-			     icon(used ? "circle-check" : "circle",
-				  used ? QColor::fromRgba(tokens::kSelection) : (r == core::Role::None ? faint : dim)));
-		row->setToolTip(kUse, r == core::Role::None ? T("Builder.NoneTooltip")
-							    : T(used ? "Builder.Included" : "Builder.Excluded"));
 		row->setText(kScenes, scenes > 0 ? QString::number(scenes) : QString::fromUtf8("\xE2\x80\x93"));
 		row->setForeground(kScenes, dim);
 		row->setTextAlignment(kScenes, Qt::AlignRight | Qt::AlignVCenter);
@@ -201,38 +195,32 @@ void BuilderSources::applyFilter()
 	}
 }
 
-std::vector<OBSSource> BuilderSources::checkedSources() const
+std::vector<OBSSource> BuilderSources::selectedSources() const
 {
 	std::vector<OBSSource> out;
-	for (const OBSSource &s : roles::videoSources()) {
-		if (roles::role(s) != core::Role::None && !unchecked_.count(obs_source_get_uuid(s)))
-			out.push_back(s);
+	for (int i = 0; i < tree_->topLevelItemCount(); i++) {
+		QTreeWidgetItem *row = tree_->topLevelItem(i);
+		if (!row->isSelected())
+			continue;
+		OBSSourceAutoRelease s =
+			obs_get_source_by_uuid(row->data(kName, kUuidRole).toString().toUtf8().constData());
+		if (s)
+			out.push_back(OBSSource(s.Get()));
 	}
 	return out;
 }
 
-void BuilderSources::setIncluded(obs_source_t *source, bool on)
+void BuilderSources::selectNames(const QStringList &names)
 {
-	if (on)
-		unchecked_.erase(obs_source_get_uuid(source));
-	else
-		unchecked_.insert(obs_source_get_uuid(source));
-	signature_.clear();
-	refresh();
+	updating_ = true;
+	for (int i = 0; i < tree_->topLevelItemCount(); i++)
+		tree_->topLevelItem(i)->setSelected(names.contains(tree_->topLevelItem(i)->text(kName)));
+	updating_ = false;
+	emit changed();
 }
 
 void BuilderSources::onClicked(QTreeWidgetItem *row, int column)
 {
-	if (column == kUse) {
-		if ((core::Role)row->data(kName, kRoleRole).toInt() == core::Role::None)
-			return;
-		const std::string uuid = row->data(kName, kUuidRole).toString().toStdString();
-		if (!unchecked_.erase(uuid))
-			unchecked_.insert(uuid);
-		signature_.clear();
-		refresh();
-		return;
-	}
 	if (column != kType)
 		return;
 	std::vector<obs_source_t *> sources;
@@ -254,7 +242,7 @@ void BuilderSources::onClicked(QTreeWidgetItem *row, int column)
 	refresh();
 }
 
-/* ---- generation ---------------------------------------------------------------- */
+/* ---- layouts for the selection --------------------------------------------------- */
 
 BuilderPanel::BuilderPanel(BuilderSources *sources, QWidget *parent) : QWidget(parent), sources_(sources)
 {
@@ -272,10 +260,16 @@ BuilderPanel::BuilderPanel(BuilderSources *sources, QWidget *parent) : QWidget(p
 	v->setContentsMargins(tokens::kPanelMargin, tokens::kPanelMargin, tokens::kPanelMargin, tokens::kPanelMargin);
 	v->setSpacing(tokens::kRowSpacing);
 
-	v->addWidget(sectionTitle(T("Builder.Generate"), content));
+	v->addWidget(sectionTitle(T("Section.Broadcast"), content));
 	summary_ = new QLabel(content);
 	summary_->setWordWrap(true);
 	v->addWidget(summary_);
+
+	gallery_ = new BroadcastGallery(content);
+	v->addWidget(gallery_);
+	empty_ = new QLabel(content);
+	empty_->setWordWrap(true);
+	v->addWidget(empty_);
 
 	auto *nums = new QWidget(content);
 	auto *nl = new QHBoxLayout(nums);
@@ -295,25 +289,21 @@ BuilderPanel::BuilderPanel(BuilderSources *sources, QWidget *parent) : QWidget(p
 		v->addWidget(c);
 		return c;
 	};
-	solo_ = check("Builder.Solo", "Builder.SoloTooltip");
-	layouts_ = check("Builder.Layouts", "Builder.LayoutsTooltip");
 	background_ = check("Builder.Background", "Builder.BackgroundTooltip");
 	graphics_ = check("Builder.Graphics", "Builder.GraphicsTooltip");
 	lock_ = check("Broadcast.Lock", "Broadcast.LockTooltip");
 
-	scenes_ = new QLabel(content);
-	scenes_->setWordWrap(true);
-	scenes_->setTextFormat(Qt::PlainText);
-	v->addWidget(scenes_);
-
-	create_ = new QPushButton(content);
-	v->addWidget(create_);
+	scene_ = new QPushButton(T("Broadcast.NewScene"), content);
+	scene_->setToolTip(T("Builder.NewSceneTooltip"));
+	scene_->setDefault(true);
+	v->addWidget(scene_);
+	show_ = new QPushButton(T("Broadcast.Show"), content);
+	show_->setToolTip(T("Builder.ShowTooltip"));
+	v->addWidget(show_);
 	v->addStretch(1);
 
 	const ViewSettings &s = Store::instance().settings();
 	updating_ = true;
-	solo_->setChecked(s.builderSolo);
-	layouts_->setChecked(s.builderLayouts);
 	background_->setChecked(s.builderBackground);
 	graphics_->setChecked(s.builderGraphics);
 	lock_->setChecked(s.broadcastLock);
@@ -325,15 +315,12 @@ BuilderPanel::BuilderPanel(BuilderSources *sources, QWidget *parent) : QWidget(p
 		if (updating_)
 			return;
 		ViewSettings &st = Store::instance().settings();
-		st.builderSolo = solo_->isChecked();
-		st.builderLayouts = layouts_->isChecked();
 		st.builderBackground = background_->isChecked();
 		st.builderGraphics = graphics_->isChecked();
 		st.broadcastLock = lock_->isChecked();
 		Store::instance().saveSettings();
-		refresh();
 	};
-	for (QCheckBox *c : {solo_, layouts_, background_, graphics_, lock_})
+	for (QCheckBox *c : {background_, graphics_, lock_})
 		connect(c, &QCheckBox::toggled, this, saveChecks);
 	auto number = [this](double ViewSettings::*field, NumericField *f) {
 		return [this, field, f](const core::Expression &e) {
@@ -343,13 +330,14 @@ BuilderPanel::BuilderPanel(BuilderSources *sources, QWidget *parent) : QWidget(p
 				st.*field = std::clamp(val, 0.0, 1000.0);
 			Store::instance().saveSettings();
 			f->setValue(st.*field);
-			refresh();
 		};
 	};
 	connect(gap_, &NumericField::committed, this, number(&ViewSettings::broadcastGap, gap_));
 	connect(margin_, &NumericField::committed, this, number(&ViewSettings::broadcastMargin, margin_));
 	connect(sources_, &BuilderSources::changed, this, &BuilderPanel::refresh);
-	connect(create_, &QPushButton::clicked, this, [this] { create(); });
+	connect(scene_, &QPushButton::clicked, this, [this] { createScene(); });
+	connect(gallery_, &QListWidget::itemDoubleClicked, this, [this] { createScene(); });
+	connect(show_, &QPushButton::clicked, this, [this] { createShow(); });
 	refresh();
 }
 
@@ -359,65 +347,105 @@ builder::Options BuilderPanel::options() const
 	const ViewSettings &s = Store::instance().settings();
 	o.spec.gap = s.broadcastGap;
 	o.spec.margin = s.broadcastMargin;
-	o.solo = solo_->isChecked();
-	o.layouts = layouts_->isChecked();
 	o.background = background_->isChecked();
 	o.graphics = graphics_->isChecked();
 	o.lock = lock_->isChecked();
 	return o;
 }
 
-builder::Plan BuilderPanel::plan() const
-{
-	const double aspect = canvasAspect();
-	return builder::plan(
-		sources_->checkedSources(), options(),
-		[aspect](const std::string &key) { return broadcastLabel(key, aspect); },
-		[](const QString &source) { return T("Broadcast.SoloScene").arg(source); });
-}
-
 void BuilderPanel::refresh()
 {
-	const builder::Plan p = plan();
-	int hosts = 0;
-	for (const OBSSource &c : p.cameras)
-		hosts += roles::role(c) == core::Role::Host ? 1 : 0;
+	const std::vector<OBSSource> picked = sources_->selectedSources();
+	int hosts = 0, cams = 0, screens = 0, bgs = 0, cgs = 0, unset = 0;
+	for (const OBSSource &s : picked) {
+		switch (roles::role(s)) {
+		case core::Role::Host:
+			hosts++;
+			break;
+		case core::Role::Camera:
+			cams++;
+			break;
+		case core::Role::Screen:
+			screens++;
+			break;
+		case core::Role::Background:
+			bgs++;
+			break;
+		case core::Role::Graphics:
+			cgs++;
+			break;
+		case core::Role::None:
+			unset++;
+			break;
+		}
+	}
 	QStringList parts;
 	auto add = [&](int n, core::Role r) {
 		if (n > 0)
 			parts << QString("%1 %2").arg(n).arg(roleName(r));
 	};
 	add(hosts, core::Role::Host);
-	add((int)p.cameras.size() - hosts, core::Role::Camera);
-	add((int)p.screens.size(), core::Role::Screen);
-	add(p.background ? 1 : 0, core::Role::Background);
-	add((int)p.graphics.size(), core::Role::Graphics);
-	summary_->setText(parts.isEmpty() ? T("Builder.NothingChecked") : parts.join(QString::fromUtf8(" \xC2\xB7 ")));
-	background_->setEnabled(p.background);
-	graphics_->setEnabled(!p.graphics.empty());
+	add(cams, core::Role::Camera);
+	add(screens, core::Role::Screen);
+	add(bgs, core::Role::Background);
+	add(cgs, core::Role::Graphics);
+	QString text = parts.isEmpty() ? T("Builder.SelectHint")
+				       : T("Builder.Selection").arg(parts.join(QString::fromUtf8(" \xC2\xB7 ")));
+	if (unset > 0)
+		text += "\n" + T("Builder.UnsetIgnored").arg(unset);
+	summary_->setText(text);
 
-	QStringList names;
-	for (const builder::SceneSpec &s : p.scenes)
-		names << QString::fromUtf8("\xE2\x80\xA2 ") + s.name;
-	scenes_->setText(names.isEmpty() ? QString()
-					 : T("Builder.WillCreate").arg(names.size()) + "\n" + names.join("\n"));
-	scenes_->setVisible(!names.isEmpty());
-	create_->setText(T("Builder.Create").arg(names.size()));
-	create_->setEnabled(!names.isEmpty());
+	QStringList keys;
+	for (const core::BroadcastTemplate &t : core::templatesFor(hosts + cams, screens))
+		keys << QString::fromStdString(t.key);
+	gallery_->setTemplates(keys, canvasAspect());
+	const bool any = !keys.isEmpty();
+	gallery_->setVisible(any);
+	empty_->setVisible(!any && !parts.isEmpty());
+	empty_->setText(T("Broadcast.None"));
+	background_->setEnabled(bgs > 0);
+	graphics_->setEnabled(cgs > 0);
+	scene_->setEnabled(any);
+	show_->setEnabled(hosts + cams + screens > 0);
 }
 
-std::vector<QString> BuilderPanel::create()
+void BuilderPanel::flash(QPushButton *button, const QString &text)
 {
-	const std::vector<QString> names = builder::create(plan(), options());
+	const QString normal = button == scene_ ? T("Broadcast.NewScene") : T("Broadcast.Show");
+	button->setText(text);
+	QTimer::singleShot(2500, button, [button, normal] { button->setText(normal); });
+}
+
+QString BuilderPanel::createScene()
+{
+	const QString key = gallery_->currentKey();
+	if (key.isEmpty())
+		return {};
+	const std::vector<QString> names = builder::create(
+		builder::single(sources_->selectedSources(), key.toStdString(), gallery_->currentLabel()), options());
+	if (names.empty())
+		return {};
+	OBSSourceAutoRelease created = obs_get_source_by_name(names.front().toUtf8().constData());
+	if (created)
+		EditContext::instance().pin(created); /* the new scene on the Canvas */
+	flash(scene_, T("Builder.Created").arg(names.front()));
+	return names.front();
+}
+
+std::vector<QString> BuilderPanel::createShow()
+{
+	const double aspect = canvasAspect();
+	const builder::Plan plan = builder::plan(
+		sources_->selectedSources(), options(),
+		[aspect](const std::string &key) { return broadcastLabel(key, aspect); },
+		[](const QString &source) { return T("Broadcast.SoloScene").arg(source); });
+	const std::vector<QString> names = builder::create(plan, options());
 	if (!names.empty()) {
-		/* Show the first new scene on the Canvas. */
 		OBSSourceAutoRelease first = obs_get_source_by_name(names.front().toUtf8().constData());
 		if (first)
 			EditContext::instance().pin(first);
-		create_->setText(T("Broadcast.ShowDone").arg(names.size()));
-		create_->setEnabled(false);
-		QTimer::singleShot(2500, this, [this] { refresh(); });
 	}
+	flash(show_, T("Broadcast.ShowDone").arg(names.size()));
 	return names;
 }
 

@@ -143,6 +143,16 @@ Plan plan(const std::vector<OBSSource> &sources, const Options &options, const T
 	return p;
 }
 
+Plan single(const std::vector<OBSSource> &sources, const std::string &key, const QString &name)
+{
+	Options none;
+	none.solo = false;
+	none.layouts = false;
+	Plan p = plan(sources, none, nullptr, nullptr);
+	p.scenes.push_back({key, name, p.cameras, p.screens});
+	return p;
+}
+
 std::vector<QString> create(const Plan &plan, const Options &options)
 {
 	std::vector<QString> names;

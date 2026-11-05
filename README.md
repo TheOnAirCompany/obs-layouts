@@ -22,7 +22,7 @@ The left panel of the Layouts window: every source of the edited scene, front on
 
 ### Types and Layouts Builder
 
-Give each source a type (Host, Cam, Screen, BG, CG) from a colored pill, or let Layouts suggest it from the name (`CAM _ GUEST 1`, `SCREEN _ RIGHT`, `BG _ DYNAMIQUE`, `LOGO`). Filter Layers by type. **Tools > Layouts Builder** lists every source of the collection and creates the scenes of the show in one click: background at the back, hosts in the large tile, cams and screens in their tiles, graphics on top where they already are.
+Give each source a type (Host, Cam, Screen, BG, CG) from a colored pill, or let Layouts suggest it from the name (`CAM _ GUEST 1`, `SCREEN _ RIGHT`, `BG _ DYNAMIQUE`, `LOGO`). Filter Layers by type. **Tools > Layouts Builder** lists every source of the collection: select the ones you want and pick a broadcast layout from the same gallery as in Scene mode to make the scene (background at the back, hosts in the large tile, graphics on top where they already are), or create all the scenes of the show at once.
 
 ### Inspector
 

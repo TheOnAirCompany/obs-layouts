@@ -12,10 +12,11 @@
 - **Filter Layers by type**: a row of chips (All, Host, Cam, Screen, BG, CG, Not set) with counts.
 - **Layouts Builder** (Tools > Layouts Builder, or the Scene | Builder switch at the top left of
   the window): every source of the collection once, whatever scene it is in, with its type and
-  the number of scenes that use it. Take sources in or out of the show, then create in one
-  click a full-screen scene per host, cam and screen and a scene for every broadcast layout that
-  fits. The background covers the canvas at the very back of every scene, the graphics go on
-  top at the place they already have, hosts take the large tile, and the layout can be locked.
+  the number of scenes that use it. Select the sources you want (Cmd / Shift): the broadcast
+  layouts gallery of Scene mode shows the layouts that fit them; New scene (or a double-click)
+  makes the chosen one, with the background at the very back covering the canvas, the hosts in
+  the large tile and the graphics on top at the place they already have. Create show scenes
+  makes a full-screen scene per source and one per layout that fits.
 - Broadcast layouts in Scene mode: hosts take the large tile; backgrounds and graphics in the
   selection are never put in a tile.
 - **Rounded corners belong to the scene**: the same camera can be round in one scene and square
