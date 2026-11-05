@@ -68,6 +68,8 @@ target_sources(
     src/core/mirror.cpp
     src/core/mirror.hpp
     src/core/roles.cpp
+    src/core/user-layouts.hpp
+    src/core/user-layouts.cpp
     src/core/roles.hpp
     src/core/style.cpp
     src/core/style.hpp
@@ -95,6 +97,8 @@ target_sources(
     src/obs/builder.hpp
     src/obs/roles.cpp
     src/obs/roles.hpp
+    src/obs/user-layouts.cpp
+    src/obs/user-layouts.hpp
     src/obs/hotkeys.cpp
     src/obs/hotkeys.hpp
     src/obs/item-style.cpp

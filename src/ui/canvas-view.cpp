@@ -18,6 +18,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "canvas-view.hpp"
 
+#include "broadcast-gallery.hpp"
+
 #include "theme.hpp"
 
 #include "core/expression.hpp"
@@ -2035,6 +2037,9 @@ void CanvasView::contextMenuEvent(QContextMenuEvent *e)
 		}
 		menu.addSeparator();
 	}
+
+	menu.addAction(T("UserLayout.Save"), this, [this] { saveLayoutDialog(this); });
+	menu.addSeparator();
 
 	const std::string uuid = ctx.sceneUuid().toStdString();
 	const std::string name = ctx.sceneName().toStdString();

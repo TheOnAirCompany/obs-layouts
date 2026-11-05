@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "broadcast-inventive.hpp"
 #include "broadcast-cams.hpp"
 #include "broadcast-screens.hpp"
+#include "user-layouts.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -110,6 +111,11 @@ std::vector<BroadcastTemplate> templatesFor(int cameras, int screens, int chats,
 	for (const BroadcastTemplate &t : broadcastTemplates()) {
 		if (t.cameras == cameras && t.screens == screens && t.chats == chats && !(portrait && t.landscapeOnly))
 			out.push_back(t);
+	}
+	/* Layouts saved by the user, after the built-in ones. */
+	for (const UserLayout &l : UserLayoutRegistry::instance().all()) {
+		if (l.cameras() == cameras && l.screens() == screens && l.chats() == chats)
+			out.push_back({l.key, cameras, screens, l.chats()});
 	}
 	return out;
 }
@@ -270,6 +276,10 @@ std::vector<Slot> buildBroadcast(const std::string &key, const Rect &canvas, con
 {
 	if (!(canvas.w > 0) || !(canvas.h > 0))
 		return {};
+	if (isUserKey(key)) {
+		const UserLayout *l = UserLayoutRegistry::instance().find(key);
+		return l ? buildUserLayout(*l, canvas) : std::vector<Slot>{};
+	}
 	std::vector<Slot> inventive;
 	if (buildInventiveTemplate(key, canvas, spec, inventive))
 		return inventive;

@@ -30,6 +30,18 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPainter>
 #include <QPainterPath>
 #include <QToolButton>
+#include "core/user-layouts.hpp"
+#include "obs/user-layouts.hpp"
+
+#include <QContextMenuEvent>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QInputDialog>
+#include <QMenu>
+#include <QMessageBox>
+#include <QPainter>
+#include <QPainterPath>
+#include <QStandardPaths>
 
 #include <algorithm>
 #include <cmath>
@@ -37,6 +49,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 namespace layouts::ui {
 
 namespace {
+
+int g_userGeneration = 0;
 
 struct ThumbColors {
 	QColor camera, screen, chat, bg;
@@ -153,6 +167,12 @@ QIcon broadcastThumb(const std::string &key, const ThumbColors &c, double aspect
 		p.setClipRect(area);
 		for (const core::Slot &s : tiles)
 			drawSlot(p, s, c, k);
+		if (core::isUserKey(key)) {
+			/* Saved by the user: a small accent dot at the top right. */
+			const double d = std::max(4.0, area.height() * 0.09);
+			p.setBrush(QColor::fromRgba(tokens::kSelection));
+			p.drawEllipse(QRectF(area.right() - d * 1.6, area.top() + d * 0.6, d, d));
+		}
 		p.end();
 		icon.addPixmap(pm);
 		icon.addPixmap(pm, QIcon::Selected); /* no tint: the outline shows the selection */
@@ -267,12 +287,14 @@ void BroadcastGallery::setTemplates(const QStringList &keys, double aspect)
 	QStringList shown;
 	for (int i = 0; i < count(); i++)
 		shown << item(i)->data(Qt::UserRole).toString();
-	if (keys == shown && std::fabs(property("aspect").toDouble() - aspect) <= 1e-3) {
+	if (keys == shown && std::fabs(property("aspect").toDouble() - aspect) <= 1e-3 &&
+	    property("userGeneration").toInt() == g_userGeneration) {
 		if (mirrorBits() != renderedMirror_)
 			renderThumbs();
 		return;
 	}
 	setProperty("aspect", aspect);
+	setProperty("userGeneration", g_userGeneration);
 	const QString current = currentKey();
 	const QSignalBlocker block(this);
 	clear();
@@ -280,7 +302,7 @@ void BroadcastGallery::setTemplates(const QStringList &keys, double aspect)
 		const QString label = broadcastLabel(k.toStdString(), aspect);
 		auto *it = new QListWidgetItem(label, this);
 		it->setData(Qt::UserRole, k);
-		it->setToolTip(label);
+		it->setToolTip(core::isUserKey(k.toStdString()) ? T("UserLayout.Tooltip").arg(label) : label);
 		if (k == current)
 			setCurrentItem(it);
 	}
@@ -307,6 +329,104 @@ void BroadcastGallery::fitRows()
 	const int cols = std::max(1, viewport()->width() / std::max(1, cell.width()));
 	const int rows = std::max(1, (count() + cols - 1) / cols);
 	setFixedHeight(rows * cell.height() + 2 * frameWidth() + 2 * spacing());
+}
+
+void BroadcastGallery::userLayoutsChanged()
+{
+	g_userGeneration++;
+	Store::instance().notifySettingsChanged(false);
+}
+
+void BroadcastGallery::contextMenuEvent(QContextMenuEvent *e)
+{
+	QListWidgetItem *it = itemAt(e->pos());
+	const std::string key = it ? it->data(Qt::UserRole).toString().toStdString() : std::string();
+	QMenu menu(this);
+	if (core::isUserKey(key)) {
+		const QString name = it->text();
+		menu.addAction(T("UserLayout.Rename"), this, [this, key, name] {
+			bool ok = false;
+			const QString text = QInputDialog::getText(this, T("UserLayout.Rename"), T("UserLayout.Name"),
+								   QLineEdit::Normal, name, &ok);
+			if (ok && userlayouts::rename(key, text))
+				userLayoutsChanged();
+		});
+		menu.addAction(T("UserLayout.Export"), this, [this, key, name] {
+			const QString dir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+			const QString path = QFileDialog::getSaveFileName(
+				this, T("UserLayout.Export"), dir + "/" + name + ".json", T("UserLayout.FileFilter"));
+			QString error;
+			if (!path.isEmpty() && !userlayouts::exportTo(path, {key}, &error))
+				QMessageBox::warning(this, T("UserLayout.Export"),
+						     T("UserLayout.ExportFailed").arg(error));
+		});
+		menu.addAction(T("UserLayout.Delete"), this, [this, key, name] {
+			if (QMessageBox::question(this, T("UserLayout.Delete"),
+						  T("UserLayout.DeleteConfirm").arg(name)) != QMessageBox::Yes)
+				return;
+			if (userlayouts::remove(key))
+				userLayoutsChanged();
+		});
+		menu.addSeparator();
+	}
+	menu.addAction(T("UserLayout.Save"), this, [this] { saveLayoutDialog(this); });
+	menu.addAction(T("UserLayout.Import"), this, [this] { importLayoutsDialog(this); });
+	if (!core::UserLayoutRegistry::instance().all().empty())
+		menu.addAction(T("UserLayout.ExportAll"), this, [this] {
+			const QString dir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+			const QString path = QFileDialog::getSaveFileName(
+				this, T("UserLayout.ExportAll"), dir + "/layouts.json", T("UserLayout.FileFilter"));
+			QString error;
+			if (!path.isEmpty() && !userlayouts::exportTo(path, {}, &error))
+				QMessageBox::warning(this, T("UserLayout.ExportAll"),
+						     T("UserLayout.ExportFailed").arg(error));
+		});
+	menu.exec(e->globalPos());
+}
+
+bool saveLayoutDialog(QWidget *parent)
+{
+	const int n = userlayouts::capturableCount();
+	if (n == 0) {
+		QMessageBox::information(parent, T("UserLayout.Save"), T("UserLayout.Nothing"));
+		return false;
+	}
+	const QString suggested = QString::fromStdString(
+		core::UserLayoutRegistry::instance().uniqueName(T("UserLayout.DefaultName").arg(n).toStdString()));
+	bool ok = false;
+	const QString name = QInputDialog::getText(parent, T("UserLayout.Save"), T("UserLayout.SavePrompt").arg(n),
+						   QLineEdit::Normal, suggested, &ok);
+	if (!ok)
+		return false;
+	if (userlayouts::saveFromScene(name).empty())
+		return false;
+	BroadcastGallery::userLayoutsChanged();
+	return true;
+}
+
+void importLayoutsDialog(QWidget *parent)
+{
+	const QString dir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+	const QStringList files =
+		QFileDialog::getOpenFileNames(parent, T("UserLayout.Import"), dir, T("UserLayout.FileFilter"));
+	if (files.isEmpty())
+		return;
+	int added = 0;
+	QStringList failed;
+	for (const QString &f : files) {
+		QString error;
+		const int n = userlayouts::importFrom(f, &error);
+		if (n < 0)
+			failed << QString("%1 (%2)").arg(QFileInfo(f).fileName(), error);
+		else
+			added += n;
+	}
+	if (added > 0)
+		BroadcastGallery::userLayoutsChanged();
+	QString text = T("UserLayout.Imported").arg(added);
+	if (!failed.isEmpty())
+		text += "\n\n" + T("UserLayout.ImportFailed").arg(failed.join(", "));
+	QMessageBox::information(parent, T("UserLayout.Import"), text);
 }
 
 void BroadcastGallery::resizeEvent(QResizeEvent *e)

@@ -32,6 +32,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/edit-context.hpp"
 #include "obs/hotkeys.hpp"
 #include "obs/store.hpp"
+#include "obs/user-layouts.hpp"
 #include "ui/canvas-dock.hpp"
 #include "ui/canvas-view.hpp"
 #include "ui/inspector-dock.hpp"
@@ -110,6 +111,7 @@ bool obs_module_load(void)
 	Q_INIT_RESOURCE(layouts);
 
 	layouts::Store::instance().loadSettings();
+	layouts::userlayouts::load();
 	layouts::corners::registerFilter();
 	layouts::obs::style::registerFilter();
 	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
