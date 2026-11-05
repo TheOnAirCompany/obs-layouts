@@ -42,28 +42,28 @@ void checkTwin(const std::vector<Slot> &land, const PortraitMap &m, bool allowOv
 		t::fail(__FILE__, __LINE__, what + ": twin size");
 		return;
 	}
-	std::vector<int> used(m.slots.size(), 0);
+	std::vector<int> used(m.tiles.size(), 0);
 	for (size_t i = 0; i < land.size(); i++) {
 		const int j = m.twinOf[i];
-		if (j < 0 || j >= (int)m.slots.size()) {
+		if (j < 0 || j >= (int)m.tiles.size()) {
 			t::fail(__FILE__, __LINE__, what + ": missing twin");
 			continue;
 		}
-		if (m.slots[j].kind != land[i].kind)
+		if (m.tiles[j].kind != land[i].kind)
 			t::fail(__FILE__, __LINE__, what + ": kind mismatch");
 		used[j]++;
 	}
 	for (int u : used)
 		if (u != 1)
 			t::fail(__FILE__, __LINE__, what + ": twin used " + std::to_string(u) + " times");
-	for (const Slot &s : m.slots) {
+	for (const Slot &s : m.tiles) {
 		if (!inside(kTall, s.cell) || !(s.cell.w > 0) || !(s.cell.h > 0))
 			t::fail(__FILE__, __LINE__, what + ": cell outside or empty");
 	}
 	if (!allowOverlap) {
-		for (size_t i = 0; i < m.slots.size(); i++)
-			for (size_t j = i + 1; j < m.slots.size(); j++)
-				if (overlaps(m.slots[i].cell, m.slots[j].cell))
+		for (size_t i = 0; i < m.tiles.size(); i++)
+			for (size_t j = i + 1; j < m.tiles.size(); j++)
+				if (overlaps(m.tiles[i].cell, m.tiles[j].cell))
 					t::fail(__FILE__, __LINE__, what + ": overlap");
 	}
 }
@@ -109,8 +109,8 @@ TEST("portrait map: screens on top, guests in the middle, chat at the bottom")
 	const auto land = slotsOf(2, 1, 1);
 	const PortraitMap m = mapToPortrait("Screen1Cam2Chat", land, kTall, spec);
 	CHECK(m.key == "Portrait/2c1s1h");
-	const Rect cam0 = m.slots[m.twinOf[0]].cell, cam1 = m.slots[m.twinOf[1]].cell;
-	const Rect screen = m.slots[m.twinOf[2]].cell, chat = m.slots[m.twinOf[3]].cell;
+	const Rect cam0 = m.tiles[m.twinOf[0]].cell, cam1 = m.tiles[m.twinOf[1]].cell;
+	const Rect screen = m.tiles[m.twinOf[2]].cell, chat = m.tiles[m.twinOf[3]].cell;
 	CHECK_NEAR(screen.y, 0, 1e-6);
 	CHECK_NEAR(screen.w, 1080, 1e-6);
 	CHECK_NEAR(screen.h, 1080 * 9.0 / 16.0, 1e-6);
@@ -125,11 +125,11 @@ TEST("portrait map: two guests alone stack, four make a grid")
 	BroadcastSpec spec;
 	spec.gap = 0;
 	PortraitMap two = mapToPortrait("Custom", slotsOf(2, 0, 0), kTall, spec);
-	CHECK_NEAR(two.slots[0].cell.w, 1080, 1e-6);
-	CHECK_NEAR(two.slots[1].cell.y, 960, 1e-6);
+	CHECK_NEAR(two.tiles[0].cell.w, 1080, 1e-6);
+	CHECK_NEAR(two.tiles[1].cell.y, 960, 1e-6);
 	PortraitMap four = mapToPortrait("Custom", slotsOf(4, 0, 0), kTall, spec);
-	CHECK_NEAR(four.slots[0].cell.w, 540, 1e-6);
-	CHECK_NEAR(four.slots[3].cell.y, 960, 1e-6);
+	CHECK_NEAR(four.tiles[0].cell.w, 540, 1e-6);
+	CHECK_NEAR(four.tiles[3].cell.y, 960, 1e-6);
 }
 
 TEST("portrait map: the host gets the wide row and keeps its index")
@@ -139,12 +139,12 @@ TEST("portrait map: the host gets the wide row and keeps its index")
 	auto land = slotsOf(4, 0, 0);
 	land[2].host = true;
 	const PortraitMap m = mapToPortrait("Custom", land, kTall, spec);
-	const Slot &h = m.slots[m.twinOf[2]];
+	const Slot &h = m.tiles[m.twinOf[2]];
 	CHECK(h.host);
 	CHECK_NEAR(h.cell.y, 0, 1e-6);
 	CHECK_NEAR(h.cell.w, 1080, 1e-6);
 	for (int i : {0, 1, 3})
-		CHECK(m.slots[m.twinOf[i]].cell.y >= h.cell.bottom() - 1e-6);
+		CHECK(m.tiles[m.twinOf[i]].cell.y >= h.cell.bottom() - 1e-6);
 }
 
 TEST("portrait map: a ticker chat keeps a thin band, screens alone are centered")
@@ -152,11 +152,11 @@ TEST("portrait map: a ticker chat keeps a thin band, screens alone are centered"
 	BroadcastSpec spec;
 	spec.gap = 0;
 	const PortraitMap t = mapToPortrait("X", slotsOf(1, 0, 1, true), kTall, spec);
-	const Rect chat = t.slots[t.twinOf[1]].cell;
+	const Rect chat = t.tiles[t.twinOf[1]].cell;
 	CHECK(chat.h < 1920 * 0.1);
-	CHECK(t.slots[t.twinOf[1]].ticker);
+	CHECK(t.tiles[t.twinOf[1]].ticker);
 	const PortraitMap s = mapToPortrait("X", slotsOf(0, 1, 0), kTall, spec);
-	const Rect screen = s.slots[0].cell;
+	const Rect screen = s.tiles[0].cell;
 	CHECK_NEAR(screen.y + screen.h / 2, 960, 1e-6);
 }
 
@@ -164,17 +164,17 @@ TEST("portrait map: landscape-only and degenerate inputs")
 {
 	BroadcastSpec spec;
 	CHECK(!supportsPortrait("NoSuchTemplate"));
-	CHECK(mapToPortrait("Cam2Split", {}, kTall, spec).slots.empty());
-	CHECK(mapToPortrait("Cam2Split", slotsOf(2, 0, 0), {0, 0, 0, 0}, spec).slots.empty());
+	CHECK(mapToPortrait("Cam2Split", {}, kTall, spec).tiles.empty());
+	CHECK(mapToPortrait("Cam2Split", slotsOf(2, 0, 0), {0, 0, 0, 0}, spec).tiles.empty());
 	/* Counts that do not match the template: generated instead. */
 	const PortraitMap m = mapToPortrait("Cam2Split", slotsOf(3, 0, 0), kTall, spec);
 	CHECK(m.strategy == PortraitStrategy::Generated);
-	CHECK(m.slots.size() == 3);
+	CHECK(m.tiles.size() == 3);
 	/* Round bubbles carry over. */
 	auto land = slotsOf(1, 0, 0);
 	land[0].shape = SlotShape::Round;
-	CHECK(mapToPortrait("Y", land, kTall, spec).slots[0].shape == SlotShape::Round);
+	CHECK(mapToPortrait("Y", land, kTall, spec).tiles[0].shape == SlotShape::Round);
 	/* Shortcut from a template key. */
 	const PortraitMap k = mapTemplateToPortrait("Screen1Cam3Strip", kWide, kTall, spec);
-	CHECK(k.strategy == PortraitStrategy::Legacy && k.slots.size() == 4);
+	CHECK(k.strategy == PortraitStrategy::Legacy && k.tiles.size() == 4);
 }

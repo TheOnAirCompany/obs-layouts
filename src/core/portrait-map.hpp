@@ -47,9 +47,10 @@ struct PortraitMap {
 	/* Layout key of the twin: the 16:9 key for Legacy, "Portrait/<c>c<s>s<h>h" otherwise.
 	 * Stable for the same counts so the twin can be recognized and refreshed. */
 	std::string key;
-	std::vector<Slot> slots; /* on the portrait canvas: cameras, then screens, then chats */
-	/* For each 16:9 slot (same index as the input), the index of its twin slot in
-	 * `slots`, or -1 when it has none. Kinds always match. */
+	std::vector<Slot> tiles; /* on the portrait canvas: cameras, then screens, then chats */
+	/* For each 16:9 slot (same index as the input), the index of its twin tile in
+	 * `tiles`, or -1 when it has none. Kinds always match. (Not called "slots": Qt
+	 * defines that word as a macro.) */
 	std::vector<int> twinOf;
 };
 

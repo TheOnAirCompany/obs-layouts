@@ -72,6 +72,7 @@ struct ViewSettings {
 	int broadcastKinds = 0; /* 0 auto, 1 all cameras, 2 all screens */
 	bool builderBackground = true;
 	bool builderGraphics = true;
+	bool dualEnabled = false; /* 0.6 dual output: keep a 9:16 twin of broadcast scenes */
 	QColor guideColor{0xFF, 0x3D, 0x71};
 };
 

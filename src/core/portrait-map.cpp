@@ -211,20 +211,20 @@ PortraitMap mapToPortrait(const std::string &key, const std::vector<Slot> &lands
 			std::stable_sort(built.begin(), built.end(), [](const Slot &a, const Slot &b) {
 				return kindIndex(a.kind) < kindIndex(b.kind);
 			});
-			m.slots = std::move(built);
+			m.tiles = std::move(built);
 		}
 	}
-	if (m.slots.empty() && !landscape.empty()) {
+	if (m.tiles.empty() && !landscape.empty()) {
 		m.strategy = PortraitStrategy::Generated;
 		m.key = "Portrait/" + std::to_string(counts[0]) + "c" + std::to_string(counts[1]) + "s" +
 			std::to_string(counts[2]) + "h";
-		m.slots = generate(counts[0], counts[1], counts[2], tickerOnly, host, portrait, spec);
+		m.tiles = generate(counts[0], counts[1], counts[2], tickerOnly, host, portrait, spec);
 	}
 
 	/* Twin links: the i-th slot of a kind goes to the i-th portrait slot of that kind. */
 	int base[3] = {0, 0, 0};
 	int have[3] = {0, 0, 0};
-	for (const Slot &s : m.slots)
+	for (const Slot &s : m.tiles)
 		have[kindIndex(s.kind)]++;
 	base[1] = have[0];
 	base[2] = have[0] + have[1];
@@ -238,7 +238,7 @@ PortraitMap mapToPortrait(const std::string &key, const std::vector<Slot> &lands
 			continue;
 		const int j = base[k] + n;
 		m.twinOf[i] = j;
-		Slot &t = m.slots[j];
+		Slot &t = m.tiles[j];
 		t.host = s.host;
 		t.ticker = s.ticker;
 		if (s.shape == SlotShape::Round)

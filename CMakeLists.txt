@@ -76,6 +76,8 @@ target_sources(
     src/obs/corners.cpp
     src/obs/corners.hpp
     src/obs/builder.cpp
+    src/obs/dual.cpp
+    src/obs/dual.hpp
     src/obs/builder.hpp
     src/obs/roles.cpp
     src/obs/roles.hpp
