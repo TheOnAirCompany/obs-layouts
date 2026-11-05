@@ -215,7 +215,7 @@ void Failover::update()
 
 	const core::FailoverChoice choice =
 		core::chooseFallback(key_, assignment_, lost_, ovi.base_height > ovi.base_width);
-	const std::vector<core::Slot> slots = choice.ok ? core::buildBroadcast(choice.key, canvas, spec)
+	const std::vector<core::Slot> tiles = choice.ok ? core::buildBroadcast(choice.key, canvas, spec)
 							: std::vector<core::Slot>();
 
 	std::vector<ItemOp> ops;
@@ -240,10 +240,10 @@ void Failover::update()
 			}
 			const auto it = std::find(choice.assignment.begin(), choice.assignment.end(), s.name);
 			const size_t i = (size_t)(it - choice.assignment.begin());
-			if (it != choice.assignment.end() && i < slots.size()) {
+			if (it != choice.assignment.end() && i < tiles.size()) {
 				const core::ItemModel m{fromObs(s.info, s.crop), obs_source_get_width(source),
 							obs_source_get_height(source)};
-				toObs(commands::slotTransform(m, slots[i].kind, slots[i].cell), op.info, op.crop);
+				toObs(commands::slotTransform(m, tiles[i].kind, tiles[i].cell), op.info, op.crop);
 			}
 		}
 		ops.push_back(op);
