@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "broadcast.hpp"
+#include "user-layouts.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -104,6 +105,11 @@ std::vector<BroadcastTemplate> templatesFor(int cameras, int screens)
 	for (const BroadcastTemplate &t : broadcastTemplates()) {
 		if (t.cameras == cameras && t.screens == screens)
 			out.push_back(t);
+	}
+	/* Layouts saved by the user, after the built-in ones. */
+	for (const UserLayout &l : UserLayoutRegistry::instance().all()) {
+		if (l.cameras() == cameras && l.screens() == screens)
+			out.push_back({l.key, cameras, screens, l.chats()});
 	}
 	return out;
 }
@@ -260,6 +266,10 @@ std::vector<Slot> buildBroadcast(const std::string &key, const Rect &canvas, con
 {
 	if (!(canvas.w > 0) || !(canvas.h > 0))
 		return {};
+	if (isUserKey(key)) {
+		const UserLayout *l = UserLayoutRegistry::instance().find(key);
+		return l ? buildUserLayout(*l, canvas) : std::vector<Slot>{};
+	}
 	return canvas.h > canvas.w ? buildPortrait(key, canvas, spec) : buildLandscape(key, canvas, spec);
 }
 

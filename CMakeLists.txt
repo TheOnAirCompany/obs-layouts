@@ -60,6 +60,8 @@ target_sources(
     src/core/broadcast.cpp
     src/core/broadcast.hpp
     src/core/roles.cpp
+    src/core/user-layouts.hpp
+    src/core/user-layouts.cpp
     src/core/roles.hpp
     src/obs/obs-convert.hpp
     src/obs/store.cpp
