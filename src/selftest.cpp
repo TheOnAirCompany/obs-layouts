@@ -26,6 +26,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "core/expression.hpp"
 #include "obs/commands.hpp"
 #include "obs/constraints.hpp"
+#include "obs/dual.hpp"
 #include "obs/corners.hpp"
 #include "obs/builder.hpp"
 #include "obs/roles.hpp"
@@ -1745,6 +1746,55 @@ void testMultiCanvas()
 	obs_scene_release(vs);
 }
 
+/* Dual output: the 9:16 twin of a 16:9 duo lands in the vertical canvas, stacked, with
+ * the same sources, and CUT puts it on the vertical program. */
+void testDualTwin()
+{
+	if (!g_vertical)
+		return;
+	obs_scene_t *land = obs_scene_create("Dual Duo");
+	obs_sceneitem_t *a = addColor(land, "DualA", 1920, 1080, 0xFF4040FF, 0, 0);
+	obs_sceneitem_t *b = addColor(land, "DualB", 1920, 1080, 0xFF40FF40, 960, 0);
+	roles::setRole({obs_sceneitem_get_source(a), obs_sceneitem_get_source(b)}, core::Role::Camera);
+	OBSSource twin = dual::refreshTwin(obs_scene_get_source(land), "Cam2Split", true);
+	R->check(twin != nullptr, "dual-twin-created");
+	if (twin) {
+		obs_canvas_t *c = obs_source_get_canvas(twin);
+		R->check(c == g_vertical, "dual-twin-in-vertical-canvas");
+		obs_canvas_release(c);
+		struct Boxes {
+			std::vector<std::pair<std::string, core::Rect>> list;
+		} boxes;
+		obs_scene_enum_items(
+			obs_scene_from_source(twin),
+			[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+				matrix4 m;
+				obs_sceneitem_get_box_transform(item, &m);
+				static_cast<Boxes *>(p)->list.push_back(
+					{obs_source_get_name(obs_sceneitem_get_source(item)),
+					 core::Rect(m.t.x, m.t.y, m.x.x, m.y.y)});
+				return true;
+			},
+			&boxes);
+		const bool two = boxes.list.size() == 2;
+		R->check(two, "dual-twin-two-items", QString::number(boxes.list.size()));
+		if (two) {
+			const core::Rect &ra = boxes.list[0].first == "DualA" ? boxes.list[0].second : boxes.list[1].second;
+			const core::Rect &rb = boxes.list[0].first == "DualA" ? boxes.list[1].second : boxes.list[0].second;
+			R->check(std::fabs(ra.w - 1080) < 1 && ra.y < 1 && rb.y > ra.bottom() - 1 &&
+					 std::fabs(rb.bottom() - 1920) < 1,
+				 "dual-twin-stacked", rectStr(ra) + rectStr(rb));
+		}
+		R->check(dual::cutTwin(obs_scene_get_source(land)), "dual-cut-twin");
+		OBSSourceAutoRelease onAir = obs_canvas_get_channel(g_vertical, 0);
+		R->check(onAir.Get() == twin.Get(), "dual-twin-on-vertical-program");
+		obs_canvas_set_channel(g_vertical, 0, nullptr);
+	}
+	roles::setRole({obs_sceneitem_get_source(a), obs_sceneitem_get_source(b)}, core::Role::None);
+	obs_source_remove(obs_scene_get_source(land));
+	obs_scene_release(land);
+}
+
 void cleanupCanvas()
 {
 	EditContext::instance().follow();
@@ -2168,6 +2218,7 @@ void runSelfTest(ui::LayoutsWindow *window)
 	}
 	if (enabled("canvas")) {
 		R->add(1500, [] { testMultiCanvas(); });
+		R->add(800, [] { testDualTwin(); });
 		R->add(800, [] { cleanupCanvas(); });
 		R->add(500, [] { constraintsSetup(); });
 		R->add(800, [] { constraintsReset(); });
