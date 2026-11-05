@@ -59,6 +59,8 @@ target_sources(
     src/core/layout.hpp
     src/core/broadcast.cpp
     src/core/broadcast.hpp
+    src/core/roles.cpp
+    src/core/roles.hpp
     src/obs/obs-convert.hpp
     src/obs/store.cpp
     src/obs/store.hpp
@@ -71,6 +73,8 @@ target_sources(
     src/obs/constraints.hpp
     src/obs/corners.cpp
     src/obs/corners.hpp
+    src/obs/roles.cpp
+    src/obs/roles.hpp
     src/obs/hotkeys.cpp
     src/obs/hotkeys.hpp
     src/obs/commands.hpp

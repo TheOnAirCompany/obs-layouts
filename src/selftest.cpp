@@ -27,6 +27,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/commands.hpp"
 #include "obs/constraints.hpp"
 #include "obs/corners.hpp"
+#include "obs/roles.hpp"
 #include "obs/edit-context.hpp"
 #include "obs/hotkeys.hpp"
 #include "obs/obs-convert.hpp"
@@ -688,6 +689,38 @@ void testLayoutsV02()
 	const double k = (b0.w + 100) / b0.w;
 	R->check(std::fabs(b1.x - b0.x) < 0.6 && std::fabs(b1.w - b0.w * k) < 1.5 && std::fabs(b1.h - b0.h * k) < 1.5,
 		 "multi-resize-keeps-ratio", rectStr(b0) + " -> " + rectStr(b1));
+}
+
+/* Roles: saved on the source, kept when renamed, undoable, suggested from the name. */
+void testRoles()
+{
+	EditContext &ctx = EditContext::instance();
+	const ItemEntry *a = entry("A");
+	obs_source_t *src = a ? obs_sceneitem_get_source(a->item) : nullptr;
+	R->check(src && roles::explicitRole(src) == core::Role::None && roles::role(src) == core::Role::None,
+		 "roles-unset-by-default");
+	if (!src)
+		return;
+	roles::setRole({src}, core::Role::Camera);
+	obs_source_set_name(src, "A renamed");
+	const bool kept = roles::role(src) == core::Role::Camera;
+	obs_source_set_name(src, "A");
+	ctx.markDirty();
+	R->check(kept, "roles-survive-rename");
+	roles::setMain(src, true);
+	R->check(roles::isMain(src), "roles-main-camera");
+	QAction *undo = findAction(QKeySequence(QKeySequence::Undo));
+	if (undo)
+		undo->trigger();
+	ctx.markDirty();
+	R->check(undo && roles::explicitRole(src) == core::Role::None, "roles-undo",
+		 core::roleKey(roles::explicitRole(src)));
+	OBSSourceAutoRelease guest = colorSource("CAM _ GUEST 1", 64, 64, 0xFFFFFFFF);
+	OBSSourceAutoRelease bg = colorSource("BG _ DYNAMIQUE", 64, 64, 0xFFFFFFFF);
+	R->check(roles::role(guest) == core::Role::Camera && roles::role(bg) == core::Role::Background,
+		 "roles-suggested-from-name");
+	obs_source_remove(guest);
+	obs_source_remove(bg);
 }
 
 void unlockAll(std::initializer_list<const char *> names)
@@ -1620,6 +1653,7 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(300, [] { testCanvasSnapAndRuler(); });
 		R->add(300, [] { testLayers(); });
 		R->add(300, [] { testLayoutsV02(); });
+		R->add(300, [] { testRoles(); });
 		R->add(300, [] { testBroadcast(); });
 		R->add(300, [] { testBroadcastScene(); });
 		R->add(300, [] { testShowScenes(); });

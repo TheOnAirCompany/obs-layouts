@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "edit-context.hpp"
 #include "constraints.hpp"
+#include "roles.hpp"
 #include "edit-session.hpp"
 #include "obs-convert.hpp"
 #include "store.hpp"
@@ -527,16 +528,7 @@ namespace {
 
 bool isCameraSource(obs_source_t *src)
 {
-	const char *id = src ? obs_source_get_unversioned_id(src) : nullptr;
-	if (!id)
-		return false;
-	static const char *kCameraIds[] = {"av_capture_input", "macos-avcapture", "dshow_input", "v4l2_input",
-					   "decklink-input",   "ndi_source",      "aja_source"};
-	for (const char *c : kCameraIds) {
-		if (strncmp(id, c, strlen(c)) == 0)
-			return true;
-	}
-	return false;
+	return roles::isCameraKind(src);
 }
 
 struct Placed {
