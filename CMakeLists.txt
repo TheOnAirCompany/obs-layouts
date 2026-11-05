@@ -60,6 +60,8 @@ target_sources(
     src/core/broadcast-cams.cpp
     src/core/broadcast-cams.hpp
     src/core/broadcast.cpp
+    src/core/broadcast-screens.cpp
+    src/core/broadcast-screens.hpp
     src/core/broadcast.hpp
     src/core/broadcast-inventive.cpp
     src/core/broadcast-inventive.hpp

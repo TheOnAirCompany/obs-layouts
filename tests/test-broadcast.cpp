@@ -1,6 +1,9 @@
 #include "test.hpp"
 
 #include "broadcast.hpp"
+#include "broadcast-screens.hpp"
+
+#include <set>
 
 #include <algorithm>
 
@@ -13,6 +16,16 @@ bool inside(const Rect &outer, const Rect &r)
 {
 	return r.x >= outer.x - 1e-6 && r.y >= outer.y - 1e-6 && r.right() <= outer.right() + 1e-6 &&
 	       r.bottom() <= outer.bottom() + 1e-6;
+}
+
+/* Templates that overlap on purpose: a picture in picture, a bubble, a floating screen. */
+bool overlayTemplate(const std::string &key)
+{
+	static const std::set<std::string> keys = {
+		"Screen1Cam1Pip", "Screen1Cam2Pip", "Screen2Pip",     "Screen1Cam1Bubble", "Screen1Cam1Over",
+		"Screen1Cam3Pip", "Screen1Cam4Pip", "Screen2Cam1Pip", "Screen2Cam2Pip",
+	};
+	return keys.count(key) > 0;
 }
 
 bool overlaps(const Rect &a, const Rect &b)
@@ -37,8 +50,8 @@ TEST("broadcast: every template fills its slots inside the canvas without overla
 		}
 		if (cams != t.cameras || screens != t.screens)
 			t::fail(__FILE__, __LINE__, t.key + " slot counts");
-		/* No overlap, except the picture-in-picture insets. */
-		if (t.key.find("Pip") == std::string::npos) {
+		/* No overlap, except the picture-in-picture templates. */
+		if (!overlayTemplate(t.key)) {
 			for (size_t i = 0; i < slots.size(); i++)
 				for (size_t j = i + 1; j < slots.size(); j++) {
 					const Rect &a = slots[i].cell, &b = slots[j].cell;
@@ -109,7 +122,7 @@ TEST("broadcast: portrait canvas stacks guests and keeps screens 16:9 on top")
 			CHECK(inside(v, s[i].cell));
 			CHECK(s[i].cell.w > 0 && s[i].cell.h > 0);
 			for (size_t j = i + 1; j < s.size(); j++) {
-				if (t.key.find("Pip") == std::string::npos && overlaps(s[i].cell, s[j].cell))
+				if (!overlayTemplate(t.key) && overlaps(s[i].cell, s[j].cell))
 					t::fail(__FILE__, __LINE__, t.key + " portrait overlap");
 			}
 		}
@@ -214,4 +227,173 @@ TEST("broadcast: camera templates follow the review geometry")
 	s = buildBroadcast("Cam1Cinema", kCanvas, spec);
 	CHECK_NEAR(s[0].cell.w / s[0].cell.h, 2.39, 1e-9);
 	CHECK_NEAR(s[0].cell.x, 60, 1e-9);
+TEST("broadcast: 0.5 screen templates, counts per key")
+{
+	struct Want {
+		const char *key;
+		int cameras, screens;
+	};
+	const Want wants[] = {
+		{"Screen1Cam1Float", 1, 1},
+		{"Screen1Cam2Pip", 2, 1},
+		{"Screen1Cam2Sides", 2, 1},
+		{"Screen1Cam1Half", 1, 1},
+		{"Screen3", 0, 3},
+		{"Screen4Grid", 0, 4},
+		{"Screen1Framed", 0, 1},
+		{"Screen2Stacked", 0, 2},
+		{"Screen2BigSmall", 0, 2},
+		{"Screen2Pip", 0, 2},
+		{"Screen3Row", 0, 3},
+		{"Screen3TwoOne", 0, 3},
+		{"Screen4Strip", 0, 4},
+		{"Screen4Column", 0, 4},
+		{"Screen1Cam1Portrait", 1, 1},
+		{"Screen1Cam1Bubble", 1, 1},
+		{"Screen1Cam1Over", 1, 1},
+		{"Screen1Cam1Stack", 1, 1},
+		{"Screen1Cam2Square", 2, 1},
+		{"Screen1Cam2HostGuest", 2, 1},
+		{"Screen1Cam3Pip", 3, 1},
+		{"Screen1Cam3Float", 3, 1},
+		{"Screen1Cam4Pip", 4, 1},
+		{"Screen1Cam4Grid", 4, 1},
+		{"Screen1Cam4Sides", 4, 1},
+		{"Screen1Cam4L", 4, 1},
+		{"Screen1Cam5L", 5, 1},
+		{"Screen1Cam6L", 6, 1},
+		{"Screen1Cam6Sides", 6, 1},
+		{"Screen1Cam6Grid", 6, 1},
+		{"Screen2Cam1", 1, 2},
+		{"Screen2Cam1Pip", 1, 2},
+		{"Screen2Cam1Side", 1, 2},
+		{"Screen2Cam2Pip", 2, 2},
+		{"Screen2Cam2Sides", 2, 2},
+		{"Screen2Cam3", 3, 2},
+		{"Screen2Cam4", 4, 2},
+		{"Screen3Cam1", 1, 3},
+		{"Screen3Cam2", 2, 3},
+		{"Screen3Cam3", 3, 3},
+		{"Screen4Cam1", 1, 4},
+		{"Screen4Cam2", 2, 4},
+	};
+	std::vector<BroadcastTemplate> list;
+	appendScreenTemplates(list);
+	CHECK(list.size() == 42);
+	CHECK(sizeof(wants) / sizeof(wants[0]) == 42);
+	for (const Want &w : wants) {
+		bool listed = false;
+		for (const BroadcastTemplate &t : broadcastTemplates()) {
+			if (t.key == w.key) {
+				listed = true;
+				CHECK(t.landscapeOnly);
+				CHECK(t.cameras == w.cameras && t.screens == w.screens);
+			}
+		}
+		if (!listed)
+			t::fail(__FILE__, __LINE__, std::string(w.key) + " not listed");
+		for (const Rect &canvas : {kCanvas, Rect(100, 50, 3840, 2160), Rect(0, 0, 1280, 720)}) {
+			BroadcastSpec spec;
+			spec.margin = canvas.w > 2000 ? 40 : 0;
+			const std::vector<Slot> slots = buildBroadcast(w.key, canvas, spec);
+			int cams = 0, screens = 0, hosts = 0;
+			bool screenSeen = false;
+			for (const Slot &s : slots) {
+				if (s.kind == SlotKind::Camera) {
+					cams++;
+					if (screenSeen)
+						t::fail(__FILE__, __LINE__,
+							std::string(w.key) + " camera after a screen");
+				} else {
+					screens++;
+					screenSeen = true;
+				}
+				hosts += s.host ? 1 : 0;
+				if (!inside(canvas, s.cell) || !(s.cell.w > 0 && s.cell.h > 0))
+					t::fail(__FILE__, __LINE__, std::string(w.key) + " cell outside the canvas");
+			}
+			if (cams != w.cameras || screens != w.screens)
+				t::fail(__FILE__, __LINE__, std::string(w.key) + " slot counts");
+			/* One host: the first camera. */
+			CHECK(hosts == (w.cameras > 0 ? 1 : 0));
+			if (w.cameras > 0)
+				CHECK(slots[0].host);
+		}
+	}
+}
+
+TEST("broadcast: 0.5 screen templates keep screens 16:9")
+{
+	for (double gap : {0.0, 8.0, 24.0}) {
+		BroadcastSpec spec;
+		spec.gap = gap;
+		std::vector<BroadcastTemplate> list;
+		appendScreenTemplates(list);
+		for (const BroadcastTemplate &t : list) {
+			/* Cells the page does not fit (the screen is fitted inside when applied): the
+			 * 50/50 split drawn 900 x 518 and the column of Screen4Column. */
+			if (t.key == "Screen1Cam1Half")
+				continue;
+			bool first = true;
+			for (const Slot &s : buildBroadcast(t.key, kCanvas, spec)) {
+				if (s.kind != SlotKind::Screen)
+					continue;
+				if (!first && t.key == "Screen4Column")
+					continue;
+				first = false;
+				const double a = s.cell.w / s.cell.h;
+				if (std::abs(a / (16.0 / 9.0) - 1) > 0.01)
+					t::fail(__FILE__, __LINE__, t.key + " screen not 16:9");
+			}
+		}
+	}
+}
+
+TEST("broadcast: 0.5 screen templates follow the page geometry")
+{
+	BroadcastSpec spec;
+	spec.gap = 16; /* the page gap */
+	auto s = buildBroadcast("Screen1Cam1Float", kCanvas, spec);
+	CHECK(s[0].cell == Rect(1530, 615, 330, 330));
+	CHECK(s[1].cell == Rect(60, 135, 1440, 810));
+	s = buildBroadcast("Screen1Cam4L", kCanvas, spec);
+	CHECK(s.back().cell == Rect(0, 0, 1424, 801));
+	CHECK(s[0].cell == Rect(1440, 0, 480, 392.5));
+	CHECK_NEAR(s[2].cell.y, 817, 1e-9);
+	s = buildBroadcast("Screen2Cam1Side", kCanvas, spec);
+	CHECK_NEAR(s[0].cell.x, 976, 1e-9);
+	/* The bubble is round and square. */
+	s = buildBroadcast("Screen1Cam1Bubble", kCanvas, spec);
+	CHECK(s[0].shape == SlotShape::Round);
+	CHECK(s[0].cell == Rect(1580, 740, 300, 300));
+	/* Uniform scale: a 4K canvas doubles the drawing, the gap stays in canvas pixels. */
+	spec.gap = 32;
+	const auto big = buildBroadcast("Screen1Cam4L", Rect(0, 0, 3840, 2160), spec);
+	CHECK(big[0].cell == Rect(2880, 0, 960, 785));
+	/* A margin shrinks the drawing uniformly (scale 0.9 here) and centers it. */
+	spec.gap = 16;
+	spec.margin = 54;
+	s = buildBroadcast("Screen1Cam1Over", kCanvas, spec);
+	CHECK_NEAR(s[0].cell.x, 96, 1e-9);
+	CHECK_NEAR(s[0].cell.y, 54, 1e-9);
+	CHECK_NEAR(s[0].cell.w, 1728, 1e-9);
+	CHECK_NEAR(s[0].cell.h, 972, 1e-9);
+}
+
+TEST("broadcast: overlapping slots stack small over large")
+{
+	BroadcastSpec spec;
+	auto cells = [&](const std::string &key) {
+		std::vector<Rect> out;
+		for (const Slot &s : buildBroadcast(key, kCanvas, spec))
+			out.push_back(s.cell);
+		return out;
+	};
+	/* Screen floating over the camera: the screen (index 1) comes to the front. */
+	CHECK(overlayOrder(cells("Screen1Cam1Over")) == std::vector<size_t>{1});
+	CHECK(overlayOrder(cells("Screen1Cam1Pip")) == std::vector<size_t>{0});
+	CHECK(overlayOrder(cells("Screen2Pip")) == std::vector<size_t>{1});
+	CHECK(overlayOrder(cells("Screen1Cam2Pip")).size() == 2);
+	CHECK(overlayOrder(cells("Screen1Cam4L")).empty());
+	CHECK(overlayOrder(cells("Cam4Grid")).empty());
 }

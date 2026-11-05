@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "broadcast.hpp"
 #include "broadcast-inventive.hpp"
 #include "broadcast-cams.hpp"
+#include "broadcast-screens.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -95,8 +96,9 @@ const std::vector<BroadcastTemplate> &broadcastTemplates()
 			l.push_back({"Screen1Cam" + std::to_string(n) + "Column", n, 1});
 		for (int n = 2; n <= 6; n++)
 			l.push_back({"Screen1Cam" + std::to_string(n) + "Strip", n, 1});
-		appendInventiveTemplates(l);
 		appendCamTemplates(l);
+		appendScreenTemplates(l);
+		appendInventiveTemplates(l);
 		return l;
 	}();
 	return list;
@@ -271,6 +273,9 @@ std::vector<Slot> buildBroadcast(const std::string &key, const Rect &canvas, con
 	std::vector<Slot> inventive;
 	if (buildInventiveTemplate(key, canvas, spec, inventive))
 		return inventive;
+	/* 0.5 screen templates: one 16:9 drawing, letterboxed on a portrait canvas. */
+	if (std::vector<Slot> out; buildScreenTemplate(key, canvas, spec, out))
+		return out;
 	return canvas.h > canvas.w ? buildPortrait(key, canvas, spec) : buildLandscape(key, canvas, spec);
 }
 
