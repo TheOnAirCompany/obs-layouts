@@ -132,7 +132,7 @@ TEST("user layouts: registry feeds templatesFor and buildBroadcast")
 	CHECK(reg.find(key)->name == "Show");
 	CHECK(reg.remove(key));
 	CHECK(!reg.remove(key));
-	CHECK(templatesFor(3, 1).size() == builtIn);
+	CHECK(templatesFor(3, 1, 1).size() == builtIn);
 }
 
 TEST("user layouts: merge skips duplicates and renames conflicts")
