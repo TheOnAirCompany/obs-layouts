@@ -22,6 +22,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "edit-context.hpp"
 #include "obs-convert.hpp"
 #include "roles.hpp"
+#include "core/slot-apply.hpp"
 
 #include <obs-frontend-api.h>
 
@@ -183,30 +184,34 @@ std::vector<QString> create(const Plan &plan, const Options &options)
 			}
 		}
 
-		/* Tiles: cameras in reading order (hosts first), then screens. */
+		/* Tiles: host slots get the hosts, then cameras in reading order and screens. */
 		const std::vector<core::Slot> tiles = core::buildBroadcast(spec.key, canvas, options.spec);
-		size_t ci = 0, si = 0;
-		std::vector<std::pair<obs_source_t *, core::ItemTransform>> screens, cameras;
-		for (const core::Slot &slot : tiles) {
-			const bool camera = slot.kind == core::SlotKind::Camera;
-			const std::vector<OBSSource> &pool = camera ? spec.cameras : spec.screens;
-			size_t &i = camera ? ci : si;
-			if (i >= pool.size())
-				continue;
-			obs_source_t *s = pool[i++];
-			(camera ? cameras : screens)
-				.push_back({s, commands::slotTransform(modelOf(s), slot.kind, slot.cell)});
+		std::vector<obs_source_t *> sources;
+		std::vector<core::SlotKind> kinds;
+		std::vector<bool> hosts;
+		for (const OBSSource &s : spec.cameras) {
+			sources.push_back(s);
+			kinds.push_back(core::SlotKind::Camera);
+			hosts.push_back(roles::role(s) == core::Role::Host);
 		}
-		/* Screens below, cameras above (a picture-in-picture camera stays visible). */
-		for (auto *list : {&screens, &cameras}) {
-			for (const auto &[source, t] : *list) {
-				obs_sceneitem_t *item = obs_scene_add(scene, source);
-				if (!item)
-					continue;
-				apply(item, t);
-				if (options.lock)
-					commands::lockItem(item);
-			}
+		for (const OBSSource &s : spec.screens) {
+			sources.push_back(s);
+			kinds.push_back(core::SlotKind::Screen);
+			hosts.push_back(false);
+		}
+		const std::vector<int> assigned = core::assignItems(tiles, kinds, hosts);
+		/* Added back to front, in slot order (an inset camera stays visible). */
+		for (size_t k : core::stackOrder(tiles)) {
+			if (assigned[k] < 0)
+				continue;
+			obs_source_t *source = sources[(size_t)assigned[k]];
+			obs_sceneitem_t *item = obs_scene_add(scene, source);
+			if (!item)
+				continue;
+			apply(item, commands::slotTransform(modelOf(source), tiles[k]));
+			commands::applySlotStyle(item, tiles[k]);
+			if (options.lock)
+				commands::lockItem(item);
 		}
 
 		/* Graphics on top, where they already are in the show. */
