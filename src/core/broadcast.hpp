@@ -68,8 +68,9 @@ struct BroadcastTemplate {
 /* Every template, in display order. */
 const std::vector<BroadcastTemplate> &broadcastTemplates();
 
-/* Templates that use exactly this number of cameras and screens. */
-std::vector<BroadcastTemplate> templatesFor(int cameras, int screens);
+/* Templates that use exactly this number of cameras, screens and chats. On a portrait
+ * canvas, landscape-only templates are left out. */
+std::vector<BroadcastTemplate> templatesFor(int cameras, int screens, int chats = 0, bool portrait = false);
 
 /* Slots of a template on a canvas. Camera slots come first, in reading order, then
  * screen slots. Unknown keys give no slot. On a portrait canvas (taller than wide) the

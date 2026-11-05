@@ -98,11 +98,13 @@ const std::vector<BroadcastTemplate> &broadcastTemplates()
 	return list;
 }
 
-std::vector<BroadcastTemplate> templatesFor(int cameras, int screens)
+std::vector<BroadcastTemplate> templatesFor(int cameras, int screens, int chats, bool portrait)
 {
 	std::vector<BroadcastTemplate> out;
 	for (const BroadcastTemplate &t : broadcastTemplates()) {
-		if (t.cameras == cameras && t.screens == screens)
+		if (portrait && t.landscapeOnly)
+			continue;
+		if (t.cameras == cameras && t.screens == screens && t.chats == chats)
 			out.push_back(t);
 	}
 	return out;

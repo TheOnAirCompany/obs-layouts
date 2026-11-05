@@ -36,6 +36,8 @@ const char *roleKey(Role r)
 		return "background";
 	case Role::Graphics:
 		return "graphics";
+	case Role::Chat:
+		return "chat";
 	case Role::None:
 		break;
 	}
@@ -44,7 +46,7 @@ const char *roleKey(Role r)
 
 Role roleFromKey(std::string_view key)
 {
-	for (Role r : {Role::Host, Role::Camera, Role::Screen, Role::Background, Role::Graphics}) {
+	for (Role r : {Role::Host, Role::Camera, Role::Screen, Role::Background, Role::Graphics, Role::Chat}) {
 		if (key == roleKey(r))
 			return r;
 	}
@@ -56,7 +58,7 @@ const PrefixRules &defaultPrefixRules()
 	static const PrefixRules rules{
 		{"HOST", "PRÉSENTATEUR", "PRESENTER", "ANIMATEUR"},  {"CAM", "CAMERA", "CAMÉRA", "GUEST", "INVITÉ"},
 		{"SCREEN", "ÉCRAN", "SCR", "DISPLAY", "CAPTURE"},    {"BG", "BACKGROUND", "FOND"},
-		{"CG", "GFX", "OVERLAY", "LOGO", "LT", "HABILLAGE"},
+		{"CG", "GFX", "OVERLAY", "LOGO", "LT", "HABILLAGE"}, {"CHAT", "TCHAT", "CHATBOX"},
 	};
 	return rules;
 }
@@ -130,7 +132,7 @@ Role roleFromName(std::string_view name, const PrefixRules &rules)
 	const std::pair<Role, const std::vector<std::string> *> lists[] = {
 		{Role::Host, &rules.host},         {Role::Camera, &rules.camera},
 		{Role::Screen, &rules.screen},     {Role::Background, &rules.background},
-		{Role::Graphics, &rules.graphics},
+		{Role::Graphics, &rules.graphics}, {Role::Chat, &rules.chat},
 	};
 	for (const auto &[role, prefixes] : lists) {
 		for (const std::string &raw : *prefixes) {
