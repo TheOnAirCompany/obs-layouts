@@ -739,6 +739,22 @@ void CanvasView::rebuildOverlay()
 				worldRect(*b, one, tokens::kSelection);
 		}
 
+		/* ---- swap target ---- */
+		if (swapTarget_ && mode_ == Mode::Move) {
+			for (const ItemEntry &e : ctx.items()) {
+				if (e.item.Get() != swapTarget_.Get())
+					continue;
+				const core::Rect b = e.frame.quad.bounds();
+				const QPointF a = dev({b.left(), b.top()}), c = dev({b.right(), b.bottom()});
+				rect((float)a.x(), (float)a.y(), (float)(c.x() - a.x()), (float)(c.y() - a.y()),
+				     tokens::kSwapFill);
+				quad(e.frame.quad, tokens::kSwapOutline * one, tokens::kSwap);
+				const QPointF m = dev(e.frame.center());
+				addLabel(*s, T("Canvas.Swap"), tokens::kSwap, (float)m.x(), (float)m.y(), true);
+				break;
+			}
+		}
+
 		/* ---- preview of a preset / auto layout ---- */
 		for (const core::Quad &q : ctx.preview()) {
 			const core::Rect b = q.bounds();
@@ -1115,6 +1131,9 @@ void CanvasView::mousePressEvent(QMouseEvent *e)
 			ctx.select({hit}, false);
 		}
 		mode_ = Mode::Move;
+		swapSource_ = hit->item;
+		swapTarget_ = nullptr;
+		swapOnly_ = false;
 		return;
 	}
 
@@ -1150,6 +1169,12 @@ void CanvasView::startMove(const QPointF &)
 		u = u ? u->united(b) : b;
 	}
 	dragUnion_ = u.value_or(core::Rect());
+	/* A locked item (a locked broadcast layout) does not move, but it can still be dropped
+	 * on another slot to swap with it. */
+	if (dragItems_.empty() && swapSource_ && obs_sceneitem_locked(swapSource_) && ctx.selection().size() == 1) {
+		swapOnly_ = true;
+		return;
+	}
 	session_ = std::make_unique<EditSession>();
 	if (dragItems_.empty() || !session_->begin(T("Undo.Move"))) {
 		session_.reset();
@@ -1160,6 +1185,12 @@ void CanvasView::startMove(const QPointF &)
 
 void CanvasView::updateMove(const QPointF &p, Qt::KeyboardModifiers mods)
 {
+	if (swapOnly_) {
+		snap_ = core::SnapResult();
+		updateSwapTarget(viewToWorld(p), mods);
+		rebuildOverlay();
+		return;
+	}
 	if (!session_)
 		return;
 	const core::Vec2 w = viewToWorld(p);
@@ -1188,12 +1219,38 @@ void CanvasView::updateMove(const QPointF &p, Qt::KeyboardModifiers mods)
 	for (const ItemEntry &e : dragItems_)
 		changes.push_back({e.item, core::moveBy(e.model, e.parent, delta)});
 	session_->apply(changes);
+	updateSwapTarget(w, mods);
 	rebuildOverlay();
 }
 
 bool CanvasView::resizeKeepsRatio(Qt::KeyboardModifiers mods)
 {
 	return Store::instance().settings().ratioLock != bool(mods & Qt::ShiftModifier);
+}
+
+/* Swap (0.5): dragging one item onto a compatible one (camera or host on camera or host,
+ * screen on screen) exchanges their slots on release. Not while the move snaps to a
+ * guide, and never with Alt held (a plain move; Cmd already turns snapping off). */
+void CanvasView::updateSwapTarget(const core::Vec2 &world, Qt::KeyboardModifiers mods)
+{
+	swapTarget_ = nullptr;
+	if (!swapSource_ || (mods & Qt::AltModifier))
+		return;
+	if (!swapOnly_ && (dragItems_.size() != 1 || dragItems_.front().item.Get() != swapSource_.Get()))
+		return;
+	for (const core::SnapLine &l : snap_.lines) {
+		if (l.kind == core::SnapKind::Guide)
+			return;
+	}
+	const std::vector<ItemEntry> &list = EditContext::instance().items();
+	for (auto it = list.rbegin(); it != list.rend(); ++it) {
+		if (it->item.Get() == swapSource_.Get() || !it->visible || it->isGroup)
+			continue;
+		if (it->frame.quad.contains(world) && commands::canSwapItems(swapSource_, it->item)) {
+			swapTarget_ = it->item;
+			return;
+		}
+	}
 }
 
 void CanvasView::updateResize(const QPointF &p, Qt::KeyboardModifiers mods)
@@ -1360,6 +1417,9 @@ void CanvasView::cancelInteraction()
 		Store::instance().cancelGuideEdit(); /* Escape puts a dragged guide back */
 	mode_ = Mode::Idle;
 	dragItems_.clear();
+	swapSource_ = nullptr;
+	swapTarget_ = nullptr;
+	swapOnly_ = false;
 	snap_ = core::SnapResult();
 	valueSnap_.reset();
 	dragStarted_ = false;
@@ -1450,12 +1510,26 @@ void CanvasView::mouseReleaseEvent(QMouseEvent *e)
 			Store::instance().endGuideEdit(T("Undo.Guides")); /* a click without a move: no entry */
 		}
 	}
+	if (mode_ == Mode::Move && dragStarted_ && swapSource_ && swapTarget_) {
+		/* The drag only pointed at the slot: put the item back, then swap (one undo entry). */
+		if (session_) {
+			session_->cancel();
+			session_.reset();
+		}
+		const OBSSceneItem a = swapSource_, b = swapTarget_;
+		EditContext::instance().markDirty();
+		if (EditContext::instance().canEdit())
+			commands::swapItems(a, b);
+	}
 	if (session_) {
 		session_->commit();
 		session_.reset();
 	}
 	mode_ = Mode::Idle;
 	dragItems_.clear();
+	swapSource_ = nullptr;
+	swapTarget_ = nullptr;
+	swapOnly_ = false;
 	snap_ = core::SnapResult();
 	valueSnap_.reset();
 	dragStarted_ = false;

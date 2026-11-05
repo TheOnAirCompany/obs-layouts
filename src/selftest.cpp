@@ -26,6 +26,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "core/expression.hpp"
 #include "obs/commands.hpp"
 #include "obs/constraints.hpp"
+#include "obs/edit-session.hpp"
 #include "obs/corners.hpp"
 #include "obs/builder.hpp"
 #include "obs/roles.hpp"
@@ -1098,6 +1099,66 @@ void testBroadcast()
 	R->check(gallery && !gallery->isVisible(), "broadcast-gallery-empty-for-three-screens");
 }
 
+/* Swap (0.5): a locked Duo, the right camera dropped on the left one on the canvas. */
+void testSwap()
+{
+	EditContext &ctx = EditContext::instance();
+	obs_sceneitem_t *a = addColor(ctx.scene(), "CAM Swap L", 1920, 1080, 0xFF3060C0, 0, 0);
+	obs_sceneitem_t *b = addColor(ctx.scene(), "CAM Swap R", 1080, 1920, 0xFFC06030, 0, 0);
+	const core::ItemModel ma{commands::slotTransform({{}, 1920, 1080}, core::SlotKind::Camera, {0, 0, 960, 1080}),
+				 1920, 1080};
+	const core::ItemModel mb{commands::slotTransform({{}, 1080, 1920}, core::SlotKind::Camera, {960, 0, 960, 1080}),
+				 1080, 1920};
+	applyChangesAtomically(ctx.scene(), {{OBSSceneItem(a), ma.t}, {OBSSceneItem(b), mb.t}});
+	commands::lockItem(a);
+	commands::lockItem(b);
+	{
+		OBSDataAutoRelease priv = obs_sceneitem_get_private_settings(a);
+		obs_data_set_string(priv, "layouts_style", "{\"border\":true}");
+	}
+	const int orderA = obs_sceneitem_get_order_position(a), orderB = obs_sceneitem_get_order_position(b);
+	ctx.markDirty();
+	selectNames({"CAM Swap R"});
+
+	/* Drag R onto L with the mouse: one release, one swap. */
+	ui::CanvasView *v = g_dock->view();
+	const QPointF start = v->worldToView(box("CAM Swap R").center());
+	const QPointF end = v->worldToView(box("CAM Swap L").center());
+	sendMouse(v, QEvent::MouseButtonPress, start, Qt::LeftButton);
+	for (int i = 1; i <= 10; i++)
+		sendMouse(v, QEvent::MouseMove, start + (end - start) * (i / 10.0), Qt::LeftButton);
+	sendMouse(v, QEvent::MouseButtonRelease, end, Qt::NoButton);
+	ctx.markDirty();
+
+	const core::Rect l = box("CAM Swap L"), r = box("CAM Swap R");
+	R->check(std::fabs(l.x - 960) < 0.6 && std::fabs(l.w - 960) < 0.6 && std::fabs(r.x) < 0.6 &&
+			 std::fabs(r.w - 960) < 0.6 && std::fabs(r.h - 1080) < 0.6,
+		 "swap-drag-exchanges-cells", rectStr(l) + " / " + rectStr(r));
+	R->check(obs_sceneitem_locked(a) && obs_sceneitem_locked(b), "swap-keeps-lock");
+	R->check(obs_sceneitem_get_order_position(a) == orderB && obs_sceneitem_get_order_position(b) == orderA,
+		 "swap-exchanges-order");
+	{
+		OBSDataAutoRelease pa = obs_sceneitem_get_private_settings(a);
+		OBSDataAutoRelease pb = obs_sceneitem_get_private_settings(b);
+		R->check(!obs_data_has_user_value(pa, "layouts_style") &&
+				 QString::fromUtf8(obs_data_get_string(pb, "layouts_style")).contains("border"),
+			 "swap-style-stays-with-slot");
+	}
+
+	QAction *undo = findAction(QKeySequence(QKeySequence::Undo));
+	if (undo) {
+		undo->trigger();
+		ctx.markDirty();
+		R->check(std::fabs(box("CAM Swap L").x) < 0.6 && std::fabs(box("CAM Swap R").x - 960) < 0.6 &&
+				 obs_sceneitem_get_order_position(a) == orderA,
+			 "swap-one-undo-step", rectStr(box("CAM Swap L")));
+	}
+	unlockAll({"CAM Swap L", "CAM Swap R"});
+	obs_sceneitem_remove(a);
+	obs_sceneitem_remove(b);
+	ctx.markDirty();
+}
+
 void testBroadcastScene()
 {
 	EditContext &ctx = EditContext::instance();
@@ -2099,6 +2160,7 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(300, [] { testRoles(); });
 		R->add(300, [] { testChatRole(); });
 		R->add(300, [] { testBroadcast(); });
+		R->add(300, [] { testSwap(); });
 		R->add(300, [] { testBroadcastScene(); });
 		R->add(300, [] { testShowScenes(); });
 		R->add(300, [] { testTypes(); });
