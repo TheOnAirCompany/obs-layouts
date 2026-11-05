@@ -302,3 +302,109 @@ TEST("frame: fit keeps the whole picture, stretch distorts, same shape only scal
 	r.t = setFrameRatio(m, Affine::identity(), 1.0, FrameMode::Fill, center);
 	CHECK(std::fabs(visualFrame(r).width - 540) < 1e-6 && std::fabs(visualFrame(r).height - 540) < 1e-6);
 }
+
+TEST("handles: free corner and edge resize from the opposite side")
+{
+	const Rect s{100, 100, 400, 200};
+	/* Bottom-right corner, free: the top-left stays. */
+	HandleResize r = resizeWithHandle(s, {1, 1}, {600, 250}, false, false);
+	CHECK(r.anchor == (RefPoint{0, 0}));
+	CHECK(r.rect == (Rect{100, 100, 500, 150}));
+	/* Left edge, free: only the width changes, the right side stays. */
+	r = resizeWithHandle(s, {0, 0.5}, {200, 999}, false, false);
+	CHECK(r.anchor == (RefPoint{1, 0.5}));
+	CHECK(r.rect == (Rect{200, 100, 300, 200}));
+	/* Top edge from the center (Alt): both sides move. */
+	r = resizeWithHandle(s, {0.5, 0}, {0, 50}, false, true);
+	CHECK(r.anchor == (RefPoint{0.5, 0.5}));
+	CHECK(r.rect == (Rect{100, 50, 400, 300}));
+}
+
+TEST("handles: locked corner keeps the ratio, projected on the diagonal")
+{
+	const Rect s{0, 0, 400, 200};
+	/* Pointer exactly on the diagonal. */
+	HandleResize r = resizeWithHandle(s, {1, 1}, {800, 400}, true, false);
+	CHECK(r.rect == (Rect{0, 0, 800, 400}));
+	/* A mostly horizontal drag inward still shrinks (no dead zone). */
+	r = resizeWithHandle(s, {1, 1}, {200, 200}, true, false);
+	CHECK_NEAR(r.rect.w / r.rect.h, 2.0, 1e-9);
+	CHECK(r.rect.w < 400);
+	/* Top-left corner: the bottom-right stays. */
+	r = resizeWithHandle(s, {0, 0}, {200, 100}, true, false);
+	CHECK_NEAR(r.rect.right(), 400, 1e-9);
+	CHECK_NEAR(r.rect.bottom(), 200, 1e-9);
+	CHECK_NEAR(r.rect.w, 200, 1e-9);
+	CHECK_NEAR(r.rect.h, 100, 1e-9);
+}
+
+TEST("handles: locked edge grows the other axis around its center")
+{
+	const Rect s{100, 100, 400, 200};
+	/* Right edge dragged +200: width 600, height 300 centered on the old middle (y 200). */
+	HandleResize r = resizeWithHandle(s, {1, 0.5}, {700, 0}, true, false);
+	CHECK(r.anchor == (RefPoint{0, 0.5}));
+	CHECK_NEAR(r.rect.x, 100, 1e-9);
+	CHECK_NEAR(r.rect.w, 600, 1e-9);
+	CHECK_NEAR(r.rect.h, 300, 1e-9);
+	CHECK_NEAR(r.rect.centerY(), 200, 1e-9);
+	/* Bottom edge with Alt: grows around the center on both axes. */
+	r = resizeWithHandle(s, {0.5, 1}, {0, 350}, true, true);
+	CHECK_NEAR(r.rect.h, 300, 1e-9);
+	CHECK_NEAR(r.rect.w, 600, 1e-9);
+	CHECK_NEAR(r.rect.centerX(), 300, 1e-9);
+	CHECK_NEAR(r.rect.centerY(), 200, 1e-9);
+}
+
+TEST("handles: never inside out, ratio kept while clamping")
+{
+	const Rect s{0, 0, 400, 200};
+	HandleResize r = resizeWithHandle(s, {1, 1}, {-500, -500}, false, false);
+	CHECK(r.rect.x == 0 && r.rect.y == 0 && r.rect.w == 1 && r.rect.h == 1);
+	r = resizeWithHandle(s, {1, 1}, {-500, -500}, true, false);
+	CHECK_NEAR(r.rect.h, 1, 1e-9);
+	CHECK_NEAR(r.rect.w, 2, 1e-9);
+	r = resizeWithHandle(s, {0, 0.5}, {9999, 0}, true, false, 10);
+	CHECK_NEAR(r.rect.h, 10, 1e-9);
+	CHECK_NEAR(r.rect.right(), 400, 1e-9);
+	/* Degenerate start: unchanged. */
+	r = resizeWithHandle(Rect{5, 5, 0, 10}, {1, 1}, {50, 50}, true, false);
+	CHECK(r.rect == (Rect{5, 5, 0, 10}));
+}
+
+TEST("handles: a free resize through setFrame never distorts unless Stretch")
+{
+	ItemModel m;
+	m.sourceWidth = 1920;
+	m.sourceHeight = 1080;
+	m.t.scale = {0.5, 0.5};
+	const VisualFrame f = visualFrame(m);
+	/* Drag the right edge of a 960 x 540 camera to 540: free resize. */
+	const HandleResize h = resizeWithHandle({0, 0, f.width, f.height}, {1, 0.5}, {540, 270}, false, false);
+	CHECK_NEAR(h.rect.w, 540, 1e-9);
+	CHECK_NEAR(h.rect.h, 540, 1e-9);
+	ItemModel r = m;
+	r.t = setFrame(m, Affine::identity(), h.rect.w, h.rect.h, FrameMode::Fill, h.anchor);
+	/* Fill: same scale on both axes, the right of the picture is cropped. */
+	CHECK_NEAR(r.t.scale.x, r.t.scale.y, 1e-3);
+	CHECK(r.t.crop.left == 0 && r.t.crop.right > 0);
+	CHECK_NEAR(visualFrame(r).quad.p[0].x, 0, 1e-6);
+	CHECK_NEAR(visualFrame(r).width, 540, 1e-6);
+	r.t = setFrame(m, Affine::identity(), h.rect.w, h.rect.h, FrameMode::Fit, h.anchor);
+	CHECK(r.t.boundsType == BoundsType::ScaleInner && r.t.crop == Crop());
+	r.t = setFrame(m, Affine::identity(), h.rect.w, h.rect.h, FrameMode::Stretch, h.anchor);
+	CHECK(std::fabs(r.t.scale.x - r.t.scale.y) > 0.1);
+}
+
+TEST("handles: ratio badge text")
+{
+	CHECK(ratioLabel(1920, 1080) == "16:9");
+	CHECK(ratioLabel(1080, 1920) == "9:16");
+	CHECK(ratioLabel(500, 500) == "1:1");
+	CHECK(ratioLabel(1440, 1080) == "4:3");
+	CHECK(ratioLabel(1921, 1080) == "16:9");
+	CHECK(ratioLabel(700, 100) == "7:1");
+	CHECK(ratioLabel(1850, 1000) == "1.85:1");
+	CHECK(ratioLabel(1000, 2390) == "1:2.39");
+	CHECK(ratioLabel(0, 10).empty());
+}

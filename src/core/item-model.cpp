@@ -18,8 +18,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "item-model.hpp"
 
+#include <algorithm>
 #include <climits>
 #include <cmath>
+#include <cstdio>
 
 namespace layouts::core {
 
@@ -454,6 +456,66 @@ ItemTransform setBoundsType(const ItemModel &m, const Affine &parent, BoundsType
 	}
 	t.boundsType = type;
 	return keepAnchor(m, parent, t, anchor);
+}
+
+HandleResize resizeWithHandle(const Rect &start, const RefPoint &handle, const Vec2 &pointer, bool keepRatio,
+			      bool fromCenter, double minSize)
+{
+	const bool mx = handle.fx != 0.5, my = handle.fy != 0.5;
+	const RefPoint anchor{fromCenter || !mx ? 0.5 : 1.0 - handle.fx, fromCenter || !my ? 0.5 : 1.0 - handle.fy};
+	const Vec2 a = pointInRect(start, anchor);
+	if (!(start.w > 0) || !(start.h > 0) || !std::isfinite(pointer.x) || !std::isfinite(pointer.y))
+		return {start, anchor};
+	minSize = std::max(minSize, 1e-6);
+
+	/* Signed sizes: positive while the pointer stays on the handle's side of the anchor. */
+	const double span = fromCenter ? 2.0 : 1.0;
+	double w = start.w, h = start.h;
+	if (mx)
+		w = (pointer.x - a.x) * (handle.fx > 0.5 ? 1.0 : -1.0) * span;
+	if (my)
+		h = (pointer.y - a.y) * (handle.fy > 0.5 ? 1.0 : -1.0) * span;
+
+	if (keepRatio && (mx || my)) {
+		double k;
+		if (mx && my) /* projection on the diagonal: continuous whatever the direction */
+			k = (w * start.w + h * start.h) / (start.w * start.w + start.h * start.h);
+		else
+			k = mx ? w / start.w : h / start.h;
+		k = std::max(k, minSize / std::min(start.w, start.h));
+		w = start.w * k;
+		h = start.h * k;
+	} else {
+		w = std::max(w, minSize);
+		h = std::max(h, minSize);
+	}
+	return {{a.x - w * anchor.fx, a.y - h * anchor.fy, w, h}, anchor};
+}
+
+std::string ratioLabel(double width, double height)
+{
+	if (!(width > 0) || !(height > 0) || !std::isfinite(width) || !std::isfinite(height))
+		return {};
+	const double r = width / height;
+	/* Common ratios first, then any small integer ratio. */
+	static const int kCommon[][2] = {{16, 9}, {9, 16}, {4, 3}, {3, 4}, {1, 1},
+					 {21, 9}, {3, 2},  {2, 3}, {5, 4}, {4, 5}};
+	const double tol = 0.005;
+	for (const auto &c : kCommon) {
+		if (std::fabs(r / ((double)c[0] / c[1]) - 1.0) < tol)
+			return std::to_string(c[0]) + ":" + std::to_string(c[1]);
+	}
+	for (int d = 1; d <= 10; d++) {
+		const double n = std::round(r * d);
+		if (n >= 1 && n <= 32 && std::fabs(r / (n / d) - 1.0) < tol / 2)
+			return std::to_string((int)n) + ":" + std::to_string(d);
+	}
+	char buf[32];
+	if (r >= 1)
+		std::snprintf(buf, sizeof buf, "%.2f:1", r);
+	else
+		std::snprintf(buf, sizeof buf, "1:%.2f", 1.0 / r);
+	return buf;
 }
 
 } // namespace layouts::core

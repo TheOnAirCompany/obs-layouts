@@ -156,6 +156,9 @@ private:
 	void startMove(const QPointF &p);
 	void updateMove(const QPointF &p, Qt::KeyboardModifiers mods);
 	void updateResize(const QPointF &p, Qt::KeyboardModifiers mods);
+	/* The inspector ratio lock, inverted while Shift is held. */
+	static bool resizeKeepsRatio(Qt::KeyboardModifiers mods);
+	bool refreshResizeForModifier(QKeyEvent *e);
 	void updateCrop(const QPointF &p);
 	bool canCrop();
 	void updateRotate(const QPointF &p, Qt::KeyboardModifiers mods);
@@ -195,6 +198,7 @@ private:
 	core::Rect dragUnion_;
 	std::unique_ptr<EditSession> session_;
 	int handle_ = -1;
+	bool resizeLocked_ = false; /* the running resize keeps the ratio (badge) */
 	double rotStartAngle_ = 0, rotStartRot_ = 0;
 	core::Vec2 rotCenter_;
 	uint64_t guideId_ = 0;

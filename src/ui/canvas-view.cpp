@@ -35,6 +35,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QCursor>
 #include <QFontMetrics>
 #include <QGuiApplication>
 #include <QInputDialog>
@@ -883,6 +884,20 @@ void CanvasView::rebuildOverlay()
 			}
 		}
 
+		/* ---- ratio badge next to the cursor while a locked resize runs ---- */
+		const bool resizing = (mode_ == Mode::Resize && !(cropMode_ && canCrop())) ||
+				      mode_ == Mode::ResizeMulti;
+		if (resizing && dragStarted_ && resizeLocked_ && !dragItems_.empty()) {
+			const double rw = mode_ == Mode::ResizeMulti ? dragUnion_.w : dragItems_.front().frame.width;
+			const double rh = mode_ == Mode::ResizeMulti ? dragUnion_.h : dragItems_.front().frame.height;
+			const std::string ratio = core::ratioLabel(rw, rh);
+			if (!ratio.empty()) {
+				const QPointF p = dev(cursorWorld_);
+				addLabel(*s, QString::fromStdString(ratio), tokens::kSelection,
+					 (float)p.x() + 18 * (float)r, (float)p.y() + 18 * (float)r, false);
+			}
+		}
+
 		/* ---- live frame ---- */
 		if (ctx.liveState() == LiveState::OnAir)
 			outline((float)c0.x() - 2 * one, (float)c0.y() - 2 * one, (float)(c1.x() - c0.x()) + 4 * one,
@@ -1176,6 +1191,11 @@ void CanvasView::updateMove(const QPointF &p, Qt::KeyboardModifiers mods)
 	rebuildOverlay();
 }
 
+bool CanvasView::resizeKeepsRatio(Qt::KeyboardModifiers mods)
+{
+	return Store::instance().settings().ratioLock != bool(mods & Qt::ShiftModifier);
+}
+
 void CanvasView::updateResize(const QPointF &p, Qt::KeyboardModifiers mods)
 {
 	if (cropMode_ && canCrop()) {
@@ -1196,8 +1216,6 @@ void CanvasView::updateResize(const QPointF &p, Qt::KeyboardModifiers mods)
 
 	const core::RefPoint hr = kHandleRefs[handle_];
 	const bool fromCenter = mods & Qt::AltModifier;
-	const double ax = fromCenter ? 0.5 : 1.0 - hr.fx;
-	const double ay = fromCenter ? 0.5 : 1.0 - hr.fy;
 
 	/* Snap the moving edges when the item is axis aligned. */
 	valueSnap_.reset();
@@ -1228,27 +1246,21 @@ void CanvasView::updateResize(const QPointF &p, Qt::KeyboardModifiers mods)
 		}
 	}
 
-	double nw = f.width, nh = f.height;
-	if (hr.fx != 0.5) {
-		const double anchorU = ax * f.width;
-		nw = fromCenter ? 2.0 * std::fabs(u - anchorU) : std::fabs(u - anchorU);
+	/* The ratio lock of the inspector decides, Shift inverts it for this drag. Locked:
+	 * corners and edges keep the ratio (an edge grows the other axis around its center).
+	 * Free: the frame mode of the item fills the new shape (Fill crops, Fit letterboxes,
+	 * only Stretch distorts). */
+	resizeLocked_ = resizeKeepsRatio(mods);
+	const core::HandleResize r =
+		core::resizeWithHandle({0, 0, f.width, f.height}, hr, {u, v}, resizeLocked_, fromCenter);
+	if (resizeLocked_ || e.isGroup) {
+		session_->apply({{e.item, core::setWorldSize(e.model, e.parent, r.rect.w, r.rect.h, r.anchor)}});
+	} else {
+		const double nw = std::max(1.0, std::round(r.rect.w));
+		const double nh = std::max(1.0, std::round(r.rect.h));
+		session_->apply(
+			{{e.item, core::setFrame(e.model, e.parent, nw, nh, commands::frameMode(e.item), r.anchor)}});
 	}
-	if (hr.fy != 0.5) {
-		const double anchorV = ay * f.height;
-		nh = fromCenter ? 2.0 * std::fabs(v - anchorV) : std::fabs(v - anchorV);
-	}
-	/* Corners keep the aspect ratio like OBS; Shift frees it. */
-	const bool corner = hr.fx != 0.5 && hr.fy != 0.5;
-	if (corner && !(mods & Qt::ShiftModifier)) {
-		const double kx = nw / f.width, ky = nh / f.height;
-		const double k = std::max(kx, ky);
-		nw = f.width * k;
-		nh = f.height * k;
-	}
-	nw = std::max(1.0, std::round(nw));
-	nh = std::max(1.0, std::round(nh));
-
-	session_->apply({{e.item, core::setWorldSize(e.model, e.parent, nw, nh, core::RefPoint{ax, ay})}});
 	rebuildOverlay();
 }
 
@@ -1541,8 +1553,27 @@ bool CanvasView::event(QEvent *e)
 	return QWidget::event(e);
 }
 
+bool CanvasView::refreshResizeForModifier(QKeyEvent *e)
+{
+	/* Shift (ratio) and Alt (from center) apply at once during a resize, without
+	 * waiting for the pointer to move, like Figma. */
+	if (e->key() != Qt::Key_Shift && e->key() != Qt::Key_Alt)
+		return false;
+	if (!dragStarted_ || (mode_ != Mode::Resize && mode_ != Mode::ResizeMulti))
+		return false;
+	altHeld_ = e->modifiers() & Qt::AltModifier;
+	const QPointF p = mapFromGlobal(QCursor::pos().toPointF());
+	if (mode_ == Mode::Resize)
+		updateResize(p, e->modifiers());
+	else
+		updateResizeMulti(p, e->modifiers());
+	return true;
+}
+
 void CanvasView::keyPressEvent(QKeyEvent *e)
 {
+	if (refreshResizeForModifier(e))
+		return;
 	EditContext &ctx = EditContext::instance();
 	const bool shift = e->modifiers() & Qt::ShiftModifier;
 	switch (e->key()) {
@@ -1647,6 +1678,8 @@ void CanvasView::keyReleaseEvent(QKeyEvent *e)
 			unsetCursor();
 		return;
 	}
+	if (refreshResizeForModifier(e))
+		return;
 	if (e->key() == Qt::Key_Alt) {
 		altHeld_ = false;
 		rebuildOverlay();
@@ -1784,41 +1817,11 @@ void CanvasView::updateResizeMulti(const QPointF &p, Qt::KeyboardModifiers mods)
 		}
 	}
 
-	double l = b0.left(), t = b0.top(), r = b0.right(), bt = b0.bottom();
-	const core::Vec2 c = b0.center();
-	if (hr.fx == 1.0) {
-		r = w.x;
-		if (fromCenter)
-			l = 2 * c.x - w.x;
-	} else if (hr.fx == 0.0) {
-		l = w.x;
-		if (fromCenter)
-			r = 2 * c.x - w.x;
-	}
-	if (hr.fy == 1.0) {
-		bt = w.y;
-		if (fromCenter)
-			t = 2 * c.y - w.y;
-	} else if (hr.fy == 0.0) {
-		t = w.y;
-		if (fromCenter)
-			bt = 2 * c.y - w.y;
-	}
-	core::Rect target = core::Rect::fromEdges(std::min(l, r), std::min(t, bt), std::max(l, r), std::max(t, bt));
-	target.w = std::max(1.0, target.w);
-	target.h = std::max(1.0, target.h);
-
-	/* Corners keep the ratio of the selection, like a single element; Shift frees it.
-	 * The anchor is the opposite corner, or the center with Alt. */
-	const bool corner = hr.fx != 0.5 && hr.fy != 0.5;
-	if (corner && !(mods & Qt::ShiftModifier)) {
-		const double k = std::max(target.w / b0.w, target.h / b0.h);
-		const double nw = b0.w * k, nh = b0.h * k;
-		const double ax = fromCenter ? 0.5 : 1.0 - hr.fx;
-		const double ay = fromCenter ? 0.5 : 1.0 - hr.fy;
-		const core::Vec2 anchor = core::pointInRect(b0, {ax, ay});
-		target = {anchor.x - nw * ax, anchor.y - nh * ay, nw, nh};
-	}
+	/* Same rules as a single element: the ratio lock (inverted by Shift) keeps the ratio
+	 * of the selection on corners and edges; a free resize fills each item with its own
+	 * frame mode. The anchor is the opposite side, or the center with Alt. */
+	resizeLocked_ = resizeKeepsRatio(mods);
+	const core::Rect target = core::resizeWithHandle(b0, hr, w, resizeLocked_, fromCenter).rect;
 
 	std::vector<core::Frame> frames;
 	for (const ItemEntry &e : dragItems_)
@@ -1830,8 +1833,11 @@ void CanvasView::updateResizeMulti(const QPointF &p, Qt::KeyboardModifiers mods)
 	for (size_t i = 0; i < dragItems_.size(); i++) {
 		const ItemEntry &e = dragItems_[i];
 		core::ItemModel m = e.model;
-		m.t = core::setWorldSize(m, e.parent, std::max(1.0, out[i].width), std::max(1.0, out[i].height),
-					 center);
+		const double nw = std::max(1.0, out[i].width), nh = std::max(1.0, out[i].height);
+		if (resizeLocked_ || e.isGroup)
+			m.t = core::setWorldSize(m, e.parent, nw, nh, center);
+		else
+			m.t = core::setFrame(m, e.parent, nw, nh, commands::frameMode(e.item), center);
 		m.t = core::moveRefTo(m, e.parent, center, out[i].center);
 		changes.push_back({e.item, m.t});
 	}
