@@ -57,6 +57,8 @@ target_sources(
     src/core/guides.hpp
     src/core/layout.cpp
     src/core/layout.hpp
+    src/core/broadcast-cams.cpp
+    src/core/broadcast-cams.hpp
     src/core/broadcast.cpp
     src/core/broadcast.hpp
     src/core/broadcast-inventive.cpp

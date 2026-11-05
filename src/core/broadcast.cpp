@@ -18,6 +18,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "broadcast.hpp"
 #include "broadcast-inventive.hpp"
+#include "broadcast-cams.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -95,6 +96,7 @@ const std::vector<BroadcastTemplate> &broadcastTemplates()
 		for (int n = 2; n <= 6; n++)
 			l.push_back({"Screen1Cam" + std::to_string(n) + "Strip", n, 1});
 		appendInventiveTemplates(l);
+		appendCamTemplates(l);
 		return l;
 	}();
 	return list;
@@ -177,6 +179,8 @@ static std::vector<Slot> buildLandscape(const std::string &key, const Rect &canv
 		cams(out, {cells[2], cells[3]});
 		out.push_back({SlotKind::Screen, fit169(cells[0])});
 		out.push_back({SlotKind::Screen, fit169(cells[1])});
+	} else {
+		buildCamTemplate(key, canvas, spec, out);
 	}
 	return out;
 }
@@ -219,8 +223,10 @@ std::vector<Slot> buildPortrait(const std::string &key, const Rect &canvas, cons
 	}
 	if (key.rfind("Cam", 0) == 0) {
 		/* The landscape arrangement turned a quarter: columns become rows. */
-		for (const Slot &s : buildLandscape(key, transposed(canvas), spec))
-			out.push_back({s.kind, transposed(s.cell)});
+		for (Slot s : buildLandscape(key, transposed(canvas), spec)) {
+			s.cell = transposed(s.cell);
+			out.push_back(s);
+		}
 		return out;
 	}
 	if (key == "Screen1Full") {

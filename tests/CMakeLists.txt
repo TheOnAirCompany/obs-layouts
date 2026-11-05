@@ -31,6 +31,7 @@ add_executable(
   ${CORE_DIR}/expression.cpp
   ${CORE_DIR}/guides.cpp
   ${CORE_DIR}/layout.cpp
+  ${CORE_DIR}/broadcast-cams.cpp
   ${CORE_DIR}/broadcast.cpp
   ${CORE_DIR}/broadcast-inventive.cpp
   ${CORE_DIR}/roles.cpp
