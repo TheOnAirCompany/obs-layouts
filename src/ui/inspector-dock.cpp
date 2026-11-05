@@ -915,7 +915,7 @@ void InspectorDock::syncBroadcast()
 		(k == core::SlotKind::Camera ? cams : screens)++;
 	broadcastSummary_->setText(T("Broadcast.Summary").arg(cams).arg(screens));
 
-	const std::vector<core::BroadcastTemplate> list = core::templatesFor(cams, screens);
+	const std::vector<core::BroadcastTemplate> list = core::templatesFor(cams, screens, 0, canvasAspect() < 1.0);
 	QStringList keys;
 	for (const core::BroadcastTemplate &t : list)
 		keys << QString::fromStdString(t.key);

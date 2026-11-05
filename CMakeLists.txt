@@ -59,6 +59,8 @@ target_sources(
     src/core/layout.hpp
     src/core/broadcast.cpp
     src/core/broadcast.hpp
+    src/core/broadcast-inventive.cpp
+    src/core/broadcast-inventive.hpp
     src/core/roles.cpp
     src/core/roles.hpp
     src/obs/obs-convert.hpp

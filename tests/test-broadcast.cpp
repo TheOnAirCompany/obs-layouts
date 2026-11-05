@@ -24,6 +24,8 @@ TEST("broadcast: every template fills its slots inside the canvas without overla
 	BroadcastSpec spec;
 	spec.gap = 8;
 	for (const BroadcastTemplate &t : broadcastTemplates()) {
+		if (t.landscapeOnly)
+			continue; /* inventive layouts overlap on purpose: test-broadcast-inventive.cpp */
 		const auto slots = buildBroadcast(t.key, kCanvas, spec);
 		int cams = 0, screens = 0;
 		for (const Slot &s : slots) {
@@ -49,11 +51,12 @@ TEST("broadcast: every template fills its slots inside the canvas without overla
 
 TEST("broadcast: templates for guest counts 1 to 6")
 {
+	/* Portrait: the classic templates only (inventive ones are landscape only). */
 	for (int n = 1; n <= 6; n++)
-		CHECK(!templatesFor(n, 0).empty());
-	CHECK(templatesFor(2, 0).size() == 2);
-	CHECK(templatesFor(4, 1).size() == 2); /* column and strip */
-	CHECK(templatesFor(0, 1).size() == 1);
+		CHECK(!templatesFor(n, 0, 0, true).empty());
+	CHECK(templatesFor(2, 0, 0, true).size() == 2);
+	CHECK(templatesFor(4, 1, 0, true).size() == 2); /* column and strip */
+	CHECK(templatesFor(0, 1, 0, true).size() == 1);
 	CHECK(templatesFor(7, 0).empty());
 }
 
@@ -96,6 +99,8 @@ TEST("broadcast: portrait canvas stacks guests and keeps screens 16:9 on top")
 	const Rect v(0, 0, 1080, 1920);
 	BroadcastSpec spec;
 	for (const BroadcastTemplate &t : broadcastTemplates()) {
+		if (t.landscapeOnly)
+			continue;
 		const std::vector<Slot> s = buildBroadcast(t.key, v, spec);
 		CHECK((int)s.size() == t.cameras + t.screens);
 		for (size_t i = 0; i < s.size(); i++) {

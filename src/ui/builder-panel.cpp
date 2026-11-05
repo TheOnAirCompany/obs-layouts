@@ -396,7 +396,7 @@ void BuilderPanel::refresh()
 	summary_->setText(text);
 
 	QStringList keys;
-	for (const core::BroadcastTemplate &t : core::templatesFor(hosts + cams, screens))
+	for (const core::BroadcastTemplate &t : core::templatesFor(hosts + cams, screens, 0, canvasAspect() < 1.0))
 		keys << QString::fromStdString(t.key);
 	gallery_->setTemplates(keys, canvasAspect());
 	const bool any = !keys.isEmpty();
