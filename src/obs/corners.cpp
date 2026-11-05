@@ -19,12 +19,16 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "corners.hpp"
 
 #include "edit-context.hpp"
+#include "core/shape.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <graphics/matrix4.h>
 #include <util/util.hpp>
 
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QString>
 
 #include <algorithm>
@@ -49,10 +53,55 @@ QString tr(const char *key)
  * token while its scene renders (see SceneMarker). */
 thread_local std::vector<std::string> t_scenes;
 
+/* The shape of a source in one scene. Settings written before 0.5 have no mode: Pixels.
+ * Auto and Round are resolved at render time from the visible size in canvas pixels. */
 struct Radius {
-	float r = 0.0f;     /* source pixels, horizontal */
-	float ratio = 1.0f; /* vertical radius / horizontal radius (non-uniform item scale) */
+	core::RadiusMode mode = core::RadiusMode::Pixels;
+	float r = 0.0f;                     /* Pixels: source pixels, horizontal */
+	float ratio = 1.0f;                 /* vertical radius / horizontal radius (non-uniform item scale) */
+	float scaleX = 0.0f, scaleY = 0.0f; /* canvas pixels per source pixel when applied, 0: unknown */
+	std::vector<core::Vec2> polygon;    /* convex, 0..1 across the visible rectangle */
+
+	bool active() const
+	{
+		switch (mode) {
+		case core::RadiusMode::Auto:
+		case core::RadiusMode::Round:
+			return true;
+		case core::RadiusMode::Pixels:
+			return r >= 0.5f || !polygon.empty();
+		case core::RadiusMode::None:
+		default:
+			return !polygon.empty();
+		}
+	}
 };
+
+const char *modeName(core::RadiusMode m)
+{
+	switch (m) {
+	case core::RadiusMode::Auto:
+		return "auto";
+	case core::RadiusMode::Round:
+		return "round";
+	case core::RadiusMode::None:
+		return "none";
+	case core::RadiusMode::Pixels:
+	default:
+		return "pixels";
+	}
+}
+
+core::RadiusMode modeFrom(const char *name)
+{
+	if (name && strcmp(name, "auto") == 0)
+		return core::RadiusMode::Auto;
+	if (name && strcmp(name, "round") == 0)
+		return core::RadiusMode::Round;
+	if (name && strcmp(name, "none") == 0)
+		return core::RadiusMode::None;
+	return core::RadiusMode::Pixels; /* also the settings of Layouts 0.2 to 0.4 */
+}
 
 struct Filter {
 	obs_source_t *context = nullptr;
@@ -60,6 +109,8 @@ struct Filter {
 	gs_eparam_t *size = nullptr;
 	gs_eparam_t *rect = nullptr;
 	gs_eparam_t *radius = nullptr;
+	gs_eparam_t *polyCount = nullptr;
+	gs_eparam_t *poly[4] = {};
 	std::mutex lock;
 	Radius any;                           /* scenes without their own value */
 	std::map<std::string, Radius> scenes; /* scene token -> radius */
@@ -73,10 +124,84 @@ const char *filterName(void *)
 Radius readRadius(obs_data_t *d)
 {
 	Radius r;
+	r.mode = modeFrom(obs_data_get_string(d, "mode"));
 	r.r = (float)std::max(0.0, obs_data_get_double(d, "radius"));
 	const double ratio = obs_data_get_double(d, "ratio");
 	r.ratio = (float)(ratio > 0.0 ? ratio : 1.0);
+	r.scaleX = (float)std::max(0.0, obs_data_get_double(d, "scale_x"));
+	r.scaleY = (float)std::max(0.0, obs_data_get_double(d, "scale_y"));
+	OBSDataArrayAutoRelease poly = obs_data_get_array(d, "polygon");
+	std::vector<core::Vec2> pts;
+	for (size_t i = 0; i < obs_data_array_count(poly); i++) {
+		OBSDataAutoRelease pt = obs_data_array_item(poly, i);
+		pts.push_back({obs_data_get_double(pt, "x"), obs_data_get_double(pt, "y")});
+	}
+	r.polygon = core::shape::convexPolygon(pts);
 	return r;
+}
+
+void writeRadius(obs_data_t *d, const Radius &r)
+{
+	obs_data_set_string(d, "mode", modeName(r.mode));
+	obs_data_set_double(d, "radius", r.r);
+	obs_data_set_double(d, "ratio", r.ratio);
+	if (r.scaleX > 0.0f && r.scaleY > 0.0f) {
+		obs_data_set_double(d, "scale_x", r.scaleX);
+		obs_data_set_double(d, "scale_y", r.scaleY);
+	}
+	if (!r.polygon.empty()) {
+		OBSDataArrayAutoRelease poly = obs_data_array_create();
+		for (const core::Vec2 &p : r.polygon) {
+			OBSDataAutoRelease pt = obs_data_create();
+			obs_data_set_double(pt, "x", p.x);
+			obs_data_set_double(pt, "y", p.y);
+			obs_data_array_push_back(poly, pt);
+		}
+		obs_data_set_array(d, "polygon", poly);
+	}
+}
+
+/* Radius (source pixels, x and y) and polygon (source pixels) for a visible rectangle.
+ * scale: canvas pixels per source pixel, from the render matrix or else as applied. */
+struct Resolved {
+	float rx = 0.0f, ry = 0.0f;
+	std::vector<core::Vec2> polygon;
+	bool visible() const { return rx >= 0.5f || ry >= 0.5f || polygon.size() >= 3; }
+};
+
+Resolved resolve(const Radius &rad, float l, float t, float r, float b, core::Vec2 scale)
+{
+	Resolved out;
+	if (!rad.polygon.empty())
+		out.polygon = core::shape::denormalize(rad.polygon, l, t, r, b);
+	if (rad.mode == core::RadiusMode::Pixels) {
+		out.rx = rad.r;
+		out.ry = rad.r * rad.ratio;
+		return out;
+	}
+	if (scale.x <= 1e-9 || scale.y <= 1e-9) {
+		scale.x = rad.scaleX > 0.0f ? rad.scaleX : 1.0;
+		scale.y = rad.scaleY > 0.0f ? rad.scaleY : scale.x;
+	}
+	const double canvas = core::shape::radiusFor(rad.mode, 0.0, (r - l) * scale.x, (b - t) * scale.y);
+	out.rx = (float)(canvas / scale.x);
+	out.ry = (float)(canvas / scale.y);
+	return out;
+}
+
+Resolved blend(const Resolved &a, const Resolved &b, float t)
+{
+	Resolved out;
+	out.rx = a.rx + (b.rx - a.rx) * t;
+	out.ry = a.ry + (b.ry - a.ry) * t;
+	if (a.polygon.size() == b.polygon.size()) {
+		for (size_t i = 0; i < a.polygon.size(); i++)
+			out.polygon.push_back({a.polygon[i].x + (b.polygon[i].x - a.polygon[i].x) * t,
+					       a.polygon[i].y + (b.polygon[i].y - a.polygon[i].y) * t});
+	} else {
+		out.polygon = t < 0.5f ? a.polygon : b.polygon;
+	}
+	return out;
 }
 
 void filterUpdate(void *data, obs_data_t *settings)
@@ -104,6 +229,10 @@ void *filterCreate(obs_data_t *settings, obs_source_t *context)
 		f->size = gs_effect_get_param_by_name(f->effect, "size");
 		f->rect = gs_effect_get_param_by_name(f->effect, "rect");
 		f->radius = gs_effect_get_param_by_name(f->effect, "radius");
+		f->polyCount = gs_effect_get_param_by_name(f->effect, "polyCount");
+		const char *names[] = {"poly01", "poly23", "poly45", "poly67"};
+		for (int i = 0; i < 4; i++)
+			f->poly[i] = gs_effect_get_param_by_name(f->effect, names[i]);
 	}
 	obs_leave_graphics();
 	if (!f->effect)
@@ -144,7 +273,10 @@ bool near(float a, float b)
  * A cropped scene item is drawn into a texture the size of its visible part: the
  * viewport is that size and the matrix maps the source onto it (scale, then a shift by
  * the crop). Anything else (no crop, filter preview, projector) shows the whole source. */
-void visibleRect(float w, float h, float &left, float &top, float &right, float &bottom)
+/* scale: canvas pixels per source pixel when the matrix is the one of the scene item
+ * (drawn straight into its scene, possibly rotated: lengths of the axes, not the
+ * diagonal), (0, 0) when the item is drawn into its crop texture first (unknown). */
+void visibleRect(float w, float h, float &left, float &top, float &right, float &bottom, core::Vec2 &scale)
 {
 	left = 0.0f;
 	top = 0.0f;
@@ -152,14 +284,18 @@ void visibleRect(float w, float h, float &left, float &top, float &right, float 
 	bottom = h;
 	struct matrix4 m;
 	gs_matrix_get(&m);
+	scale = core::shape::axisScale(m.x.x, m.x.y, m.y.x, m.y.y);
 	struct gs_rect vp;
 	gs_get_viewport(&vp);
 	if (vp.cx <= 0 || vp.cy <= 0)
 		return;
+	/* The crop texture: an axis aligned w/vp scale and a shift by the crop, never rotated
+	 * (the rotation applies when the texture is drawn in the scene). */
 	const float sx = w / (float)vp.cx, sy = h / (float)vp.cy;
-	if (!near(m.x.x, sx) || !near(m.y.y, sy) || std::fabs(m.x.y) > 1e-4f || std::fabs(m.y.x) > 1e-4f ||
+	if (!core::shape::axisAligned(m.x.x, m.x.y, m.y.x, m.y.y) || !near(m.x.x, sx) || !near(m.y.y, sy) ||
 	    m.t.x > 0.01f || m.t.y > 0.01f)
 		return;
+	scale = {0.0, 0.0};
 	const float l = -m.t.x / sx, t = -m.t.y / sy;
 	if (l + (float)vp.cx > w + 0.5f || t + (float)vp.cy > h + 0.5f)
 		return;
@@ -171,7 +307,8 @@ void visibleRect(float w, float h, float &left, float &top, float &right, float 
 
 const enum gs_color_space kSpaces[] = {GS_CS_SRGB, GS_CS_SRGB_16F, GS_CS_709_EXTENDED};
 
-bool transitionRadius(Filter *f, obs_source_t *source, Radius &out);
+bool transitionRadius(Filter *f, obs_source_t *source, float l, float t, float r, float b, core::Vec2 scale,
+		      Resolved &out);
 
 void filterRender(void *data, gs_effect_t *)
 {
@@ -189,19 +326,25 @@ void filterRender(void *data, gs_effect_t *)
 				rad = it->second;
 		}
 	}
-	/* Drawn outside any scene: a transition that draws sources itself (Move). */
-	if (t_scenes.empty()) {
-		Radius during;
-		if (transitionRadius(f, obs_filter_get_parent(f->context), during))
-			rad = during;
-	}
-	if (!f->effect || rad.r < 0.5f || !w || !h) {
+	if (!f->effect || !w || !h) {
 		obs_source_skip_video_filter(f->context);
 		return;
 	}
 	/* Read before the filter renders its input (which sets its own matrix). */
 	float l, t, r, b;
-	visibleRect((float)w, (float)h, l, t, r, b);
+	core::Vec2 scale;
+	visibleRect((float)w, (float)h, l, t, r, b, scale);
+	Resolved shape = resolve(rad, l, t, r, b, scale);
+	/* Drawn outside any scene: a transition that draws sources itself (Move). */
+	if (t_scenes.empty()) {
+		Resolved during;
+		if (transitionRadius(f, obs_filter_get_parent(f->context), l, t, r, b, scale, during))
+			shape = std::move(during);
+	}
+	if (!shape.visible()) {
+		obs_source_skip_video_filter(f->context);
+		return;
+	}
 
 	const enum gs_color_space space = obs_source_get_color_space(target, OBS_COUNTOF(kSpaces), kSpaces);
 	if (!obs_source_process_filter_begin_with_color_space(f->context, gs_get_format_from_space(space), space,
@@ -209,12 +352,26 @@ void filterRender(void *data, gs_effect_t *)
 		return;
 	struct vec2 size, radius;
 	vec2_set(&size, (float)w, (float)h);
-	vec2_set(&radius, rad.r, rad.r * rad.ratio);
+	vec2_set(&radius, shape.rx, shape.ry);
 	struct vec4 rect;
 	vec4_set(&rect, l, t, r, b);
 	gs_effect_set_vec2(f->size, &size);
 	gs_effect_set_vec4(f->rect, &rect);
 	gs_effect_set_vec2(f->radius, &radius);
+	const size_t count = shape.polygon.size() >= 3 ? std::min<size_t>(shape.polygon.size(), 8) : 0;
+	if (f->polyCount)
+		gs_effect_set_float(f->polyCount, (float)count);
+	auto point = [&](size_t k) {
+		return count ? shape.polygon[std::min(k, count - 1)] : core::Vec2{};
+	};
+	for (size_t i = 0; i < 4; i++) {
+		if (!f->poly[i])
+			continue;
+		const core::Vec2 a = point(2 * i), c = point(2 * i + 1);
+		struct vec4 v;
+		vec4_set(&v, (float)a.x, (float)a.y, (float)c.x, (float)c.y);
+		gs_effect_set_vec4(f->poly[i], &v);
+	}
 	gs_blend_state_push();
 	gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
 	obs_source_process_filter_end(f->context, f->effect, 0, 0);
@@ -352,7 +509,8 @@ void frontendEvent(enum obs_frontend_event event, void *)
 	}
 }
 
-bool transitionRadius(Filter *f, obs_source_t *source, Radius &out)
+bool transitionRadius(Filter *f, obs_source_t *source, float l, float t, float r, float b, core::Vec2 scale,
+		      Resolved &out)
 {
 	obs_source_t *raw = nullptr;
 	{
@@ -370,12 +528,11 @@ bool transitionRadius(Filter *f, obs_source_t *source, Radius &out)
 	if (!inA && !inB)
 		return false;
 	if (!inA || !inB) {
-		out = inA ? ra : rb;
+		out = resolve(inA ? ra : rb, l, t, r, b, scale);
 		return true;
 	}
-	const float t = easeInOutCubic(std::clamp(obs_transition_get_time(tr), 0.0f, 1.0f));
-	out.r = ra.r + (rb.r - ra.r) * t;
-	out.ratio = ra.ratio + (rb.ratio - ra.ratio) * t;
+	const float time = easeInOutCubic(std::clamp(obs_transition_get_time(tr), 0.0f, 1.0f));
+	out = blend(resolve(ra, l, t, r, b, scale), resolve(rb, l, t, r, b, scale), time);
 	return true;
 }
 
@@ -435,14 +592,12 @@ Settings readSettings(obs_source_t *source)
 obs_data_t *toData(const Settings &st)
 {
 	obs_data_t *d = obs_data_create();
-	obs_data_set_double(d, "radius", st.any.r);
-	obs_data_set_double(d, "ratio", st.any.ratio);
+	writeRadius(d, st.any);
 	OBSDataArrayAutoRelease list = obs_data_array_create();
 	for (const auto &[token, r] : st.scenes) {
 		OBSDataAutoRelease it = obs_data_create();
 		obs_data_set_string(it, "scene", token.c_str());
-		obs_data_set_double(it, "radius", r.r);
-		obs_data_set_double(it, "ratio", r.ratio);
+		writeRadius(it, r);
 		obs_data_array_push_back(list, it);
 	}
 	obs_data_set_array(d, "scenes", list);
@@ -454,14 +609,14 @@ obs_data_t *toData(const Settings &st)
 void writeSettings(obs_source_t *source, Settings st)
 {
 	for (auto it = st.scenes.begin(); it != st.scenes.end();) {
-		if (it->second.r < 0.5f && st.any.r < 0.5f)
-			it = st.scenes.erase(it); /* 0 where the default is 0 too: nothing to keep */
+		if (!it->second.active() && !st.any.active())
+			it = st.scenes.erase(it); /* nothing where the default is nothing too */
 		else
 			++it;
 	}
-	bool any = st.any.r >= 0.5f;
+	bool any = st.any.active();
 	for (const auto &[token, r] : st.scenes)
-		any = any || r.r >= 0.5f;
+		any = any || r.active();
 	obs_source_t *filter = findFilter(source);
 	if (!any) {
 		if (filter)
@@ -545,7 +700,7 @@ std::string ensureToken(obs_source_t *scene)
  * each scene that uses the source, so that editing one scene leaves the others alone. */
 void splitPerScene(obs_source_t *source, Settings &st)
 {
-	if (st.any.r < 0.5f)
+	if (!st.any.active())
 		return;
 	std::vector<OBSSource> scenes;
 	struct Ctx {
@@ -647,17 +802,73 @@ void writeCanvasRadius(const Target &t, const std::string &token, double canvasR
 	const double sy = t.scale.y > 1e-9 ? t.scale.y : 1.0;
 	Settings st = readSettings(t.source);
 	splitPerScene(t.source, st);
-	st.scenes[token] = {(float)(std::max(0.0, canvasRadius) / sx), (float)(sx / sy)};
+	auto it = st.scenes.find(token);
+	Radius r = it != st.scenes.end() ? it->second : st.any;
+	r.mode = core::RadiusMode::Pixels;
+	r.r = (float)(std::max(0.0, canvasRadius) / sx);
+	r.ratio = (float)(sx / sy);
+	r.scaleX = (float)sx;
+	r.scaleY = (float)sy;
+	st.scenes[token] = r;
 	writeSettings(t.source, st);
 }
 
-void addUndo(obs_data_t *before, obs_data_t *after)
+void addUndo(obs_data_t *before, obs_data_t *after, const QString &sceneName)
 {
 	if (strcmp(obs_data_get_json(before), obs_data_get_json(after)) == 0)
 		return;
-	const QString name = tr("Undo.Format").arg(tr("Undo.Corners"), EditContext::instance().sceneName());
+	const QString name = tr("Undo.Format").arg(tr("Undo.Corners"), sceneName);
 	obs_frontend_add_undo_redo_action(name.toUtf8().constData(), applyData, applyData, obs_data_get_json(before),
 					  obs_data_get_json(after), false);
+}
+
+/* The scene that renders an item (and so its scene marker): its own scene, or for an
+ * item of a group the scene that holds the group. */
+obs_source_t *topScene(obs_sceneitem_t *item)
+{
+	obs_scene_t *scene = obs_sceneitem_get_scene(item);
+	obs_source_t *source = scene ? obs_scene_get_source(scene) : nullptr;
+	if (!source || !obs_source_is_group(source))
+		return source;
+	struct Find {
+		obs_source_t *group;
+		obs_source_t *found = nullptr;
+	} f{source};
+	obs_enum_scenes(
+		[](void *p, obs_source_t *s) {
+			auto *f = static_cast<Find *>(p);
+			obs_scene_t *sc = obs_source_is_group(s) ? nullptr : obs_scene_from_source(s);
+			if (sc && obs_scene_find_source(sc, obs_source_get_name(f->group))) {
+				f->found = s;
+				return false;
+			}
+			return true;
+		},
+		&f);
+	return f.found; /* weak: the scene list keeps it */
+}
+
+/* Canvas pixels per source pixel of an item, rotation aside (and its group's). */
+core::Vec2 itemScale(obs_sceneitem_t *item)
+{
+	struct matrix4 m;
+	obs_sceneitem_get_draw_transform(item, &m);
+	core::Vec2 s = core::shape::axisScale(m.x.x, m.x.y, m.y.x, m.y.y);
+	obs_scene_t *scene = obs_sceneitem_get_scene(item);
+	obs_source_t *sceneSource = scene ? obs_scene_get_source(scene) : nullptr;
+	obs_source_t *top = sceneSource && obs_source_is_group(sceneSource) ? topScene(item) : nullptr;
+	obs_scene_t *topSc = top ? obs_scene_from_source(top) : nullptr;
+	obs_sceneitem_t *group = topSc ? obs_scene_find_source(topSc, obs_source_get_name(sceneSource)) : nullptr;
+	if (group) {
+		obs_sceneitem_get_draw_transform(group, &m);
+		const core::Vec2 g = core::shape::axisScale(m.x.x, m.x.y, m.y.x, m.y.y);
+		s = {s.x * g.x, s.y * g.y};
+	}
+	if (s.x <= 1e-9)
+		s.x = 1.0;
+	if (s.y <= 1e-9)
+		s.y = 1.0;
+	return s;
 }
 
 struct Scrub {
@@ -718,7 +929,64 @@ double radius(const ItemEntry &e)
 	const auto it = st.scenes.find(markerToken(EditContext::instance().sceneSource()));
 	if (it != st.scenes.end())
 		r = it->second;
-	return r.r * worldScale(e).x;
+	const core::Vec2 scale = worldScale(e);
+	if (r.mode == core::RadiusMode::Pixels)
+		return r.r * scale.x;
+	const core::ItemGeometry g = core::computeGeometry(e.model);
+	return core::shape::radiusFor(r.mode, 0.0, g.croppedWidth * scale.x, g.croppedHeight * scale.y);
+}
+
+std::vector<core::Vec2> itemPolygon(obs_sceneitem_t *item)
+{
+	std::vector<core::Vec2> out;
+	if (!item)
+		return out;
+	OBSDataAutoRelease priv = obs_sceneitem_get_private_settings(item);
+	QByteArray json = QByteArray(obs_data_get_string(priv, "layouts_style"));
+	if (json.isEmpty()) {
+		OBSDataAutoRelease obj = obs_data_get_obj(priv, "layouts_style");
+		if (obj)
+			json = QByteArray(obs_data_get_json(obj));
+	}
+	const QJsonArray points = QJsonDocument::fromJson(json).object().value("polygon").toArray();
+	for (const QJsonValue &v : points) {
+		const QJsonArray pt = v.toArray();
+		if (pt.size() >= 2)
+			out.push_back({pt.at(0).toDouble(), pt.at(1).toDouble()});
+	}
+	return core::shape::convexPolygon(out);
+}
+
+bool applyItemStyle(obs_sceneitem_t *item, const core::Style &style, const std::vector<core::Vec2> *polygon)
+{
+	obs_source_t *source = item ? obs_sceneitem_get_source(item) : nullptr;
+	if (!source || obs_source_is_group(source) || obs_source_is_scene(source))
+		return false;
+	obs_source_t *sceneSource = topScene(item);
+	if (!sceneSource)
+		return false;
+	const core::Vec2 scale = itemScale(item);
+	const std::vector<Target> targets{{OBSSource(source), scale, 0.0}};
+	OBSDataAutoRelease before = snapshot(targets);
+	const std::string token = ensureToken(sceneSource);
+
+	Radius r;
+	r.mode = style.radiusMode;
+	r.scaleX = (float)scale.x;
+	r.scaleY = (float)scale.y;
+	r.ratio = (float)(scale.x / scale.y);
+	r.r = r.mode == core::RadiusMode::Pixels ? (float)(std::max(0.0, style.radiusPx) / scale.x) : 0.0f;
+	r.polygon = polygon ? core::shape::convexPolygon(*polygon) : itemPolygon(item);
+
+	Settings st = readSettings(source);
+	splitPerScene(source, st);
+	st.scenes[token] = r;
+	writeSettings(source, st);
+
+	OBSDataAutoRelease after = snapshot(targets);
+	addUndo(before, after, QString::fromUtf8(obs_source_get_name(sceneSource)));
+	EditContext::instance().markDirty();
+	return true;
 }
 
 bool setRadius(const core::Expression &expr)
@@ -737,7 +1005,7 @@ bool setRadius(const core::Expression &expr)
 			writeCanvasRadius(t, token, v);
 	}
 	OBSDataAutoRelease after = snapshot(targets);
-	addUndo(before, after);
+	addUndo(before, after, ctx.sceneName());
 	ctx.markDirty();
 	return true;
 }
@@ -757,7 +1025,7 @@ void scrub(double delta, bool finished)
 		writeCanvasRadius(t, g_scrub.token, std::round(t.canvasRadius + delta));
 	if (finished) {
 		OBSDataAutoRelease after = snapshot(g_scrub.targets);
-		addUndo(g_scrub.before, after);
+		addUndo(g_scrub.before, after, ctx.sceneName());
 		g_scrub = Scrub();
 	}
 	ctx.markDirty();
