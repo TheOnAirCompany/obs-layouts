@@ -79,6 +79,9 @@ target_sources(
     src/obs/roles.hpp
     src/obs/hotkeys.cpp
     src/obs/hotkeys.hpp
+    src/obs/item-style.cpp
+    src/obs/item-style.hpp
+    src/obs/style-json-stub.cpp
     src/obs/commands.hpp
     src/ui/theme.cpp
     src/ui/theme.hpp
@@ -95,6 +98,8 @@ target_sources(
     src/ui/scenes-list.cpp
     src/ui/scenes-list.hpp
     src/ui/role-ui.hpp
+    src/ui/style-editor.cpp
+    src/ui/style-editor.hpp
     src/ui/layers-panel.hpp
     src/ui/canvas-view.cpp
     src/ui/canvas-view.hpp

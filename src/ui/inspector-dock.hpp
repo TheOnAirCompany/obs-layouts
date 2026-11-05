@@ -23,6 +23,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QWidget>
 
 #include <map>
+#include <vector>
 
 class QButtonGroup;
 class QCheckBox;
@@ -34,10 +35,15 @@ class QSpinBox;
 class QToolButton;
 class QVBoxLayout;
 
+namespace layouts {
+struct ItemEntry;
+}
+
 namespace layouts::ui {
 
 class NumericField;
 class RefPointPicker;
+class StyleEditor;
 
 class InspectorDock : public QWidget {
 	Q_OBJECT
@@ -56,6 +62,8 @@ private:
 	QWidget *buildLayoutSection();
 	QWidget *buildPresetSection();
 	QWidget *buildConstraintSection();
+	QWidget *buildStyleSection();
+	void syncStyle(const std::vector<const layouts::ItemEntry *> &sel);
 	QWidget *buildBroadcastSection();
 	void syncBroadcast();
 	void previewBroadcast(bool force = false);
@@ -88,7 +96,11 @@ private:
 
 	std::map<commands::Field, NumericField *> fields_;
 	RefPointPicker *ref_ = nullptr;
-	NumericField *radius_ = nullptr;
+	/* style (0.5): corners, border, shadow */
+	QWidget *styleSection_ = nullptr;
+	StyleEditor *style_ = nullptr;
+	QLabel *overrideDot_ = nullptr;
+	QToolButton *styleReset_ = nullptr;
 	QButtonGroup *frameMode_ = nullptr;
 	QToolButton *ratio_ = nullptr;
 	std::vector<QToolButton *> alignButtons_;

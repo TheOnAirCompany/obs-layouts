@@ -44,6 +44,13 @@ constexpr int kIconSize = 16;
 constexpr int kLabelWidth = 16;         /* scrub label "X", "W"... */
 constexpr int kRefGridSize = 46;        /* 3x3 reference point picker */
 constexpr qreal kSectionTitlePt = 0.85; /* section title font, relative */
+/* Style section (0.5) */
+constexpr int kSwatchSize = 14;                /* provisional: color swatch inside its button */
+constexpr QRgb kSwatchOutline = 0x80FFFFFF;    /* provisional */
+constexpr int kStyleFieldWidth = 72;           /* provisional: px / width fields next to a row */
+constexpr int kStyleRoleListWidth = 150;       /* provisional: "Styles by type" role list */
+constexpr int kOverrideDot = 6;                /* provisional: "differs from its type" dot */
+constexpr QRgb kOverrideDotColor = 0xFF18A0FB; /* provisional */
 
 /* ---- Canvas overlays (canvas colors are ARGB) ---- */
 constexpr QRgb kSelection = 0xFF18A0FB;  /* selection outline and handles */

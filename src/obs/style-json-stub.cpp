@@ -100,7 +100,7 @@ bool fromJson(const std::string &json, Style &out)
 		return false;
 	Style s;
 	const std::string r = obs_data_get_string(d, "radius");
-	s.radiusMode = r == "px" ? RadiusMode::Pixels
+	s.radiusMode = r == "px"      ? RadiusMode::Pixels
 		       : r == "round" ? RadiusMode::Round
 		       : r == "none"  ? RadiusMode::None
 				      : RadiusMode::Auto;
@@ -111,8 +111,8 @@ bool fromJson(const std::string &json, Style &out)
 	if (obs_data_has_user_value(d, "borderColor"))
 		s.borderColor = (uint32_t)obs_data_get_int(d, "borderColor");
 	const std::string sh = obs_data_get_string(d, "shadow");
-	s.shadow = sh == "soft" ? ShadowPreset::Soft
-		   : sh == "hard" ? ShadowPreset::Hard
+	s.shadow = sh == "soft"     ? ShadowPreset::Soft
+		   : sh == "hard"   ? ShadowPreset::Hard
 		   : sh == "custom" ? ShadowPreset::Custom
 				    : ShadowPreset::None;
 	if (obs_data_has_user_value(d, "shadowBlur"))

@@ -241,8 +241,8 @@ void Store::loadGuides(obs_data_t *data)
 	core::GuideDocument::Records r;
 	typeStyles_.clear();
 	if (root) {
-		for (const core::Role role : {core::Role::None, core::Role::Host, core::Role::Camera, core::Role::Screen,
-					      core::Role::Background, core::Role::Graphics}) {
+		for (const core::Role role : {core::Role::None, core::Role::Host, core::Role::Camera,
+					      core::Role::Screen, core::Role::Background, core::Role::Graphics}) {
 			const std::string key = std::string("styles.") + core::roleKey(role);
 			const char *json = obs_data_get_string(root, key.c_str());
 			core::Style st;
