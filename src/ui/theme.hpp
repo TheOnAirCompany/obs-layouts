@@ -61,10 +61,12 @@ constexpr QRgb kPreview = 0xFF8B6CFF; /* ghost frames before a preset / layout i
 constexpr QRgb kPreviewFill = 0x308B6CFF;
 constexpr QRgb kThumbCamera = 0xFF5FB4F5; /* broadcast gallery: camera tiles */
 constexpr QRgb kThumbScreen = 0xFFC9A24A; /* broadcast gallery: screen tiles */
+constexpr QRgb kThumbFrame = 0xFFF4F1EA;  /* broadcast gallery: Polaroid border, provisional */
 /* Source types (0.4): pills in Layers and the Builder, filter dots. */
 constexpr QRgb kRoleHost = 0xFF7ED6C4; /* provisional, see the Builder review page */
 constexpr QRgb kRoleCamera = kThumbCamera;
 constexpr QRgb kRoleScreen = kThumbScreen;
+constexpr QRgb kRoleChat = 0xFFB5D96B; /* provisional */
 constexpr QRgb kRoleBackground = 0xFF8E8AA3;
 constexpr QRgb kRoleGraphics = 0xFFE2708A;
 constexpr QRgb kRoleNone = 0xFF7D828E;       /* dashed outline, "not set" */

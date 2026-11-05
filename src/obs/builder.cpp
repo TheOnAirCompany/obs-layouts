@@ -184,7 +184,7 @@ std::vector<QString> create(const Plan &plan, const Options &options)
 		}
 
 		/* Tiles: cameras in reading order (hosts first), then screens. */
-		const std::vector<core::Slot> tiles = core::buildBroadcast(spec.key, canvas, options.spec);
+		const std::vector<core::Slot> tiles = commands::broadcastSlots(spec.key, canvas, options.spec);
 		size_t ci = 0, si = 0;
 		std::vector<std::pair<obs_source_t *, core::ItemTransform>> screens, cameras;
 		for (const core::Slot &slot : tiles) {

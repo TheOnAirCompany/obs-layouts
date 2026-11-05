@@ -97,6 +97,10 @@ std::vector<core::SlotKind> selectionKinds(KindMode mode);
 /* Transform that places a source in a broadcast tile: cameras fill it (cropped on the
  * face), screens fit; a flipped source stays flipped. */
 core::ItemTransform slotTransform(const core::ItemModel &m, core::SlotKind kind, const core::Rect &cell);
+/* Slots of a template on the canvas, mirrored as set in the gallery (store settings
+ * broadcastMirrorH / broadcastMirrorV). Every place that applies a template uses it. */
+std::vector<core::Slot> broadcastSlots(const std::string &key, const core::Rect &canvas,
+				       const core::BroadcastSpec &spec);
 /* Locks an item and makes it scale with the canvas. */
 void lockItem(obs_sceneitem_t *item);
 /* Target frames (one per selected item that gets a slot) for a template. */
