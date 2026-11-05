@@ -53,6 +53,8 @@
   <file>icons/type.svg</file>
   <file>icons/film.svg</file>
   <file>icons/square.svg</file>
+  <file>icons/circle.svg</file>
+  <file>icons/circle-check.svg</file>
   <file>icons/folder.svg</file>
   <file>icons/clapperboard.svg</file>
   <file>icons/audio-lines.svg</file>

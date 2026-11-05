@@ -18,6 +18,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "inspector-dock.hpp"
 
+#include "role-ui.hpp"
 #include "theme.hpp"
 #include "widgets.hpp"
 
@@ -744,22 +745,6 @@ protected:
 		fitRows();
 	}
 };
-
-/* Template name; some names change on a portrait canvas (three columns become three rows). */
-QString broadcastLabel(const std::string &key, double aspect)
-{
-	const std::string base = "Broadcast." + key;
-	const char *portrait = nullptr;
-	if (aspect < 1 && obs_module_get_string((base + ".Portrait").c_str(), &portrait))
-		return QString::fromUtf8(portrait);
-	return QString::fromUtf8(obs_module_text(base.c_str()));
-}
-
-double canvasAspect()
-{
-	const core::Rect canvas = EditContext::instance().canvasRect();
-	return canvas.w > 0 && canvas.h > 0 ? canvas.w / canvas.h : 16.0 / 9.0;
-}
 
 QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor &screen, const QColor &bg,
 		     double aspect)

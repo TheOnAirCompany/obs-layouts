@@ -39,6 +39,36 @@ browser, media, color, group, scene, audio), name, lock, eye. Hidden sources are
   can't go into a group (OBS has no nested groups). One row at a time. One undo entry, holding the
   whole order of the scene: libobs transform states do not carry the order or the grouping.
 
+### Types and filter (0.4)
+- A pill after the name shows the source's type: HOST, CAM, SCREEN, BG, CG, or a dashed "?" when
+  not set. Clicking it opens the type menu; when the row is selected, the type applies to every
+  selected source. One undo entry. Groups have no type.
+- The type is saved in the source's private settings (scene collection), so renaming keeps it.
+  Until set, it is suggested from the name prefix (Host: HOST, PRÉSENTATEUR, PRESENTER, ANIMATEUR;
+  Cam: CAM, CAMERA, CAMÉRA, GUEST, INVITÉ; Screen: SCREEN, ÉCRAN, SCR, DISPLAY, CAPTURE; BG: BG,
+  BACKGROUND, FOND; CG: CG, GFX, OVERLAY, LOGO, LT, HABILLAGE), case and accents ignored, the
+  prefix followed by the end of the name, a space, `_`, `-` or `.`; the longest prefix wins. Then
+  from the kind of source (video capture, NDI, DeckLink, AJA = Cam; display, window, game capture
+  = Screen).
+- Filter row above the list: All, then one chip per type present, with counts. Groups stay while
+  one of their sources matches. Drag and drop is off while a filter is active.
+
+## Layouts Builder (0.4)
+Tools > Layouts Builder, or the Scene | Builder switch at the top left of the window (Tools >
+Layouts opens Scene mode; the hotkey keeps the current mode). The Canvas stays in the center.
+- Left: "Sources of the collection", every video input once (scenes and groups excluded), with an
+  include mark (blue check = in the show; sources without a type can't be included), the source
+  icon, the name, the number of scenes that use it, and the type pill (same menu as Layers). Same
+  filter row.
+- Right: "Generate": summary (1 Host · 2 Cam · 1 Screen · 1 BG · 1 CG), gap and margin (shared
+  with broadcast layouts), options (a full-screen scene per host, cam and screen; every broadcast
+  layout that fits; background in every scene; graphics in every scene; lock), the list of scene
+  names, and "Create N scene(s)". The first new scene opens on the Canvas.
+- Each scene: the first BG at the back, covering the canvas (bounding box "scale to outer bounds",
+  centered, cropped to bounds); screens, then hosts and cams in their tiles (hosts first, so they
+  get the large tile), flips kept; CG on top with the transform and crop they have in the first
+  scene that uses them. Locked when "Lock" is checked. Names made unique ("Duo 2").
+
 ## Inspector
 
 ### Empty state

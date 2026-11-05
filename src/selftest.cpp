@@ -27,16 +27,19 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/commands.hpp"
 #include "obs/constraints.hpp"
 #include "obs/corners.hpp"
+#include "obs/builder.hpp"
 #include "obs/roles.hpp"
 #include "obs/edit-context.hpp"
 #include "obs/hotkeys.hpp"
 #include "obs/obs-convert.hpp"
 #include "obs/store.hpp"
+#include "ui/builder-panel.hpp"
 #include "ui/canvas-dock.hpp"
 #include "ui/canvas-view.hpp"
 #include "ui/inspector-dock.hpp"
 #include "ui/layers-panel.hpp"
 #include "ui/layouts-window.hpp"
+#include "ui/role-ui.hpp"
 #include "ui/ruler.hpp"
 
 #include <obs-frontend-api.h>
@@ -707,11 +710,14 @@ void testRoles()
 	obs_source_set_name(src, "A");
 	ctx.markDirty();
 	R->check(kept, "roles-survive-rename");
-	roles::setMain(src, true);
-	R->check(roles::isMain(src), "roles-main-camera");
+	roles::setRole({src}, core::Role::Host);
+	R->check(roles::role(src) == core::Role::Host && roles::sceneCount(src) >= 1, "roles-host",
+		 QString::number(roles::sceneCount(src)));
 	QAction *undo = findAction(QKeySequence(QKeySequence::Undo));
 	if (undo)
-		undo->trigger();
+		undo->trigger(); /* Host -> Camera */
+	if (undo)
+		undo->trigger(); /* Camera -> unset */
 	ctx.markDirty();
 	R->check(undo && roles::explicitRole(src) == core::Role::None, "roles-undo",
 		 core::roleKey(roles::explicitRole(src)));
@@ -721,6 +727,121 @@ void testRoles()
 		 "roles-suggested-from-name");
 	obs_source_remove(guest);
 	obs_source_remove(bg);
+}
+
+/* 0.4: types in Layers (filter), in broadcast layouts (BG / CG never in a tile) and the
+ * Builder (scenes made from typed sources, background at the back, graphics on top). */
+obs_source_t *sourceOf(const char *name)
+{
+	const ItemEntry *e = entry(name);
+	return e ? obs_sceneitem_get_source(e->item) : nullptr;
+}
+
+void testTypes()
+{
+	EditContext &ctx = EditContext::instance();
+	obs_source_t *a = sourceOf("A"), *b = sourceOf("B"), *c = sourceOf("C");
+	if (!a || !b || !c) {
+		R->check(false, "types-setup");
+		return;
+	}
+	roles::setRole({a}, core::Role::Host);
+	roles::setRole({b}, core::Role::Camera);
+	roles::setRole({c}, core::Role::Screen);
+	ctx.markDirty();
+	ui::LayersPanel *layers = g_window->layers();
+	layers->refresh();
+	layers->filter()->select(false, core::Role::Camera);
+	QStringList shown;
+	for (int i = 0; i < layers->tree()->topLevelItemCount(); i++) {
+		if (!layers->tree()->topLevelItem(i)->isHidden())
+			shown << layers->tree()->topLevelItem(i)->text(0);
+	}
+	const bool noDrag = layers->tree()->dragDropMode() == QAbstractItemView::NoDragDrop;
+	layers->filter()->select(true);
+	int all = 0;
+	for (int i = 0; i < layers->tree()->topLevelItemCount(); i++)
+		all += layers->tree()->topLevelItem(i)->isHidden() ? 0 : 1;
+	R->check(shown == QStringList{"B"} && noDrag && all == layers->tree()->topLevelItemCount(),
+		 "layers-filter-by-type", shown.join(','));
+
+	/* A background and a logo in the scene: never placed in a tile. */
+	obs_scene_t *scene = ctx.scene();
+	obs_sceneitem_t *bgItem = addColor(scene, "BG _ TEST", 1280, 720, 0xFF202020, 0, 0);
+	obs_sceneitem_t *cgItem = addColor(scene, "LOGO _ TEST", 200, 80, 0xFFFFFFFF, 1680, 40);
+	ctx.markDirty();
+	selectNames({"A", "B", "BG _ TEST", "LOGO _ TEST"});
+	R->check(commands::selectionKinds(commands::KindMode::Auto).size() == 2, "broadcast-skips-bg-and-cg",
+		 QString::number(commands::selectionKinds(commands::KindMode::Auto).size()));
+
+	/* Builder window mode lists the sources of the collection. */
+	g_window->setMode(ui::LayoutsWindow::Mode::Builder);
+	g_window->builderSources()->refresh();
+	const int rows = g_window->builderSources()->tree()->topLevelItemCount();
+	R->check(g_window->builderSources()->isVisible() && rows == (int)roles::videoSources().size(),
+		 "builder-lists-collection-sources", QString::number(rows));
+	ui::BuilderSources *bs = g_window->builderSources();
+	const size_t before = bs->checkedSources().size();
+	bs->setIncluded(b, false);
+	const size_t without = bs->checkedSources().size();
+	bs->setIncluded(b, true);
+	R->check(without + 1 == before && bs->checkedSources().size() == before, "builder-include-toggle",
+		 QString("%1 -> %2").arg(before).arg(without));
+
+	/* Plan and create from five typed sources. */
+	builder::Options o;
+	o.spec.gap = 8;
+	const std::vector<OBSSource> picked{a, b, c, obs_sceneitem_get_source(bgItem),
+					    obs_sceneitem_get_source(cgItem)};
+	const builder::Plan plan = builder::plan(
+		picked, o, [](const std::string &key) { return QString("T ") + QString::fromStdString(key); },
+		[](const QString &n) { return QString("Solo ") + n; });
+	size_t layouts = 0;
+	for (const core::BroadcastTemplate &t : core::templatesFor(2, 1))
+		layouts += t.cameras + t.screens >= 2 ? 1 : 0;
+	R->check(plan.scenes.size() == 3 + layouts && plan.cameras.size() == 2 && plan.cameras[0].Get() == a &&
+			 plan.background.Get() == obs_sceneitem_get_source(bgItem) && plan.graphics.size() == 1,
+		 "builder-plan", QString::number(plan.scenes.size()));
+	const std::vector<QString> names = builder::create(plan, o);
+	bool layered = names.size() == plan.scenes.size();
+	QString why;
+	for (const QString &n : names) {
+		OBSSourceAutoRelease src = obs_get_source_by_name(n.toUtf8().constData());
+		obs_scene_t *sc = src ? obs_scene_from_source(src) : nullptr;
+		std::vector<obs_sceneitem_t *> items;
+		if (sc)
+			obs_scene_enum_items(
+				sc,
+				[](obs_scene_t *, obs_sceneitem_t *it, void *p) {
+					static_cast<std::vector<obs_sceneitem_t *> *>(p)->push_back(it);
+					return true;
+				},
+				&items);
+		const bool ok = items.size() >= 3 &&
+				obs_sceneitem_get_source(items.front()) == obs_sceneitem_get_source(bgItem) &&
+				obs_sceneitem_get_bounds_type(items.front()) == OBS_BOUNDS_SCALE_OUTER &&
+				obs_sceneitem_get_source(items.back()) == obs_sceneitem_get_source(cgItem) &&
+				obs_sceneitem_locked(items[1]);
+		vec2 cgPos = {};
+		if (!items.empty())
+			obs_sceneitem_get_pos(items.back(), &cgPos);
+		if (!ok || std::fabs(cgPos.x - 1680) > 0.5 || std::fabs(cgPos.y - 40) > 0.5) {
+			layered = false;
+			why = n;
+		}
+		if (src)
+			obs_source_remove(src);
+	}
+	R->check(layered, "builder-bg-back-cg-top-locked", why);
+
+	/* Back to the scene; the test sources go away and the types are cleared. */
+	g_window->setMode(ui::LayoutsWindow::Mode::Scene);
+	obs_sceneitem_remove(bgItem);
+	obs_sceneitem_remove(cgItem);
+	roles::setRole({a, b, c}, core::Role::None);
+	ctx.follow();
+	ctx.markDirty();
+	R->check(g_window->layers()->isVisible(), "builder-back-to-scene-mode");
 }
 
 void unlockAll(std::initializer_list<const char *> names)
@@ -964,9 +1085,9 @@ void testLayers()
 
 	/* Eye column hides and shows. */
 	QTreeWidgetItem *c = layerRow("C");
-	emit tree->itemClicked(c, 2);
+	emit tree->itemClicked(c, 3); /* eye column */
 	const bool hidden = entry("C") && !entry("C")->visible;
-	emit tree->itemClicked(layerRow("C"), 2);
+	emit tree->itemClicked(layerRow("C"), 3);
 	R->check(hidden && entry("C") && entry("C")->visible, "layers-eye-toggles");
 
 	/* Reorder: A to the front, one undo entry. */
@@ -982,7 +1103,7 @@ void testLayers()
 		 moved + " then " + topLevelOrder());
 
 	/* Hiding is undoable. */
-	emit tree->itemClicked(layerRow("C"), 2);
+	emit tree->itemClicked(layerRow("C"), 3);
 	const bool hid = entry("C") && !entry("C")->visible;
 	if (undo)
 		undo->trigger();
@@ -1593,6 +1714,36 @@ void runSelfTest(ui::LayoutsWindow *window)
 				g_window->setGeometry(0, 380, 1200, 620);
 				return;
 			}
+			if (const char *grab = getenv("LAYOUTS_DEMO_TYPES")) {
+				/* 0.4: a show named the way people name it, in Scene mode then Builder mode. */
+				const std::pair<const char *, const char *> names[] = {
+					{"Camera", "CAM _ VALENTIN"},       {"Guest camera", "CAM _ GUEST 1"},
+					{"Slides", "SCREEN _ RIGHT"},       {"Background", "BG _ DYNAMIQUE"},
+					{"Logo", "LOGO _ \xC3\x89MISSION"},
+				};
+				for (const auto &[from, to] : names) {
+					OBSSourceAutoRelease src = obs_get_source_by_name(from);
+					if (src)
+						obs_source_set_name(src, to);
+				}
+				OBSSourceAutoRelease host = obs_get_source_by_name("CAM _ VALENTIN");
+				roles::setRole({host}, core::Role::Host);
+				EditContext::instance().markDirty();
+				selectNames({"CAM _ GUEST 1"});
+				g_window->setGeometry(0, 120, 1400, 820);
+				const QString base = QString::fromUtf8(grab);
+				QTimer::singleShot(1500, [base] {
+					g_window->grab().save(base + "-scene.png");
+					g_window->setMode(ui::LayoutsWindow::Mode::Builder);
+				});
+				QTimer::singleShot(3000, [base] {
+					g_window->grab().save(base + "-builder.png");
+					g_window->layers()->filter()->select(false, core::Role::Camera);
+					g_window->setMode(ui::LayoutsWindow::Mode::Scene);
+				});
+				QTimer::singleShot(4500, [base] { g_window->grab().save(base + "-filter.png"); });
+				return;
+			}
 			if (getenv("LAYOUTS_DEMO_BROADCAST")) {
 				/* Three guests: the Broadcast layouts gallery, first template previewed. */
 				Store::instance().settings().broadcastKinds = 1;
@@ -1657,6 +1808,7 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(300, [] { testBroadcast(); });
 		R->add(300, [] { testBroadcastScene(); });
 		R->add(300, [] { testShowScenes(); });
+		R->add(300, [] { testTypes(); });
 		R->add(300, [] { unlockAll({"A", "B", "C"}); });
 		R->add(300, [] { testCropMode(); });
 		R->add(300, [] { testHotkeys(); });

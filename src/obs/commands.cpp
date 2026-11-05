@@ -526,24 +526,25 @@ bool applyPreset(core::Preset preset, const core::PresetSpec &spec)
 
 namespace {
 
-bool isCameraSource(obs_source_t *src)
-{
-	return roles::isCameraKind(src);
-}
-
 struct Placed {
 	ItemEntry entry;
 	core::SlotKind kind;
 	core::Rect cell;
 };
 
+/* Selected top-level sources that go in tiles: backgrounds and graphics never do. Hosts
+ * come first so that they get the large tile of host + guests layouts. */
 std::vector<ItemEntry> topLevelSelection()
 {
 	std::vector<ItemEntry> out;
 	for (const ItemEntry &e : selectionCopy()) {
-		if (e.groupId == 0)
+		const core::Role r = roles::role(obs_sceneitem_get_source(e.item));
+		if (e.groupId == 0 && r != core::Role::Background && r != core::Role::Graphics)
 			out.push_back(e);
 	}
+	std::stable_partition(out.begin(), out.end(), [](const ItemEntry &e) {
+		return roles::role(obs_sceneitem_get_source(e.item)) == core::Role::Host;
+	});
 	return out;
 }
 
@@ -566,6 +567,8 @@ std::vector<Placed> assignSlotsFor(const std::string &key, const core::Broadcast
 }
 
 std::vector<Placed> assignSlots(const std::string &key, const core::BroadcastSpec &spec, KindMode mode);
+
+} // namespace
 
 /* Transform that places a source in a slot: cameras fill it (cropped), screens fit. */
 core::ItemTransform slotTransform(const core::ItemModel &m, core::SlotKind kind, const core::Rect &cell)
@@ -604,8 +607,6 @@ void lockItem(obs_sceneitem_t *item)
 	setConstraints(item, core::HConstraint::Scale, core::VConstraint::Scale);
 }
 
-} // namespace
-
 std::vector<core::SlotKind> selectionKinds(KindMode mode)
 {
 	std::vector<core::SlotKind> kinds;
@@ -615,8 +616,9 @@ std::vector<core::SlotKind> selectionKinds(KindMode mode)
 		else if (mode == KindMode::AllScreens)
 			kinds.push_back(core::SlotKind::Screen);
 		else
-			kinds.push_back(isCameraSource(obs_sceneitem_get_source(e.item)) ? core::SlotKind::Camera
-											 : core::SlotKind::Screen);
+			kinds.push_back(core::isCameraRole(roles::role(obs_sceneitem_get_source(e.item)))
+						? core::SlotKind::Camera
+						: core::SlotKind::Screen);
 	}
 	return kinds;
 }

@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 /* Roles: what a source is for in a show, set by the user per source (0.4).
  *
+ *   Host       a camera that takes the large tile in host + guests layouts
  *   Camera     fills its tile, cropped on the face
  *   Screen     shown whole, never cropped
  *   Background full canvas, always at the very back, never in a tile
@@ -35,13 +36,20 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace layouts::core {
 
-enum class Role { None, Camera, Screen, Background, Graphics };
+enum class Role { None, Host, Camera, Screen, Background, Graphics };
 
-/* Stable keys for saving ("none", "camera", "screen", "background", "graphics"). */
+/* Host or Camera: placed in a camera tile. */
+inline bool isCameraRole(Role r)
+{
+	return r == Role::Host || r == Role::Camera;
+}
+
+/* Stable keys for saving ("none", "host", "camera", "screen", "background", "graphics"). */
 const char *roleKey(Role r);
 Role roleFromKey(std::string_view key); /* None for unknown keys */
 
 struct PrefixRules {
+	std::vector<std::string> host;
 	std::vector<std::string> camera;
 	std::vector<std::string> screen;
 	std::vector<std::string> background;

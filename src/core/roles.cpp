@@ -26,6 +26,8 @@ namespace layouts::core {
 const char *roleKey(Role r)
 {
 	switch (r) {
+	case Role::Host:
+		return "host";
 	case Role::Camera:
 		return "camera";
 	case Role::Screen:
@@ -42,7 +44,7 @@ const char *roleKey(Role r)
 
 Role roleFromKey(std::string_view key)
 {
-	for (Role r : {Role::Camera, Role::Screen, Role::Background, Role::Graphics}) {
+	for (Role r : {Role::Host, Role::Camera, Role::Screen, Role::Background, Role::Graphics}) {
 		if (key == roleKey(r))
 			return r;
 	}
@@ -52,9 +54,8 @@ Role roleFromKey(std::string_view key)
 const PrefixRules &defaultPrefixRules()
 {
 	static const PrefixRules rules{
-		{"CAM", "CAMERA", "CAMÉRA", "GUEST", "INVITÉ", "HOST"},
-		{"SCREEN", "ÉCRAN", "SCR", "DISPLAY", "CAPTURE"},
-		{"BG", "BACKGROUND", "FOND"},
+		{"HOST", "PRÉSENTATEUR", "PRESENTER", "ANIMATEUR"},  {"CAM", "CAMERA", "CAMÉRA", "GUEST", "INVITÉ"},
+		{"SCREEN", "ÉCRAN", "SCR", "DISPLAY", "CAPTURE"},    {"BG", "BACKGROUND", "FOND"},
 		{"CG", "GFX", "OVERLAY", "LOGO", "LT", "HABILLAGE"},
 	};
 	return rules;
@@ -127,9 +128,8 @@ Role roleFromName(std::string_view name, const PrefixRules &rules)
 	Role best = Role::None;
 	size_t bestLength = 0;
 	const std::pair<Role, const std::vector<std::string> *> lists[] = {
-		{Role::Camera, &rules.camera},
-		{Role::Screen, &rules.screen},
-		{Role::Background, &rules.background},
+		{Role::Host, &rules.host},         {Role::Camera, &rules.camera},
+		{Role::Screen, &rules.screen},     {Role::Background, &rules.background},
 		{Role::Graphics, &rules.graphics},
 	};
 	for (const auto &[role, prefixes] : lists) {

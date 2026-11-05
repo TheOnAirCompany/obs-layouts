@@ -10,6 +10,9 @@ TEST("roles: the four show sources are recognized from their names")
 	CHECK(roleFromName("CAM _ VALENTIN") == Role::Camera);
 	CHECK(roleFromName("SCREEN _ RIGHT") == Role::Screen);
 	CHECK(roleFromName("BG _ DYNAMIQUE") == Role::Background);
+	CHECK(roleFromName("HOST _ VALENTIN") == Role::Host);
+	CHECK(roleFromName("Présentateur") == Role::Host);
+	CHECK(isCameraRole(Role::Host) && isCameraRole(Role::Camera) && !isCameraRole(Role::Screen));
 }
 
 TEST("roles: case, accents and separators")
@@ -46,7 +49,7 @@ TEST("roles: the longest prefix wins and custom rules apply")
 
 TEST("roles: keys and prefix lists")
 {
-	for (Role r : {Role::None, Role::Camera, Role::Screen, Role::Background, Role::Graphics})
+	for (Role r : {Role::None, Role::Host, Role::Camera, Role::Screen, Role::Background, Role::Graphics})
 		CHECK(roleFromKey(roleKey(r)) == r);
 	CHECK(roleFromKey("bogus") == Role::None);
 	const std::vector<std::string> l = splitPrefixList(" CAM, CAMÉRA ,,GUEST ");

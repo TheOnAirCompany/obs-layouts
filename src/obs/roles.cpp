@@ -32,7 +32,6 @@ namespace layouts::roles {
 namespace {
 
 constexpr const char *kRoleKey = "layouts_role";
-constexpr const char *kMainKey = "layouts_main";
 
 QString tr(const char *key)
 {
@@ -58,8 +57,6 @@ void writeRole(obs_source_t *source, core::Role r)
 		obs_data_erase(priv, kRoleKey);
 	else
 		obs_data_set_string(priv, kRoleKey, core::roleKey(r));
-	if (r != core::Role::Camera)
-		obs_data_erase(priv, kMainKey);
 }
 
 /* Undo data: {items: [{source, role}]} with "" for "never set". */
@@ -73,10 +70,6 @@ void applyData(const char *json)
 		if (!source)
 			continue;
 		writeRole(source, core::roleFromKey(obs_data_get_string(it, "role")));
-		if (obs_data_get_bool(it, "main")) {
-			OBSDataAutoRelease priv = obs_source_get_private_settings(source);
-			obs_data_set_bool(priv, kMainKey, true);
-		}
 	}
 	EditContext::instance().markDirty();
 }
@@ -89,7 +82,6 @@ obs_data_t *snapshot(const std::vector<obs_source_t *> &sources)
 		OBSDataAutoRelease it = obs_data_create();
 		obs_data_set_string(it, "source", obs_source_get_uuid(s));
 		obs_data_set_string(it, "role", core::roleKey(explicitRole(s)));
-		obs_data_set_bool(it, "main", isMain(s));
 		obs_data_array_push_back(items, it);
 	}
 	obs_data_set_array(d, "items", items);
@@ -140,14 +132,6 @@ core::Role role(obs_source_t *source)
 	return r != core::Role::None ? r : suggestedRole(source);
 }
 
-bool isMain(obs_source_t *source)
-{
-	if (!source)
-		return false;
-	OBSDataAutoRelease priv = obs_source_get_private_settings(source);
-	return obs_data_get_bool(priv, kMainKey);
-}
-
 void setRole(const std::vector<obs_source_t *> &sources, core::Role r)
 {
 	if (sources.empty())
@@ -164,24 +148,35 @@ void setRole(const std::vector<obs_source_t *> &sources, core::Role r)
 	EditContext::instance().markDirty();
 }
 
-void setMain(obs_source_t *source, bool main)
+std::vector<OBSSource> videoSources()
 {
-	if (!source)
-		return;
-	if (main) {
-		obs_enum_sources(
-			[](void *, obs_source_t *s) {
-				OBSDataAutoRelease priv = obs_source_get_private_settings(s);
-				obs_data_erase(priv, kMainKey);
-				return true;
-			},
-			nullptr);
-		if (explicitRole(source) != core::Role::Camera)
-			writeRole(source, core::Role::Camera);
-	}
-	OBSDataAutoRelease priv = obs_source_get_private_settings(source);
-	obs_data_set_bool(priv, kMainKey, main);
-	EditContext::instance().markDirty();
+	std::vector<OBSSource> out;
+	obs_enum_sources(
+		[](void *p, obs_source_t *s) {
+			if ((obs_source_get_output_flags(s) & OBS_SOURCE_VIDEO) && !obs_source_is_group(s) &&
+			    !obs_source_is_scene(s))
+				static_cast<std::vector<OBSSource> *>(p)->push_back(s);
+			return true;
+		},
+		&out);
+	return out;
+}
+
+int sceneCount(obs_source_t *source)
+{
+	struct Count {
+		obs_source_t *source;
+		int n;
+	} c{source, 0};
+	auto visit = [](void *p, obs_source_t *sceneSource) {
+		auto *c = static_cast<Count *>(p);
+		obs_scene_t *scene = obs_source_is_group(sceneSource) ? nullptr : obs_scene_from_source(sceneSource);
+		if (scene && obs_scene_find_source_recursive(scene, obs_source_get_name(c->source)))
+			c->n++;
+		return true;
+	};
+	obs_enum_scenes(visit, &c);
+	return c.n;
 }
 
 } // namespace layouts::roles

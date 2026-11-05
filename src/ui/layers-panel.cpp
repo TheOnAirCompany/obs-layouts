@@ -18,10 +18,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "layers-panel.hpp"
 
+#include "role-ui.hpp"
 #include "theme.hpp"
 #include "widgets.hpp"
 
 #include "obs/edit-context.hpp"
+#include "obs/roles.hpp"
 
 #include <obs-frontend-api.h>
 
@@ -33,6 +35,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <set>
 #include <cstring>
 #include <map>
 #include <string>
@@ -42,46 +45,8 @@ namespace layouts::ui {
 
 namespace {
 
-enum Column { kName = 0, kLock = 1, kEye = 2 };
-enum Role { kIdRole = Qt::UserRole, kGroupRole, kIsGroupRole };
-
-QString kindIcon(obs_source_t *src)
-{
-	if (!src)
-		return "square-dashed";
-	if (obs_source_is_group(src))
-		return "folder";
-	if (obs_source_is_scene(src))
-		return "clapperboard";
-	const char *id = obs_source_get_unversioned_id(src);
-	const uint32_t flags = obs_source_get_output_flags(src);
-	if (!(flags & OBS_SOURCE_VIDEO))
-		return "audio-lines";
-	if (!id)
-		return "square-dashed";
-	auto has = [id](const char *part) {
-		return strstr(id, part) != nullptr;
-	};
-	if (has("av_capture") || has("avcapture") || has("dshow") || has("v4l2") || has("decklink") ||
-	    has("ndi_source") || has("aja"))
-		return "video";
-	if (has("display_capture") || has("monitor_capture") || has("screen_capture") || has("xshm") ||
-	    has("desktop-capture"))
-		return "monitor";
-	if (has("window_capture") || has("game_capture") || has("window-capture"))
-		return "app-window";
-	if (has("image_source") || has("slideshow"))
-		return "image";
-	if (has("text_"))
-		return "type";
-	if (has("browser"))
-		return "globe";
-	if (has("ffmpeg_source") || has("vlc_source") || has("media"))
-		return "film";
-	if (has("color_source"))
-		return "square";
-	return "square-dashed";
-}
+enum Column { kName = 0, kType = 1, kLock = 2, kEye = 3 };
+enum Role { kIdRole = Qt::UserRole, kGroupRole, kIsGroupRole, kRoleRole };
 
 /* ---- undoable layer edits ----
  * Each undo entry names the item by the top scene's uuid, its id and its source's uuid
@@ -305,9 +270,11 @@ LayersPanel::LayersPanel(QWidget *parent) : QWidget(parent)
 	v->setSpacing(tokens::kRowSpacing);
 
 	v->addWidget(sectionTitle(T("Layers.Title"), this));
+	filter_ = new RoleFilterBar(this);
+	v->addWidget(filter_);
 
 	tree_ = new LayerTree(this);
-	tree_->setColumnCount(3);
+	tree_->setColumnCount(4);
 	tree_->setHeaderHidden(true);
 	tree_->setRootIsDecorated(true);
 	tree_->setIndentation(14);
@@ -320,6 +287,9 @@ LayersPanel::LayersPanel(QWidget *parent) : QWidget(parent)
 	tree_->setIconSize(QSize(tokens::kIconSize, tokens::kIconSize));
 	tree_->header()->setStretchLastSection(false);
 	tree_->header()->setSectionResizeMode(kName, QHeaderView::Stretch);
+	tree_->header()->setSectionResizeMode(kType, QHeaderView::Fixed);
+	tree_->header()->resizeSection(kType, rolePillSize().width() + 8);
+	tree_->setItemDelegateForColumn(kType, new PillDelegate(tree_));
 	tree_->header()->setSectionResizeMode(kLock, QHeaderView::Fixed);
 	tree_->header()->setSectionResizeMode(kEye, QHeaderView::Fixed);
 	tree_->header()->resizeSection(kLock, tokens::kIconButton);
@@ -339,6 +309,7 @@ LayersPanel::LayersPanel(QWidget *parent) : QWidget(parent)
 		signature_.clear();
 		refresh();
 	});
+	connect(filter_, &RoleFilterBar::changed, this, &LayersPanel::applyFilter);
 	connect(tree_, &QTreeWidget::itemSelectionChanged, this, &LayersPanel::onUserSelection);
 	connect(tree_, &QTreeWidget::itemClicked, this, &LayersPanel::onClicked);
 	connect(tree_, &QTreeWidget::itemChanged, this, &LayersPanel::onRenamed);
@@ -365,7 +336,13 @@ void LayersPanel::refresh()
 	/* Only rebuild when the list itself changed (not on every transform). */
 	QString sig = EditContext::instance().sceneUuid();
 	for (const ItemEntry &e : EditContext::instance().items())
-		sig += QString("|%1:%2:%3:%4:%5").arg(e.groupId).arg(e.id).arg(e.visible).arg(e.locked).arg(e.name);
+		sig += QString("|%1:%2:%3:%4:%5:%6")
+			       .arg(e.groupId)
+			       .arg(e.id)
+			       .arg(e.visible)
+			       .arg(e.locked)
+			       .arg(e.name)
+			       .arg((int)roles::role(obs_sceneitem_get_source(e.item)));
 	if (sig != signature_) {
 		signature_ = sig;
 		rebuild();
@@ -381,6 +358,8 @@ void LayersPanel::rebuild()
 	dim.setAlphaF(0.35);
 	tree_->clear();
 	std::map<int64_t, QTreeWidgetItem *> groups;
+	std::map<core::Role, int> counts;
+	std::set<obs_source_t *> counted; /* a source twice in the scene counts once */
 	const std::vector<ItemEntry> &items = EditContext::instance().items();
 	/* items are in render order (bottom first): prepend so the front is on top. */
 	for (const ItemEntry &e : items) {
@@ -389,11 +368,20 @@ void LayersPanel::rebuild()
 		row->setData(kName, kIdRole, (qlonglong)e.id);
 		row->setData(kName, kGroupRole, (qlonglong)e.groupId);
 		row->setData(kName, kIsGroupRole, e.isGroup);
-		row->setIcon(kName, icon(kindIcon(obs_sceneitem_get_source(e.item)), e.visible ? text : dim));
+		row->setIcon(kName, icon(sourceIcon(obs_sceneitem_get_source(e.item)), e.visible ? text : dim));
 		row->setIcon(kLock, icon(e.locked ? "lock" : "lock-open", e.locked ? text : dim));
 		row->setIcon(kEye, icon(e.visible ? "eye" : "eye-off", e.visible ? dim : text));
 		row->setToolTip(kLock, T(e.locked ? "Layers.Unlock" : "Layers.Lock"));
 		row->setToolTip(kEye, T(e.visible ? "Layers.Hide" : "Layers.Show"));
+		if (!e.isGroup) {
+			obs_source_t *src = obs_sceneitem_get_source(e.item);
+			const core::Role r = roles::role(src);
+			row->setData(kName, kRoleRole, (int)r);
+			row->setIcon(kType, rolePill(r));
+			row->setToolTip(kType, T("Layers.Type").arg(roleName(r)));
+			if (counted.insert(src).second)
+				counts[r]++;
+		}
 		if (!e.visible)
 			row->setForeground(kName, dim);
 		Qt::ItemFlags flags = Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsEditable |
@@ -414,7 +402,37 @@ void LayersPanel::rebuild()
 	tree_->invisibleRootItem()->setFlags(Qt::ItemIsEnabled | Qt::ItemIsDropEnabled);
 	tree_->setVisible(!items.empty());
 	empty_->setVisible(items.empty());
+	filter_->setCounts(counts, (int)counted.size());
+	filter_->setVisible(!items.empty());
 	updating_ = false;
+	applyFilter();
+}
+
+void LayersPanel::applyFilter()
+{
+	const bool filtering = filter_->filtering();
+	auto accepted = [this](QTreeWidgetItem *row) {
+		return filter_->accepts((core::Role)row->data(kName, kRoleRole).toInt());
+	};
+	for (int i = 0; i < tree_->topLevelItemCount(); i++) {
+		QTreeWidgetItem *top = tree_->topLevelItem(i);
+		if (top->data(kName, kIsGroupRole).toBool()) {
+			/* A group stays while one of its sources matches. */
+			bool any = false;
+			for (int c = 0; c < top->childCount(); c++) {
+				const bool on = !filtering || accepted(top->child(c));
+				top->child(c)->setHidden(!on);
+				any = any || on;
+			}
+			top->setHidden(filtering && !any);
+			if (filtering && any)
+				top->setExpanded(true);
+		} else {
+			top->setHidden(filtering && !accepted(top));
+		}
+	}
+	/* Reordering a filtered list would move rows past hidden ones: off while filtering. */
+	tree_->setDragDropMode(filtering ? QAbstractItemView::NoDragDrop : QAbstractItemView::InternalMove);
 }
 
 void LayersPanel::syncSelection()
@@ -461,9 +479,26 @@ void LayersPanel::onUserSelection()
 
 void LayersPanel::onClicked(QTreeWidgetItem *row, int column)
 {
+	EditContext &ctx = EditContext::instance();
+	if (column == kType && !row->data(kName, kIsGroupRole).toBool()) {
+		/* The type of the clicked source, or of every selected source when it is selected. */
+		std::vector<obs_source_t *> sources;
+		const QList<QTreeWidgetItem *> rows = row->isSelected() ? tree_->selectedItems()
+									: QList<QTreeWidgetItem *>{row};
+		for (QTreeWidgetItem *r : rows) {
+			const ItemEntry *e =
+				ctx.find(r->data(kName, kIdRole).toLongLong(), r->data(kName, kGroupRole).toLongLong());
+			obs_source_t *src = e && !e->isGroup ? obs_sceneitem_get_source(e->item) : nullptr;
+			if (src && std::find(sources.begin(), sources.end(), src) == sources.end())
+				sources.push_back(src);
+		}
+		const QRect cell = tree_->visualItemRect(row);
+		const int x = tree_->header()->sectionPosition(kType);
+		chooseRole(sources, tree_->viewport()->mapToGlobal(QPoint(x, cell.bottom())), this);
+		return;
+	}
 	if (column != kLock && column != kEye)
 		return;
-	EditContext &ctx = EditContext::instance();
 	const ItemEntry *e =
 		ctx.find(row->data(kName, kIdRole).toLongLong(), row->data(kName, kGroupRole).toLongLong());
 	if (!e || !ctx.canEdit() || !ctx.sceneSource())

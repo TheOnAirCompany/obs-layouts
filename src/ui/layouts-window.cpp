@@ -18,18 +18,24 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "layouts-window.hpp"
 
+#include "builder-panel.hpp"
 #include "canvas-dock.hpp"
 #include "canvas-view.hpp"
 #include "inspector-dock.hpp"
 #include "layers-panel.hpp"
 #include "theme.hpp"
+#include "widgets.hpp"
 
 #include "obs/store.hpp"
 
 #include <QCloseEvent>
 #include <QHBoxLayout>
 #include <QScreen>
+#include <QAbstractButton>
+#include <QButtonGroup>
 #include <QSplitter>
+#include <QStackedWidget>
+#include <QVBoxLayout>
 
 namespace layouts::ui {
 
@@ -43,14 +49,41 @@ LayoutsWindow::LayoutsWindow(QWidget *obsMainWindow) : QWidget(obsMainWindow, Qt
 	lay->setContentsMargins(0, 0, 0, 0);
 	split_ = new QSplitter(Qt::Horizontal, this);
 	split_->setChildrenCollapsible(false);
-	layers_ = new LayersPanel(split_);
-	layers_->setMinimumWidth(160);
+	/* Left: the mode switch above Layers (Scene) or the collection's sources (Builder). */
+	auto *left = new QWidget(split_);
+	left->setMinimumWidth(160);
+	auto *lv = new QVBoxLayout(left);
+	lv->setContentsMargins(0, 0, 0, 0);
+	lv->setSpacing(0);
+	auto *switchRow = new QWidget(left);
+	switchRow->setObjectName("LayoutsModeSwitch");
+	modeSwitch_ = segmented({T("Mode.Scene"), T("Mode.Builder")}, switchRow);
+	switchRow->layout()->setContentsMargins(tokens::kPanelMargin, tokens::kPanelMargin, 0, 0);
+	modeSwitch_->button(0)->setToolTip(T("Mode.SceneTooltip"));
+	modeSwitch_->button(1)->setToolTip(T("Mode.BuilderTooltip"));
+	lv->addWidget(switchRow);
+	leftStack_ = new QStackedWidget(left);
+	layers_ = new LayersPanel(leftStack_);
+	builderSources_ = new BuilderSources(leftStack_);
+	leftStack_->addWidget(layers_);
+	leftStack_->addWidget(builderSources_);
+	lv->addWidget(leftStack_, 1);
+
 	canvas_ = new CanvasDock(split_);
-	inspector_ = new InspectorDock(split_);
-	inspector_->setMinimumWidth(260);
-	split_->addWidget(layers_);
+
+	rightStack_ = new QStackedWidget(split_);
+	rightStack_->setMinimumWidth(260);
+	inspector_ = new InspectorDock(rightStack_);
+	builderPanel_ = new BuilderPanel(builderSources_, rightStack_);
+	rightStack_->addWidget(inspector_);
+	rightStack_->addWidget(builderPanel_);
+
+	split_->addWidget(left);
 	split_->addWidget(canvas_);
-	split_->addWidget(inspector_);
+	split_->addWidget(rightStack_);
+	connect(modeSwitch_, &QButtonGroup::idClicked, this,
+		[this](int id) { setMode(id ? Mode::Builder : Mode::Scene); });
+	setMode(Mode::Scene);
 	split_->setStretchFactor(0, 0);
 	split_->setStretchFactor(1, 1);
 	split_->setStretchFactor(2, 0);
@@ -61,6 +94,16 @@ LayoutsWindow::LayoutsWindow(QWidget *obsMainWindow) : QWidget(obsMainWindow, Qt
 		split_->restoreState(s.splitterState);
 	else
 		split_->setSizes({tokens::kLayersWidth, 900, tokens::kInspectorWidth});
+}
+
+void LayoutsWindow::setMode(Mode m)
+{
+	mode_ = m;
+	const int i = m == Mode::Builder ? 1 : 0;
+	modeSwitch_->button(i)->setChecked(true);
+	leftStack_->setCurrentIndex(i);
+	rightStack_->setCurrentIndex(i);
+	setWindowTitle(m == Mode::Builder ? T("Window.BuilderTitle") : T("Window.Title"));
 }
 
 void LayoutsWindow::open()

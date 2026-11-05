@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.0 — not released yet
+
+- **Source types**: Host, Cam, Screen, BG (background) and CG (graphics: logo, banner, name,
+  frame). Set them from a colored pill on each row (several sources at once); they are saved
+  with the scene collection and kept when a source is renamed. Until you set one, Layouts
+  suggests it from the start of the name (`CAM _ GUEST 1`, `SCREEN _ RIGHT`, `BG _ DYNAMIQUE`,
+  `LOGO`, `HOST`..., case and accents ignored), then from the kind of source (video capture,
+  NDI, DeckLink = Cam; display or window capture = Screen). A web source named `CAM ...` is now
+  a camera in broadcast layouts.
+- **Filter Layers by type**: a row of chips (All, Host, Cam, Screen, BG, CG, Not set) with counts.
+- **Layouts Builder** (Tools > Layouts Builder, or the Scene | Builder switch at the top left of
+  the window): every source of the collection once, whatever scene it is in, with its type and
+  the number of scenes that use it. Take sources in or out of the show, then create in one
+  click a full-screen scene per host, cam and screen and a scene for every broadcast layout that
+  fits. The background covers the canvas at the very back of every scene, the graphics go on
+  top at the place they already have, hosts take the large tile, and the layout can be locked.
+- Broadcast layouts in Scene mode: hosts take the large tile; backgrounds and graphics in the
+  selection are never put in a tile.
+
 ## 0.3.0 — not released yet
 
 - **Layers panel** on the left of the Layouts window, like a design tool: the sources of the edited

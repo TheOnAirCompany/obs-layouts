@@ -69,7 +69,11 @@ struct ViewSettings {
 	double broadcastGap = 8; /* broadcast layouts */
 	double broadcastMargin = 0;
 	bool broadcastLock = true;
-	int broadcastKinds = 0; /* 0 auto, 1 all cameras, 2 all screens */
+	int broadcastKinds = 0;  /* 0 auto, 1 all cameras, 2 all screens */
+	bool builderSolo = true; /* Builder: a full-screen scene per camera and screen */
+	bool builderLayouts = true;
+	bool builderBackground = true;
+	bool builderGraphics = true;
 	QColor guideColor{0xFF, 0x3D, 0x71};
 };
 

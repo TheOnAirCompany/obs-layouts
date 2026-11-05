@@ -321,6 +321,10 @@ void Store::loadSettings()
 	f("broadcast_gap", s.broadcastGap, 0.0, 1000.0);
 	f("broadcast_margin", s.broadcastMargin, 0.0, 1000.0);
 	b("broadcast_lock", s.broadcastLock);
+	b("builder_solo", s.builderSolo);
+	b("builder_layouts", s.builderLayouts);
+	b("builder_background", s.builderBackground);
+	b("builder_graphics", s.builderGraphics);
 	if (obs_data_has_user_value(d, "broadcast_kinds"))
 		s.broadcastKinds = std::clamp((int)obs_data_get_int(d, "broadcast_kinds"), 0, 2);
 	s.windowGeometry = QByteArray::fromBase64(obs_data_get_string(d, "window_geometry"));
@@ -385,6 +389,10 @@ void Store::saveSettings()
 	obs_data_set_double(d, "broadcast_gap", s.broadcastGap);
 	obs_data_set_double(d, "broadcast_margin", s.broadcastMargin);
 	obs_data_set_bool(d, "broadcast_lock", s.broadcastLock);
+	obs_data_set_bool(d, "builder_solo", s.builderSolo);
+	obs_data_set_bool(d, "builder_layouts", s.builderLayouts);
+	obs_data_set_bool(d, "builder_background", s.builderBackground);
+	obs_data_set_bool(d, "builder_graphics", s.builderGraphics);
 	obs_data_set_int(d, "broadcast_kinds", s.broadcastKinds);
 	obs_data_set_string(d, "window_geometry", s.windowGeometry.toBase64().constData());
 	obs_data_set_string(d, "splitter_state_3", s.splitterState.toBase64().constData());
