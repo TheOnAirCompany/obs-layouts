@@ -45,6 +45,13 @@ is used for state (selection, snapping, live).
 | `kThumbCamera` (0.2) | `#5FB4F5` | broadcast layouts gallery: camera tiles |
 | `kThumbScreen` (0.2) | `#C9A24A` | broadcast layouts gallery: screen tiles |
 | `kLayersWidth` (0.3) | 240 px | Layers panel width on first launch |
+| `kRoleHost` (0.4) | `#7ED6C4` | type pill and filter dot: Host (**provisional**) |
+| `kRoleCamera` (0.4) | = `kThumbCamera` | type pill: Cam |
+| `kRoleScreen` (0.4) | = `kThumbScreen` | type pill: Screen |
+| `kRoleBackground` (0.4) | `#8E8AA3` | type pill: BG |
+| `kRoleGraphics` (0.4) | `#E2708A` | type pill: CG |
+| `kRoleNone` (0.4) | `#7D828E` | dashed pill: type not set |
+| `kRolePillText` (0.4) | `#15171C` | text on a filled pill |
 | `kOutside` | `#1B1C1F` | around the canvas |
 | `kCanvasBackdrop` | black | canvas behind the scene |
 | `kLiveFrame` | `#E5484D`, 2 px | frame around the canvas when on air |
@@ -73,4 +80,4 @@ is used for state (selection, snapping, live).
 
 ## Review
 All values above were reviewed on screenshots of the Inspector and the Canvas in OBS 33.0.1 and
-approved as is (2026-11-04), including the 0.2 tokens `kPreview`, `kPreviewFill` and `kCrop`, and the broadcast gallery colors `kThumbCamera` and `kThumbScreen`, and the 0.3 `kLayersWidth`. Changing a value means editing `src/ui/theme.hpp` only.
+approved as is (2026-11-04), including the 0.2 tokens `kPreview`, `kPreviewFill` and `kCrop`, and the broadcast gallery colors `kThumbCamera` and `kThumbScreen`, and the 0.3 `kLayersWidth`. The 0.4 type colors (BG lavender, CG rose, pills filled) were chosen on the Builder review page (2026-11-05); `kRoleHost` is still provisional. Changing a value means editing `src/ui/theme.hpp` only.

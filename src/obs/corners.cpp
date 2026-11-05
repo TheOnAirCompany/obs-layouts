@@ -28,6 +28,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QString>
 
 #include <algorithm>
+#include <map>
+#include <mutex>
+#include <string>
 #include <cmath>
 #include <vector>
 
@@ -42,14 +45,24 @@ QString tr(const char *key)
 
 /* ---- the filter ------------------------------------------------------------- */
 
+/* Scenes being rendered on this thread, innermost last: the scene filter pushes its
+ * token while its scene renders (see SceneMarker). */
+thread_local std::vector<std::string> t_scenes;
+
+struct Radius {
+	float r = 0.0f;     /* source pixels, horizontal */
+	float ratio = 1.0f; /* vertical radius / horizontal radius (non-uniform item scale) */
+};
+
 struct Filter {
 	obs_source_t *context = nullptr;
 	gs_effect_t *effect = nullptr;
 	gs_eparam_t *size = nullptr;
 	gs_eparam_t *rect = nullptr;
 	gs_eparam_t *radius = nullptr;
-	float r = 0.0f;     /* source pixels, horizontal */
-	float ratio = 1.0f; /* vertical radius / horizontal radius (non-uniform item scale) */
+	std::mutex lock;
+	Radius any;                           /* scenes without their own value */
+	std::map<std::string, Radius> scenes; /* scene token -> radius */
 };
 
 const char *filterName(void *)
@@ -57,12 +70,27 @@ const char *filterName(void *)
 	return obs_module_text("Corners.FilterName");
 }
 
+Radius readRadius(obs_data_t *d)
+{
+	Radius r;
+	r.r = (float)std::max(0.0, obs_data_get_double(d, "radius"));
+	const double ratio = obs_data_get_double(d, "ratio");
+	r.ratio = (float)(ratio > 0.0 ? ratio : 1.0);
+	return r;
+}
+
 void filterUpdate(void *data, obs_data_t *settings)
 {
 	auto *f = static_cast<Filter *>(data);
-	f->r = (float)std::max(0.0, obs_data_get_double(settings, "radius"));
-	const double ratio = obs_data_get_double(settings, "ratio");
-	f->ratio = (float)(ratio > 0.0 ? ratio : 1.0);
+	std::map<std::string, Radius> scenes;
+	OBSDataArrayAutoRelease list = obs_data_get_array(settings, "scenes");
+	for (size_t i = 0; i < obs_data_array_count(list); i++) {
+		OBSDataAutoRelease it = obs_data_array_item(list, i);
+		scenes[obs_data_get_string(it, "scene")] = readRadius(it);
+	}
+	std::lock_guard<std::mutex> g(f->lock);
+	f->any = readRadius(settings);
+	f->scenes = std::move(scenes);
 }
 
 void *filterCreate(obs_data_t *settings, obs_source_t *context)
@@ -95,7 +123,7 @@ void filterDestroy(void *data)
 
 void filterDefaults(obs_data_t *settings)
 {
-	obs_data_set_default_double(settings, "radius", 24.0);
+	obs_data_set_default_double(settings, "radius", 0.0);
 	obs_data_set_default_double(settings, "ratio", 1.0);
 }
 
@@ -143,13 +171,31 @@ void visibleRect(float w, float h, float &left, float &top, float &right, float 
 
 const enum gs_color_space kSpaces[] = {GS_CS_SRGB, GS_CS_SRGB_16F, GS_CS_709_EXTENDED};
 
+bool transitionRadius(Filter *f, obs_source_t *source, Radius &out);
+
 void filterRender(void *data, gs_effect_t *)
 {
 	auto *f = static_cast<Filter *>(data);
 	obs_source_t *target = obs_filter_get_target(f->context);
 	const uint32_t w = target ? obs_source_get_width(target) : 0;
 	const uint32_t h = target ? obs_source_get_height(target) : 0;
-	if (!f->effect || f->r < 0.5f || !w || !h) {
+	Radius rad;
+	{
+		std::lock_guard<std::mutex> g(f->lock);
+		rad = f->any;
+		if (!t_scenes.empty()) {
+			const auto it = f->scenes.find(t_scenes.back());
+			if (it != f->scenes.end())
+				rad = it->second;
+		}
+	}
+	/* Drawn outside any scene: a transition that draws sources itself (Move). */
+	if (t_scenes.empty()) {
+		Radius during;
+		if (transitionRadius(f, obs_filter_get_parent(f->context), during))
+			rad = during;
+	}
+	if (!f->effect || rad.r < 0.5f || !w || !h) {
 		obs_source_skip_video_filter(f->context);
 		return;
 	}
@@ -163,7 +209,7 @@ void filterRender(void *data, gs_effect_t *)
 		return;
 	struct vec2 size, radius;
 	vec2_set(&size, (float)w, (float)h);
-	vec2_set(&radius, f->r, f->r * f->ratio);
+	vec2_set(&radius, rad.r, rad.r * rad.ratio);
 	struct vec4 rect;
 	vec4_set(&rect, l, t, r, b);
 	gs_effect_set_vec2(f->size, &size);
@@ -182,20 +228,174 @@ enum gs_color_space filterColorSpace(void *data, size_t, const enum gs_color_spa
 	return target ? obs_source_get_color_space(target, OBS_COUNTOF(kSpaces), kSpaces) : GS_CS_SRGB;
 }
 
+/* ---- scene marker ------------------------------------------------------------- */
+
+/* A filter on each scene that has its own corners. While the scene renders it tells the
+ * corner filters which scene they are drawn in, so a radius belongs to the scene and not
+ * to the source. It renders nothing itself. Its token is copied when OBS duplicates the
+ * scene (Studio Mode), so the copy on the program keeps the corners of its original. */
+struct SceneMarker {
+	obs_source_t *context = nullptr;
+	std::mutex lock;
+	std::string token;
+};
+
+const char *markerName(void *)
+{
+	return obs_module_text("Corners.SceneFilterName");
+}
+
+void markerUpdate(void *data, obs_data_t *settings)
+{
+	auto *m = static_cast<SceneMarker *>(data);
+	std::lock_guard<std::mutex> g(m->lock);
+	m->token = obs_data_get_string(settings, "token");
+}
+
+void *markerCreate(obs_data_t *settings, obs_source_t *context)
+{
+	auto *m = new SceneMarker;
+	m->context = context;
+	markerUpdate(m, settings);
+	return m;
+}
+
+void markerDestroy(void *data)
+{
+	delete static_cast<SceneMarker *>(data);
+}
+
+void markerRender(void *data, gs_effect_t *)
+{
+	auto *m = static_cast<SceneMarker *>(data);
+	{
+		std::lock_guard<std::mutex> g(m->lock);
+		t_scenes.push_back(m->token);
+	}
+	obs_source_skip_video_filter(m->context); /* the scene draws itself, as without the filter */
+	t_scenes.pop_back();
+}
+
+enum gs_color_space markerColorSpace(void *data, size_t count, const enum gs_color_space *preferred)
+{
+	auto *m = static_cast<SceneMarker *>(data);
+	obs_source_t *target = obs_filter_get_target(m->context);
+	return target ? obs_source_get_color_space(target, count, preferred) : GS_CS_SRGB;
+}
+
+/* ---- transitions that draw the sources themselves ------------------------------ */
+
+/* Token of a scene, read from its marker filter (render thread safe). */
+std::string tokenOf(obs_source_t *scene)
+{
+	struct Find {
+		std::string token;
+		bool found = false;
+	} f;
+	obs_source_enum_filters(
+		scene,
+		[](obs_source_t *, obs_source_t *filter, void *p) {
+			auto *f = static_cast<Find *>(p);
+			if (f->found || strcmp(obs_source_get_unversioned_id(filter), kSceneFilterId) != 0)
+				return;
+			auto *m = static_cast<SceneMarker *>(obs_obj_get_data(filter));
+			if (!m)
+				return;
+			std::lock_guard<std::mutex> g(m->lock);
+			f->token = m->token;
+			f->found = true;
+		},
+		&f);
+	return f.token;
+}
+
+/* Radius of the source in this scene; false when the scene doesn't show it. */
+bool radiusIn(Filter *f, obs_source_t *sceneSource, obs_source_t *source, Radius &out)
+{
+	obs_scene_t *scene = sceneSource ? obs_scene_from_source(sceneSource) : nullptr;
+	if (!scene || !source || !obs_scene_find_source_recursive(scene, obs_source_get_name(source)))
+		return false;
+	const std::string token = tokenOf(sceneSource);
+	std::lock_guard<std::mutex> g(f->lock);
+	const auto it = f->scenes.find(token);
+	out = it != f->scenes.end() ? it->second : f->any;
+	return true;
+}
+
+float easeInOutCubic(float t)
+{
+	return t < 0.5f ? 4.0f * t * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 3.0f) / 2.0f;
+}
+
+/* Move Transition and the like draw each source of the two scenes themselves, never the
+ * scenes: no scene marker runs. The radius then comes from the transition on the
+ * program: the one of scene A, the one of scene B, or a blend of both while the source
+ * moves from one to the other (eased like Move's default, cubic in and out). */
+/* The transition on the program, kept from the UI thread: asking libobs for the output
+ * channel while rendering would wait on the lock the render itself holds. */
+std::mutex g_programLock;
+OBSWeakSource g_program;
+
+void frontendEvent(enum obs_frontend_event event, void *)
+{
+	switch (event) {
+	case OBS_FRONTEND_EVENT_FINISHED_LOADING:
+	case OBS_FRONTEND_EVENT_SCENE_CHANGED:
+	case OBS_FRONTEND_EVENT_TRANSITION_CHANGED:
+	case OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED:
+	case OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED:
+	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED:
+		watchProgram();
+		break;
+	default:
+		break;
+	}
+}
+
+bool transitionRadius(Filter *f, obs_source_t *source, Radius &out)
+{
+	obs_source_t *raw = nullptr;
+	{
+		std::lock_guard<std::mutex> g(g_programLock);
+		raw = g_program ? obs_weak_source_get_source(g_program) : nullptr;
+	}
+	OBSSourceAutoRelease tr = raw;
+	if (!tr || obs_source_get_type(tr) != OBS_SOURCE_TYPE_TRANSITION || !obs_transition_is_active(tr))
+		return false;
+	OBSSourceAutoRelease a = obs_transition_get_source(tr, OBS_TRANSITION_SOURCE_A);
+	OBSSourceAutoRelease b = obs_transition_get_source(tr, OBS_TRANSITION_SOURCE_B);
+	Radius ra, rb;
+	const bool inA = radiusIn(f, a, source, ra);
+	const bool inB = radiusIn(f, b, source, rb);
+	if (!inA && !inB)
+		return false;
+	if (!inA || !inB) {
+		out = inA ? ra : rb;
+		return true;
+	}
+	const float t = easeInOutCubic(std::clamp(obs_transition_get_time(tr), 0.0f, 1.0f));
+	out.r = ra.r + (rb.r - ra.r) * t;
+	out.ratio = ra.ratio + (rb.ratio - ra.ratio) * t;
+	return true;
+}
+
 /* ---- editing ------------------------------------------------------------------ */
 
-obs_source_t *findFilter(obs_source_t *source)
+obs_source_t *findFilter(obs_source_t *source, const char *id = kFilterId)
 {
-	obs_source_t *found = nullptr;
+	struct Find {
+		const char *id;
+		obs_source_t *found;
+	} f{id, nullptr};
 	obs_source_enum_filters(
 		source,
 		[](obs_source_t *, obs_source_t *filter, void *p) {
-			auto **out = static_cast<obs_source_t **>(p);
-			if (!*out && strcmp(obs_source_get_unversioned_id(filter), kFilterId) == 0)
-				*out = filter;
+			auto *f = static_cast<Find *>(p);
+			if (!f->found && strcmp(obs_source_get_unversioned_id(filter), f->id) == 0)
+				f->found = filter;
 		},
-		&found);
-	return found; /* weak: valid while the source keeps it */
+		&f);
+	return f.found; /* weak: valid while the source keeps it */
 }
 
 /* World scale of the source pixels of an item (its own scale, bounds and group). */
@@ -207,35 +407,70 @@ core::Vec2 worldScale(const ItemEntry &e)
 	return {std::hypot(x.x, x.y), std::hypot(y.x, y.y)};
 }
 
-/* Settings of the filter of a source: radius in source pixels and vertical ratio. */
-void sourceRadius(obs_source_t *source, double &r, double &ratio)
+/* ---- settings of a source's corner filter ---- */
+
+struct Settings {
+	Radius any;
+	std::map<std::string, Radius> scenes;
+	bool exists = false;
+};
+
+Settings readSettings(obs_source_t *source)
 {
-	r = 0.0;
-	ratio = 1.0;
-	if (obs_source_t *filter = findFilter(source)) {
-		OBSDataAutoRelease s = obs_source_get_settings(filter);
-		r = obs_data_get_double(s, "radius");
-		ratio = obs_data_get_double(s, "ratio");
-		if (ratio <= 0.0)
-			ratio = 1.0;
+	Settings st;
+	obs_source_t *filter = findFilter(source);
+	if (!filter)
+		return st;
+	st.exists = true;
+	OBSDataAutoRelease d = obs_source_get_settings(filter);
+	st.any = readRadius(d);
+	OBSDataArrayAutoRelease list = obs_data_get_array(d, "scenes");
+	for (size_t i = 0; i < obs_data_array_count(list); i++) {
+		OBSDataAutoRelease it = obs_data_array_item(list, i);
+		st.scenes[obs_data_get_string(it, "scene")] = readRadius(it);
 	}
+	return st;
 }
 
-/* Writes the radius (source pixels) of a source: 0 removes the filter, otherwise it is
- * created (last in the chain, so it sees the final image) or updated. */
-void writeRadius(obs_source_t *source, double r, double ratio)
+obs_data_t *toData(const Settings &st)
 {
+	obs_data_t *d = obs_data_create();
+	obs_data_set_double(d, "radius", st.any.r);
+	obs_data_set_double(d, "ratio", st.any.ratio);
+	OBSDataArrayAutoRelease list = obs_data_array_create();
+	for (const auto &[token, r] : st.scenes) {
+		OBSDataAutoRelease it = obs_data_create();
+		obs_data_set_string(it, "scene", token.c_str());
+		obs_data_set_double(it, "radius", r.r);
+		obs_data_set_double(it, "ratio", r.ratio);
+		obs_data_array_push_back(list, it);
+	}
+	obs_data_set_array(d, "scenes", list);
+	return d;
+}
+
+/* Writes the settings: no radius anywhere removes the filter, otherwise it is created
+ * (last in the chain, so it sees the final image) or updated. */
+void writeSettings(obs_source_t *source, Settings st)
+{
+	for (auto it = st.scenes.begin(); it != st.scenes.end();) {
+		if (it->second.r < 0.5f && st.any.r < 0.5f)
+			it = st.scenes.erase(it); /* 0 where the default is 0 too: nothing to keep */
+		else
+			++it;
+	}
+	bool any = st.any.r >= 0.5f;
+	for (const auto &[token, r] : st.scenes)
+		any = any || r.r >= 0.5f;
 	obs_source_t *filter = findFilter(source);
-	if (r < 0.5) {
+	if (!any) {
 		if (filter)
 			obs_source_filter_remove(source, filter);
 		return;
 	}
-	OBSDataAutoRelease s = obs_data_create();
-	obs_data_set_double(s, "radius", r);
-	obs_data_set_double(s, "ratio", ratio);
+	OBSDataAutoRelease d = toData(st);
 	if (filter) {
-		obs_source_update(filter, s);
+		obs_source_update(filter, d);
 		return;
 	}
 	QString name = tr("Corners.FilterName");
@@ -245,12 +480,99 @@ void writeRadius(obs_source_t *source, double r, double ratio)
 			break;
 		name = tr("Corners.FilterName") + " " + QString::number(i);
 	}
-	OBSSourceAutoRelease created = obs_source_create_private(kFilterId, name.toUtf8().constData(), s);
+	OBSSourceAutoRelease created = obs_source_create_private(kFilterId, name.toUtf8().constData(), d);
 	if (created)
 		obs_source_filter_add(source, created);
 }
 
-/* Undo data: {items: [{source, radius, ratio}]}. */
+/* ---- scene tokens ---- */
+
+std::string markerToken(obs_source_t *scene)
+{
+	obs_source_t *marker = scene ? findFilter(scene, kSceneFilterId) : nullptr;
+	if (!marker)
+		return {};
+	OBSDataAutoRelease d = obs_source_get_settings(marker);
+	return obs_data_get_string(d, "token");
+}
+
+std::vector<OBSSource> sourcesWithCorners()
+{
+	std::vector<OBSSource> out;
+	obs_enum_all_sources(
+		[](void *p, obs_source_t *s) {
+			if (obs_source_get_type(s) != OBS_SOURCE_TYPE_FILTER && findFilter(s))
+				static_cast<std::vector<OBSSource> *>(p)->push_back(s);
+			return true;
+		},
+		&out);
+	return out;
+}
+
+/* The token of a scene being edited, created when missing. A scene duplicated by the
+ * user carries its original's token: it gets its own, keeping the corners it had. */
+std::string ensureToken(obs_source_t *scene)
+{
+	const std::string uuid = obs_source_get_uuid(scene);
+	obs_source_t *marker = findFilter(scene, kSceneFilterId);
+	const std::string old = markerToken(scene);
+	if (marker && old == uuid)
+		return uuid;
+	if (!old.empty()) {
+		for (const OBSSource &s : sourcesWithCorners()) {
+			Settings st = readSettings(s);
+			const auto it = st.scenes.find(old);
+			if (it != st.scenes.end() && !st.scenes.count(uuid)) {
+				st.scenes[uuid] = it->second;
+				writeSettings(s, st);
+			}
+		}
+	}
+	OBSDataAutoRelease d = obs_data_create();
+	obs_data_set_string(d, "token", uuid.c_str());
+	if (marker) {
+		obs_source_update(marker, d);
+	} else {
+		OBSSourceAutoRelease created = obs_source_create_private(
+			kSceneFilterId, tr("Corners.SceneFilterName").toUtf8().constData(), d);
+		if (created)
+			obs_source_filter_add(scene, created);
+	}
+	return uuid;
+}
+
+/* Corners set for every scene (Layouts 0.3, or the OBS Filters window) become values of
+ * each scene that uses the source, so that editing one scene leaves the others alone. */
+void splitPerScene(obs_source_t *source, Settings &st)
+{
+	if (st.any.r < 0.5f)
+		return;
+	std::vector<OBSSource> scenes;
+	struct Ctx {
+		obs_source_t *source;
+		std::vector<OBSSource> *scenes;
+	} c{source, &scenes};
+	obs_enum_scenes(
+		[](void *p, obs_source_t *sceneSource) {
+			auto *c = static_cast<Ctx *>(p);
+			obs_scene_t *scene = obs_source_is_group(sceneSource) ? nullptr
+									      : obs_scene_from_source(sceneSource);
+			if (scene && obs_scene_find_source_recursive(scene, obs_source_get_name(c->source)))
+				c->scenes->push_back(sceneSource);
+			return true;
+		},
+		&c);
+	for (const OBSSource &scene : scenes) {
+		const std::string token = ensureToken(scene);
+		if (!st.scenes.count(token))
+			st.scenes[token] = st.any;
+	}
+	st.any = Radius();
+}
+
+/* ---- undo ---- */
+
+/* Undo data: {items: [{source, settings}]}, settings "" when the source had no filter. */
 void applyData(const char *json)
 {
 	OBSDataAutoRelease d = obs_data_create_from_json(json);
@@ -258,8 +580,20 @@ void applyData(const char *json)
 	for (size_t i = 0; i < obs_data_array_count(items); i++) {
 		OBSDataAutoRelease it = obs_data_array_item(items, i);
 		OBSSourceAutoRelease source = obs_get_source_by_uuid(obs_data_get_string(it, "source"));
-		if (source)
-			writeRadius(source, obs_data_get_double(it, "radius"), obs_data_get_double(it, "ratio"));
+		if (!source)
+			continue;
+		const char *json = obs_data_get_string(it, "settings");
+		Settings st;
+		if (*json) {
+			OBSDataAutoRelease sd = obs_data_create_from_json(json);
+			st.any = readRadius(sd);
+			OBSDataArrayAutoRelease list = obs_data_get_array(sd, "scenes");
+			for (size_t k = 0; k < obs_data_array_count(list); k++) {
+				OBSDataAutoRelease e = obs_data_array_item(list, k);
+				st.scenes[obs_data_get_string(e, "scene")] = readRadius(e);
+			}
+		}
+		writeSettings(source, st);
 	}
 	EditContext::instance().markDirty();
 }
@@ -291,24 +625,30 @@ obs_data_t *snapshot(const std::vector<Target> &targets)
 	obs_data_t *d = obs_data_create();
 	OBSDataArrayAutoRelease items = obs_data_array_create();
 	for (const Target &t : targets) {
-		double r, ratio;
-		sourceRadius(t.source, r, ratio);
+		const Settings st = readSettings(t.source);
 		OBSDataAutoRelease it = obs_data_create();
 		obs_data_set_string(it, "source", obs_source_get_uuid(t.source));
-		obs_data_set_double(it, "radius", r);
-		obs_data_set_double(it, "ratio", ratio);
+		if (st.exists) {
+			OBSDataAutoRelease sd = toData(st);
+			obs_data_set_string(it, "settings", obs_data_get_json(sd));
+		} else {
+			obs_data_set_string(it, "settings", "");
+		}
 		obs_data_array_push_back(items, it);
 	}
 	obs_data_set_array(d, "items", items);
 	return d;
 }
 
-/* Canvas radius -> source settings, round corners on screen even with a stretched item. */
-void writeCanvasRadius(const Target &t, double canvasRadius)
+/* Canvas radius -> this scene's value, round corners on screen even with a stretched item. */
+void writeCanvasRadius(const Target &t, const std::string &token, double canvasRadius)
 {
 	const double sx = t.scale.x > 1e-9 ? t.scale.x : 1.0;
 	const double sy = t.scale.y > 1e-9 ? t.scale.y : 1.0;
-	writeRadius(t.source, std::max(0.0, canvasRadius) / sx, sx / sy);
+	Settings st = readSettings(t.source);
+	splitPerScene(t.source, st);
+	st.scenes[token] = {(float)(std::max(0.0, canvasRadius) / sx), (float)(sx / sy)};
+	writeSettings(t.source, st);
 }
 
 void addUndo(obs_data_t *before, obs_data_t *after)
@@ -322,12 +662,21 @@ void addUndo(obs_data_t *before, obs_data_t *after)
 
 struct Scrub {
 	std::vector<Target> targets;
+	std::string token;
 	OBSDataAutoRelease before;
 	bool active = false;
 };
 Scrub g_scrub;
 
 } // namespace
+
+void watchProgram()
+{
+	OBSSourceAutoRelease tr = obs_get_output_source(0);
+	OBSWeakSourceAutoRelease weak = tr ? obs_source_get_weak_source(tr) : nullptr;
+	std::lock_guard<std::mutex> g(g_programLock);
+	g_program = weak.Get();
+}
 
 void registerFilter()
 {
@@ -344,6 +693,19 @@ void registerFilter()
 	info.video_render = filterRender;
 	info.video_get_color_space = filterColorSpace;
 	obs_register_source(&info);
+
+	struct obs_source_info marker = {};
+	marker.id = kSceneFilterId;
+	marker.type = OBS_SOURCE_TYPE_FILTER;
+	marker.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_SRGB | OBS_SOURCE_CAP_DISABLED;
+	marker.get_name = markerName;
+	marker.create = markerCreate;
+	marker.destroy = markerDestroy;
+	marker.update = markerUpdate;
+	marker.video_render = markerRender;
+	marker.video_get_color_space = markerColorSpace;
+	obs_register_source(&marker);
+	obs_frontend_add_event_callback(frontendEvent, nullptr);
 }
 
 double radius(const ItemEntry &e)
@@ -351,47 +713,54 @@ double radius(const ItemEntry &e)
 	obs_source_t *source = obs_sceneitem_get_source(e.item);
 	if (e.isGroup || !source)
 		return 0.0;
-	double r, ratio;
-	sourceRadius(source, r, ratio);
-	return r * worldScale(e).x;
+	const Settings st = readSettings(source);
+	Radius r = st.any;
+	const auto it = st.scenes.find(markerToken(EditContext::instance().sceneSource()));
+	if (it != st.scenes.end())
+		r = it->second;
+	return r.r * worldScale(e).x;
 }
 
 bool setRadius(const core::Expression &expr)
 {
-	if (!expr.ok || !EditContext::instance().canEdit())
+	EditContext &ctx = EditContext::instance();
+	if (!expr.ok || !ctx.canEdit() || !ctx.sceneSource())
 		return false;
 	const std::vector<Target> targets = selectedTargets();
 	if (targets.empty())
 		return false;
 	OBSDataAutoRelease before = snapshot(targets);
+	const std::string token = ensureToken(ctx.sceneSource());
 	for (const Target &t : targets) {
 		double v = 0.0;
 		if (expr.apply(t.canvasRadius, v))
-			writeCanvasRadius(t, v);
+			writeCanvasRadius(t, token, v);
 	}
 	OBSDataAutoRelease after = snapshot(targets);
 	addUndo(before, after);
-	EditContext::instance().markDirty();
+	ctx.markDirty();
 	return true;
 }
 
 void scrub(double delta, bool finished)
 {
+	EditContext &ctx = EditContext::instance();
 	if (!g_scrub.active) {
-		if (!EditContext::instance().canEdit())
+		if (!ctx.canEdit() || !ctx.sceneSource())
 			return;
 		g_scrub.targets = selectedTargets();
 		g_scrub.before = snapshot(g_scrub.targets);
+		g_scrub.token = ensureToken(ctx.sceneSource());
 		g_scrub.active = true;
 	}
 	for (const Target &t : g_scrub.targets)
-		writeCanvasRadius(t, std::round(t.canvasRadius + delta));
+		writeCanvasRadius(t, g_scrub.token, std::round(t.canvasRadius + delta));
 	if (finished) {
 		OBSDataAutoRelease after = snapshot(g_scrub.targets);
 		addUndo(g_scrub.before, after);
 		g_scrub = Scrub();
 	}
-	EditContext::instance().markDirty();
+	ctx.markDirty();
 }
 
 } // namespace layouts::corners

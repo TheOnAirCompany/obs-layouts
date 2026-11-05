@@ -29,6 +29,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "core/broadcast.hpp"
 #include "core/layout.hpp"
 
+#include <obs.h>
+
 #include <functional>
 #include <optional>
 #include <string>
@@ -67,6 +69,14 @@ bool flip(Axis axis);
 bool fit(core::FitMode mode);
 bool originalSize();
 bool resetTransform();
+
+/* How each item fills its frame when W and H change its shape (saved on the scene item,
+ * Fill by default). Setting it refills the current frame of the selection. */
+core::FrameMode frameMode(obs_sceneitem_t *item);
+bool setFrameMode(core::FrameMode mode);
+/* The largest frame with this width / height ratio inside each selected item's frame,
+ * anchored on the reference point. */
+bool setRatio(double ratio);
 bool setBoundsType(core::BoundsType type);
 bool setBoundsAlignment(uint32_t align);
 bool setCropToBounds(bool crop);
@@ -83,6 +93,12 @@ bool applyPreset(core::Preset preset, const core::PresetSpec &spec);
 enum class KindMode { Auto, AllCameras, AllScreens };
 /* Kind of each selected top-level item, in selection order. */
 std::vector<core::SlotKind> selectionKinds(KindMode mode);
+
+/* Transform that places a source in a broadcast tile: cameras fill it (cropped on the
+ * face), screens fit; a flipped source stays flipped. */
+core::ItemTransform slotTransform(const core::ItemModel &m, core::SlotKind kind, const core::Rect &cell);
+/* Locks an item and makes it scale with the canvas. */
+void lockItem(obs_sceneitem_t *item);
 /* Target frames (one per selected item that gets a slot) for a template. */
 std::vector<core::Frame> broadcastFrames(const std::string &key, const core::BroadcastSpec &spec, KindMode mode);
 /* Applies a template to the selection (one undo entry). lock: lock the items and

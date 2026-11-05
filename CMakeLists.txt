@@ -59,6 +59,8 @@ target_sources(
     src/core/layout.hpp
     src/core/broadcast.cpp
     src/core/broadcast.hpp
+    src/core/roles.cpp
+    src/core/roles.hpp
     src/obs/obs-convert.hpp
     src/obs/store.cpp
     src/obs/store.hpp
@@ -71,6 +73,10 @@ target_sources(
     src/obs/constraints.hpp
     src/obs/corners.cpp
     src/obs/corners.hpp
+    src/obs/builder.cpp
+    src/obs/builder.hpp
+    src/obs/roles.cpp
+    src/obs/roles.hpp
     src/obs/hotkeys.cpp
     src/obs/hotkeys.hpp
     src/obs/commands.hpp
@@ -81,6 +87,14 @@ target_sources(
     src/ui/inspector-dock.cpp
     src/ui/inspector-dock.hpp
     src/ui/layers-panel.cpp
+    src/ui/broadcast-gallery.cpp
+    src/ui/broadcast-gallery.hpp
+    src/ui/builder-panel.cpp
+    src/ui/builder-panel.hpp
+    src/ui/role-ui.cpp
+    src/ui/scenes-list.cpp
+    src/ui/scenes-list.hpp
+    src/ui/role-ui.hpp
     src/ui/layers-panel.hpp
     src/ui/canvas-view.cpp
     src/ui/canvas-view.hpp

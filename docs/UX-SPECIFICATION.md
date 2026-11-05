@@ -39,6 +39,44 @@ browser, media, color, group, scene, audio), name, lock, eye. Hidden sources are
   can't go into a group (OBS has no nested groups). One row at a time. One undo entry, holding the
   whole order of the scene: libobs transform states do not carry the order or the grouping.
 
+### Scenes (0.4)
+Above Layers, in a resizable split: "Follow OBS (scene)" then every scene (other canvases as
+"Canvas › Scene"). Clicking a scene edits it in the window (Layers, Canvas, Inspector) without
+changing the program or the preview; the first row goes back to following OBS. The scene on the
+program has a red dot (in Studio Mode, the scene whose private copy is on the program). Same
+choice as the scene menu of the Canvas toolbar, which stays.
+
+### Types and filter (0.4)
+- A pill after the name shows the source's type: HOST, CAM, SCREEN, BG, CG, or a dashed "?" when
+  not set. Clicking it opens the type menu; when the row is selected, the type applies to every
+  selected source. One undo entry. Groups have no type.
+- The type is saved in the source's private settings (scene collection), so renaming keeps it.
+  Until set, it is suggested from the name prefix (Host: HOST, PRÉSENTATEUR, PRESENTER, ANIMATEUR;
+  Cam: CAM, CAMERA, CAMÉRA, GUEST, INVITÉ; Screen: SCREEN, ÉCRAN, SCR, DISPLAY, CAPTURE; BG: BG,
+  BACKGROUND, FOND; CG: CG, GFX, OVERLAY, LOGO, LT, HABILLAGE), case and accents ignored, the
+  prefix followed by the end of the name, a space, `_`, `-` or `.`; the longest prefix wins. Then
+  from the kind of source (video capture, NDI, DeckLink, AJA = Cam; display, window, game capture
+  = Screen).
+- Filter row above the list: All, then one chip per type present, with counts. Groups stay while
+  one of their sources matches. Drag and drop is off while a filter is active.
+
+## Layouts Builder (0.4)
+Tools > Layouts Builder, or the Scene | Builder switch at the top left of the window (Tools >
+Layouts opens Scene mode; the hotkey keeps the current mode). The Canvas stays in the center.
+- Left: "Sources of the collection", every video input once (scenes and groups excluded): source
+  icon, name, number of scenes that use it, type pill (same menu as Layers). Same filter row.
+  Select the sources of the scene to make (Cmd / Shift for several, Cmd+A for all).
+- Right: "Broadcast layouts", the same gallery as in Scene mode for the selection (hosts and cams
+  are cameras, screens are screens; sources without a type are ignored and counted), gap and
+  margin (shared), "Background at the back" and "Graphics on top" (enabled when one is selected),
+  lock. "New scene" (or a double-click on a layout) makes the chosen layout; "Create show scenes"
+  makes a full-screen scene per host, cam and screen, then one per layout that fits. The new
+  scene opens on the Canvas.
+- Each scene: the first BG at the back, covering the canvas (bounding box "scale to outer bounds",
+  centered, cropped to bounds); screens, then hosts and cams in their tiles (hosts first, so they
+  get the large tile), flips kept; CG on top with the transform and crop they have in the first
+  scene that uses them. Locked when "Lock" is checked. Names made unique ("Duo 2").
+
 ## Inspector
 
 ### Empty state
@@ -50,9 +88,24 @@ Scene name, canvas size and a hint on how to select.
 | Header | name, source type · scene › group, Lock, Copy properties, Paste properties ▾ |
 | Align | 6 buttons: left, horizontal center, right, top, vertical center, bottom, relative to the canvas |
 | Position | reference point picker (3×3), X, Y, rotation, rotate ±90°, flip H/V |
-| Dimensions | W, H, ratio lock, Fit, Fill, Stretch, Original size, Reset transform, corner radius (0.3) |
+| Dimensions | W, H, ratio lock, Fit, Fill, Stretch, Original size, Reset transform, corner radius (0.3), frame mode Fill / Fit / Stretch and ratio buttons 16:9, 1:1, 4:5, 9:16 (0.4) |
 | Crop | left, right, top, bottom (source pixels) |
 | Bounding box | type, content alignment, crop to bounds |
+
+#### Frame modes (0.4)
+- A segmented row Fill | Fit | Stretch, saved on each scene item (private settings
+  `layouts_frame`, Fill by default); nothing checked when the selection is mixed. Picking a mode
+  refills the current frame of the selection (one undo entry).
+- W and H (typed or scrubbed) set the visible frame. Fill: uniform scale covering the frame, the
+  rest cropped in source pixels (a tiny per-axis correction absorbs the whole-pixel crop). Fit:
+  bounding box "scale to inner bounds" of the frame, crop cleared, content aligned on the
+  reference point. Stretch: per-axis scale, as before. When the frame keeps its shape (ratio lock
+  on), Fill only scales, so a manual crop is kept.
+- The 3×3 reference point is the point of the frame that stays in place and, for Fill, the part
+  of the image kept (top-left keeps the top-left of the picture; mirrored axes are handled).
+- Ratio buttons 16:9, 1:1, 4:5, 9:16: the largest frame of that shape inside the current frame,
+  anchored on the reference point, filled with the item's mode. Locked items are skipped.
+- The Canvas handles keep scaling as before.
 
 #### Corner radius (0.3)
 - One field (label ╭), in canvas pixels, 0 = square corners. Typing, math and scrubbing work as
@@ -62,8 +115,18 @@ Scene name, canvas size and a hint on how to select.
   filter list (removed again at 0). The mask is anti-aliased and drawn on the visible part of the
   item: the crop of the scene item being drawn is read at render time, so each scene keeps clean
   corners even with a different crop.
-- The radius is stored on the source in source pixels: the same source at another size in another
-  scene has proportional corners. One Edit > Undo entry per change (a whole scrub included).
+- The radius belongs to the edited scene (0.4): the filter keeps one value per scene, in source
+  pixels, and a "Rounded corners: scene" filter on that scene tells it which scene is rendering
+  (it draws nothing). The same source keeps its own corners, or none, in other scenes. A scene
+  duplicated by OBS (Studio Mode) keeps its original's corners; a scene duplicated by the user
+  gets its own value the first time it is edited. A radius set for every scene (0.3, or the
+  filter's own property) is split into per-scene values the first time one scene is edited.
+  Transitions that draw each source themselves instead of the scenes (Move Transition) run no
+  scene filter: the corner filter then takes the transition on the program (remembered from
+  the UI thread on scene and transition changes), the radius of the source in its scene A and
+  in its scene B, and blends them with the transition time eased cubic in and out (Move's
+  default); a source in only one of the two scenes keeps that scene's radius.
+  One Edit > Undo entry per change (a whole scrub included).
 
 ### Multiple selection
 Header shows "N elements selected" and the number of locked items. Adds:

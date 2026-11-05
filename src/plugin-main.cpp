@@ -60,10 +60,12 @@ namespace {
 
 QPointer<layouts::ui::LayoutsWindow> g_window;
 
-void openWindow()
+void openWindow(layouts::ui::LayoutsWindow::Mode mode)
 {
-	if (g_window)
-		g_window->open();
+	if (!g_window)
+		return;
+	g_window->setMode(mode);
+	g_window->open();
 }
 
 void onFrontendEvent(enum obs_frontend_event event, void *)
@@ -137,14 +139,23 @@ bool obs_module_load(void)
 	/* A regular window, not a dock: it can be resized, maximized and put in full
 	 * screen freely, and never docks into the OBS window. */
 	g_window = new layouts::ui::LayoutsWindow(main);
-	obs_frontend_add_tools_menu_item(obs_module_text("Menu.Open"), [](void *) { openWindow(); }, nullptr);
+	obs_frontend_add_tools_menu_item(
+		obs_module_text("Menu.Open"), [](void *) { openWindow(layouts::ui::LayoutsWindow::Mode::Scene); },
+		nullptr);
+	obs_frontend_add_tools_menu_item(
+		obs_module_text("Menu.Builder"), [](void *) { openWindow(layouts::ui::LayoutsWindow::Mode::Builder); },
+		nullptr);
 
 	layouts::hotkeys::registerAll(
 		[] {
 			if (g_window)
 				g_window->canvas()->view()->zoomFit();
 		},
-		[] { openWindow(); });
+		[] {
+			/* The hotkey keeps the current mode. */
+			if (g_window)
+				g_window->open();
+		});
 
 	obs_frontend_add_event_callback(onFrontendEvent, nullptr);
 	obs_frontend_add_save_callback(onSave, nullptr);

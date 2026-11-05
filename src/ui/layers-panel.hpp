@@ -22,7 +22,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * tool. The top of the list is the front of the scene; groups unfold. Selection follows
  * the Canvas and OBS both ways. Each row toggles visibility and lock; double-click
  * renames the source; drag and drop reorders inside the same scene or group (one undo
- * entry). */
+ * entry). Each source shows its type (Host, Cam, Screen, BG, CG) as a pill that opens
+ * the type menu, and the list can be filtered by type (0.4). Above, the Scenes list picks
+ * the scene being edited without changing what is on air (0.4). */
 
 #include <QWidget>
 
@@ -37,6 +39,8 @@ class QTreeWidgetItem;
 namespace layouts::ui {
 
 class LayerTree;
+class RoleFilterBar;
+class ScenesList;
 
 class LayersPanel : public QWidget {
 	Q_OBJECT
@@ -47,6 +51,8 @@ public:
 	/* Rebuilds the rows now (self-test). */
 	void refresh();
 	QTreeWidget *tree() const;
+	RoleFilterBar *filter() const { return filter_; }
+	ScenesList *scenes() const { return scenes_; }
 	/* Moves a row to `indexAfter` among its siblings (front = 0); drag and drop uses it. */
 	void reorder(QTreeWidgetItem *moved, QTreeWidgetItem *parentAfter, int indexAfter);
 
@@ -56,9 +62,12 @@ private:
 	void onUserSelection();
 	void onClicked(QTreeWidgetItem *row, int column);
 	void onRenamed(QTreeWidgetItem *row, int column);
+	void applyFilter();
 
 	friend class LayerTree;
 	LayerTree *tree_ = nullptr;
+	RoleFilterBar *filter_ = nullptr;
+	ScenesList *scenes_ = nullptr;
 	QLabel *empty_ = nullptr;
 	QString signature_;
 	std::set<int64_t> collapsed_; /* group ids folded by the user */

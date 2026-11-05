@@ -20,6 +20,10 @@ Layouts for OBS is a native OBS Studio plugin that brings the composition tools 
 
 The left panel of the Layouts window: every source of the edited scene, front on top, groups unfolded. Click to select (Shift / Cmd for several), the eye hides, the lock locks, double-click renames, drag reorders or moves a source into or out of a group without moving it on screen. Everything is undoable. No need to go back to the OBS Sources dock.
 
+### Types and Layouts Builder
+
+Give each source a type (Host, Cam, Screen, BG, CG) from a colored pill, or let Layouts suggest it from the name (`CAM _ GUEST 1`, `SCREEN _ RIGHT`, `BG _ DYNAMIQUE`, `LOGO`). Filter Layers by type. **Tools > Layouts Builder** lists every source of the collection: select the ones you want and pick a broadcast layout from the same gallery as in Scene mode to make the scene (background at the back, hosts in the large tile, graphics on top where they already are), or create all the scenes of the show at once.
+
 ### Inspector
 
 The right panel of the Layouts window. It always shows the selection of the edited scene.
@@ -29,6 +33,7 @@ The right panel of the Layouts window. It always shows the selection of the edit
 - **Ratio lock**, **Fit / Fill / Stretch** to the canvas, **original size**, **reset**, **rotate ±90°**, **flip**.
 - **Crop** in source pixels (the image stays in place), **bounding box** type and alignment.
 - **Rounded corners** with a clean anti-aliased mask that follows the crop, without any shader plugin.
+- **Frame modes**: turn a 16:9 camera into a 1:1 or 9:16 tile by typing W and H or with a ratio button; Fill crops instead of distorting, anchored on the reference point.
 - **Multiple selection**: align to the selection, the canvas or a **key object**; distribute centers or spacing; type an **exact gap**; same width / height / size; **Mixed** values.
 - **Copy / paste properties** (position, size, rotation, crop, bounding box).
 - **Broadcast layouts**: select 1 to 6 cameras and up to 2 screens, pick a TV-style layout (duo, three columns, host + guests, grids, screen + guests on the side or below, picture in picture) and apply it, or make a new scene with it. Cameras fill their tile, screens are never cropped. Works on vertical canvases too (guests stack, screens on top). **Create show scenes** makes, in one click, a full-screen scene per guest and screen plus a scene for every layout that fits. **Lock the layout** keeps everything in place.

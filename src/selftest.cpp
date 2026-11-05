@@ -27,15 +27,21 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/commands.hpp"
 #include "obs/constraints.hpp"
 #include "obs/corners.hpp"
+#include "obs/builder.hpp"
+#include "obs/roles.hpp"
 #include "obs/edit-context.hpp"
 #include "obs/hotkeys.hpp"
 #include "obs/obs-convert.hpp"
 #include "obs/store.hpp"
+#include "ui/broadcast-gallery.hpp"
+#include "ui/builder-panel.hpp"
 #include "ui/canvas-dock.hpp"
 #include "ui/canvas-view.hpp"
 #include "ui/inspector-dock.hpp"
 #include "ui/layers-panel.hpp"
 #include "ui/layouts-window.hpp"
+#include "ui/role-ui.hpp"
+#include "ui/scenes-list.hpp"
 #include "ui/ruler.hpp"
 
 #include <obs-frontend-api.h>
@@ -690,6 +696,288 @@ void testLayoutsV02()
 		 "multi-resize-keeps-ratio", rectStr(b0) + " -> " + rectStr(b1));
 }
 
+/* Roles: saved on the source, kept when renamed, undoable, suggested from the name. */
+void testRoles()
+{
+	EditContext &ctx = EditContext::instance();
+	const ItemEntry *a = entry("A");
+	obs_source_t *src = a ? obs_sceneitem_get_source(a->item) : nullptr;
+	R->check(src && roles::explicitRole(src) == core::Role::None && roles::role(src) == core::Role::None,
+		 "roles-unset-by-default");
+	if (!src)
+		return;
+	roles::setRole({src}, core::Role::Camera);
+	obs_source_set_name(src, "A renamed");
+	const bool kept = roles::role(src) == core::Role::Camera;
+	obs_source_set_name(src, "A");
+	ctx.markDirty();
+	R->check(kept, "roles-survive-rename");
+	roles::setRole({src}, core::Role::Host);
+	R->check(roles::role(src) == core::Role::Host && roles::sceneCount(src) >= 1, "roles-host",
+		 QString::number(roles::sceneCount(src)));
+	QAction *undo = findAction(QKeySequence(QKeySequence::Undo));
+	if (undo)
+		undo->trigger(); /* Host -> Camera */
+	if (undo)
+		undo->trigger(); /* Camera -> unset */
+	ctx.markDirty();
+	R->check(undo && roles::explicitRole(src) == core::Role::None, "roles-undo",
+		 core::roleKey(roles::explicitRole(src)));
+	OBSSourceAutoRelease guest = colorSource("CAM _ GUEST 1", 64, 64, 0xFFFFFFFF);
+	OBSSourceAutoRelease bg = colorSource("BG _ DYNAMIQUE", 64, 64, 0xFFFFFFFF);
+	R->check(roles::role(guest) == core::Role::Camera && roles::role(bg) == core::Role::Background,
+		 "roles-suggested-from-name");
+	obs_source_remove(guest);
+	obs_source_remove(bg);
+}
+
+/* 0.4: types in Layers (filter), in broadcast layouts (BG / CG never in a tile) and the
+ * Builder (scenes made from typed sources, background at the back, graphics on top). */
+obs_source_t *sourceOf(const char *name)
+{
+	const ItemEntry *e = entry(name);
+	return e ? obs_sceneitem_get_source(e->item) : nullptr;
+}
+
+void testTypes()
+{
+	EditContext &ctx = EditContext::instance();
+	obs_source_t *a = sourceOf("A"), *b = sourceOf("B"), *c = sourceOf("C");
+	if (!a || !b || !c) {
+		R->check(false, "types-setup");
+		return;
+	}
+	roles::setRole({a}, core::Role::Host);
+	roles::setRole({b}, core::Role::Camera);
+	roles::setRole({c}, core::Role::Screen);
+	ctx.markDirty();
+	ui::LayersPanel *layers = g_window->layers();
+	layers->refresh();
+	layers->filter()->select(false, core::Role::Camera);
+	QStringList shown;
+	for (int i = 0; i < layers->tree()->topLevelItemCount(); i++) {
+		if (!layers->tree()->topLevelItem(i)->isHidden())
+			shown << layers->tree()->topLevelItem(i)->text(0);
+	}
+	const bool noDrag = layers->tree()->dragDropMode() == QAbstractItemView::NoDragDrop;
+	layers->filter()->select(true);
+	int all = 0;
+	for (int i = 0; i < layers->tree()->topLevelItemCount(); i++)
+		all += layers->tree()->topLevelItem(i)->isHidden() ? 0 : 1;
+	R->check(shown == QStringList{"B"} && noDrag && all == layers->tree()->topLevelItemCount(),
+		 "layers-filter-by-type", shown.join(','));
+
+	/* A background and a logo in the scene: never placed in a tile. */
+	obs_scene_t *scene = ctx.scene();
+	obs_sceneitem_t *bgItem = addColor(scene, "BG _ TEST", 1280, 720, 0xFF202020, 0, 0);
+	obs_sceneitem_t *cgItem = addColor(scene, "LOGO _ TEST", 200, 80, 0xFFFFFFFF, 1680, 40);
+	ctx.markDirty();
+	selectNames({"A", "B", "BG _ TEST", "LOGO _ TEST"});
+	R->check(commands::selectionKinds(commands::KindMode::Auto).size() == 2, "broadcast-skips-bg-and-cg",
+		 QString::number(commands::selectionKinds(commands::KindMode::Auto).size()));
+
+	/* Builder window mode lists the sources of the collection. */
+	g_window->setMode(ui::LayoutsWindow::Mode::Builder);
+	g_window->builderSources()->refresh();
+	const int rows = g_window->builderSources()->tree()->topLevelItemCount();
+	R->check(g_window->builderSources()->isVisible() && rows == (int)roles::videoSources().size(),
+		 "builder-lists-collection-sources", QString::number(rows));
+	/* Select sources: the gallery of Scene mode shows the layouts that fit them, and
+	 * "New scene" makes the chosen one with the background and the logo. */
+	ui::BuilderSources *bs = g_window->builderSources();
+	bs->selectNames({"A", "B", "C", "BG _ TEST", "LOGO _ TEST"});
+	ui::BuilderPanel *bp = g_window->builderPanel();
+	const int expected = (int)core::templatesFor(2, 1).size();
+	R->check(bs->selectedSources().size() == 5 && bp->gallery()->count() == expected,
+		 "builder-gallery-for-selection",
+		 QString("%1 templates, %2 expected").arg(bp->gallery()->count()).arg(expected));
+	const QString made = bp->createScene();
+	OBSSourceAutoRelease madeScene = obs_get_source_by_name(made.toUtf8().constData());
+	int madeItems = 0;
+	if (obs_scene_t *ms = madeScene ? obs_scene_from_source(madeScene) : nullptr)
+		obs_scene_enum_items(
+			ms,
+			[](obs_scene_t *, obs_sceneitem_t *, void *p) {
+				(*static_cast<int *>(p))++;
+				return true;
+			},
+			&madeItems);
+	R->check(madeScene && madeItems == 5 && ctx.sceneSource() == madeScene.Get(), "builder-new-scene-from-gallery",
+		 made + QString(" %1 items").arg(madeItems));
+	if (madeScene)
+		obs_source_remove(madeScene);
+	ctx.follow();
+
+	/* Plan and create from five typed sources. */
+	builder::Options o;
+	o.spec.gap = 8;
+	const std::vector<OBSSource> picked{a, b, c, obs_sceneitem_get_source(bgItem),
+					    obs_sceneitem_get_source(cgItem)};
+	const builder::Plan plan = builder::plan(
+		picked, o, [](const std::string &key) { return QString("T ") + QString::fromStdString(key); },
+		[](const QString &n) { return QString("Solo ") + n; });
+	size_t layouts = 0;
+	for (const core::BroadcastTemplate &t : core::templatesFor(2, 1))
+		layouts += t.cameras + t.screens >= 2 ? 1 : 0;
+	R->check(plan.scenes.size() == 3 + layouts && plan.cameras.size() == 2 && plan.cameras[0].Get() == a &&
+			 plan.background.Get() == obs_sceneitem_get_source(bgItem) && plan.graphics.size() == 1,
+		 "builder-plan", QString::number(plan.scenes.size()));
+	const std::vector<QString> names = builder::create(plan, o);
+	bool layered = names.size() == plan.scenes.size();
+	QString why;
+	for (const QString &n : names) {
+		OBSSourceAutoRelease src = obs_get_source_by_name(n.toUtf8().constData());
+		obs_scene_t *sc = src ? obs_scene_from_source(src) : nullptr;
+		std::vector<obs_sceneitem_t *> items;
+		if (sc)
+			obs_scene_enum_items(
+				sc,
+				[](obs_scene_t *, obs_sceneitem_t *it, void *p) {
+					static_cast<std::vector<obs_sceneitem_t *> *>(p)->push_back(it);
+					return true;
+				},
+				&items);
+		const bool ok = items.size() >= 3 &&
+				obs_sceneitem_get_source(items.front()) == obs_sceneitem_get_source(bgItem) &&
+				obs_sceneitem_get_bounds_type(items.front()) == OBS_BOUNDS_SCALE_OUTER &&
+				obs_sceneitem_get_source(items.back()) == obs_sceneitem_get_source(cgItem) &&
+				obs_sceneitem_locked(items[1]);
+		vec2 cgPos = {};
+		if (!items.empty())
+			obs_sceneitem_get_pos(items.back(), &cgPos);
+		if (!ok || std::fabs(cgPos.x - 1680) > 0.5 || std::fabs(cgPos.y - 40) > 0.5) {
+			layered = false;
+			why = n;
+		}
+		if (src)
+			obs_source_remove(src);
+	}
+	R->check(layered, "builder-bg-back-cg-top-locked", why);
+
+	/* Back to the scene; the test sources go away and the types are cleared. */
+	g_window->setMode(ui::LayoutsWindow::Mode::Scene);
+	obs_sceneitem_remove(bgItem);
+	obs_sceneitem_remove(cgItem);
+	roles::setRole({a, b, c}, core::Role::None);
+	ctx.follow();
+	ctx.markDirty();
+	R->check(g_window->layers()->isVisible(), "builder-back-to-scene-mode");
+}
+
+/* Scenes above Layers: a click edits another scene, nothing changes on air. */
+void testScenesList()
+{
+	EditContext &ctx = EditContext::instance();
+	ctx.follow();
+	obs_scene_t *extra = obs_scene_create("Layouts Other Scene");
+	OBSSourceAutoRelease extraSource = obs_source_get_ref(obs_scene_get_source(extra));
+	obs_scene_release(extra);
+	ui::ScenesList *list = g_window->layers()->scenes();
+	list->refresh();
+	OBSSourceAutoRelease program = obs_frontend_get_current_scene();
+	const QString programName = QString::fromUtf8(obs_source_get_name(program));
+	QListWidgetItem *other = nullptr, *onAir = nullptr;
+	for (int i = 1; i < list->count(); i++) {
+		if (list->item(i)->text() == programName)
+			onAir = list->item(i);
+		else if (!other && !list->item(i)->text().contains(QString::fromUtf8("\xE2\x80\xBA")))
+			other = list->item(i);
+	}
+	/* A fresh collection in Studio Mode can have nothing on the program yet. */
+	R->check(other && (!program || (onAir && !onAir->toolTip().isEmpty())), "scenes-list-marks-program",
+		 QString("%1 rows, program '%2'").arg(list->count()).arg(programName));
+	if (!other) {
+		obs_source_remove(extraSource);
+		return;
+	}
+	const QString otherName = other->text();
+	emit list->itemClicked(other); /* the list is rebuilt after the click */
+	QApplication::processEvents();
+	OBSSourceAutoRelease programAfter = obs_frontend_get_current_scene();
+	R->check(!ctx.following() && ctx.sceneName() == otherName && programAfter.Get() == program.Get(),
+		 "scenes-list-edits-scene", ctx.sceneName());
+	emit list->itemClicked(list->item(0));
+	QApplication::processEvents();
+	/* Follow OBS edits the preview scene in Studio Mode, the program otherwise. */
+	OBSSourceAutoRelease followed = obs_frontend_preview_program_mode_active()
+						? obs_frontend_get_current_preview_scene()
+						: obs_frontend_get_current_scene();
+	R->check(ctx.following() && followed && ctx.sceneName() == QString::fromUtf8(obs_source_get_name(followed)),
+		 "scenes-list-follow-obs", ctx.sceneName());
+	obs_source_remove(extraSource);
+}
+
+/* Frame modes: W and H change the shape of a 16:9 camera without distorting it. */
+void testFrameModes()
+{
+	EditContext &ctx = EditContext::instance();
+	ViewSettings &vs = Store::instance().settings();
+	const bool lock = vs.ratioLock;
+	const int refPoint = vs.refPoint;
+	vs.ratioLock = false;
+	vs.refPoint = 4; /* center */
+	obs_sceneitem_t *item = addColor(ctx.scene(), "Frame cam", 1920, 1080, 0xFF808080, 100, 100);
+	vec2 half;
+	vec2_set(&half, 0.5f, 0.5f);
+	obs_sceneitem_set_scale(item, &half);
+	ctx.markDirty();
+	selectNames({"Frame cam"});
+	const core::Vec2 c0 = entry("Frame cam")->frame.center();
+	commands::setField(commands::Field::W, core::parseExpression("540", 1920));
+	ctx.markDirty();
+	const ItemEntry *e = entry("Frame cam");
+	R->check(e && commands::frameMode(e->item) == core::FrameMode::Fill && std::fabs(e->frame.width - 540) < 0.6 &&
+			 std::fabs(e->frame.height - 540) < 0.6 && e->model.t.crop.left == 420 &&
+			 e->model.t.crop.right == 420 && std::fabs(e->model.t.scale.x - 0.5) < 1e-6 &&
+			 std::fabs(e->model.t.scale.y - 0.5) < 1e-6 && std::fabs(e->frame.center().x - c0.x) < 0.6 &&
+			 std::fabs(e->frame.center().y - c0.y) < 0.6,
+		 "frame-fill-square-not-distorted",
+		 e ? rectStr(box("Frame cam")) +
+				 QString(" crop %1/%2").arg(e->model.t.crop.left).arg(e->model.t.crop.right)
+		   : "no item");
+
+	/* Back to 16:9 with the ratio button: the largest 16:9 inside the square. */
+	commands::setRatio(16.0 / 9.0);
+	ctx.markDirty();
+	e = entry("Frame cam");
+	R->check(e && std::fabs(e->frame.width - 540) < 0.6 && std::fabs(e->frame.height - 303.75) < 0.6 &&
+			 e->model.t.crop.left == 0 && e->model.t.crop.right == 0,
+		 "frame-ratio-button", e ? rectStr(box("Frame cam")) : "no item");
+	commands::setRatio(1.0);
+	ctx.markDirty();
+	e = entry("Frame cam");
+	const double side = e ? e->frame.width : 0;
+	R->check(e && std::fabs(e->frame.width - e->frame.height) < 0.6 && e->model.t.crop.left > 0,
+		 "frame-ratio-square", e ? rectStr(box("Frame cam")) : "no item");
+
+	/* Fit: the whole picture in the same square (bounding box). */
+	commands::setFrameMode(core::FrameMode::Fit);
+	ctx.markDirty();
+	e = entry("Frame cam");
+	R->check(e && commands::frameMode(e->item) == core::FrameMode::Fit &&
+			 e->model.t.boundsType == core::BoundsType::ScaleInner && e->model.t.crop == core::Crop() &&
+			 std::fabs(e->frame.width - side) < 0.6 && std::fabs(e->frame.height - side) < 0.6,
+		 "frame-fit-bounds", e ? rectStr(box("Frame cam")) : "no item");
+
+	/* Stretch: as in OBS, the image is distorted. */
+	resetItem("Frame cam", 100, 100);
+	obs_sceneitem_set_scale(item, &half);
+	ctx.markDirty();
+	commands::setFrameMode(core::FrameMode::Stretch);
+	ctx.markDirty();
+	commands::setField(commands::Field::W, core::parseExpression("540", 1920));
+	ctx.markDirty();
+	e = entry("Frame cam");
+	R->check(e && e->model.t.crop == core::Crop() && std::fabs(e->model.t.scale.x - 0.28125) < 1e-6 &&
+			 std::fabs(e->model.t.scale.y - 0.5) < 1e-6,
+		 "frame-stretch-distorts", e ? QString("%1 x %2").arg(e->model.t.scale.x).arg(e->model.t.scale.y) : "");
+
+	obs_sceneitem_remove(item);
+	vs.ratioLock = lock;
+	vs.refPoint = refPoint;
+	ctx.markDirty();
+}
+
 void unlockAll(std::initializer_list<const char *> names)
 {
 	for (const char *n : names) {
@@ -778,7 +1066,7 @@ void testBroadcast()
 	Store::instance().settings().broadcastKinds = 1;
 	selectNames({"A", "B", "C"});
 	emit ctx.itemsChanged();
-	auto *gallery = g_window->findChild<QListWidget *>();
+	auto *gallery = g_window->inspector()->findChild<QListWidget *>();
 	R->check(gallery && gallery->count() == 2, "broadcast-gallery-three-guests",
 		 gallery ? QString::number(gallery->count()) : "no gallery");
 	Store::instance().settings().broadcastKinds = 0;
@@ -931,9 +1219,9 @@ void testLayers()
 
 	/* Eye column hides and shows. */
 	QTreeWidgetItem *c = layerRow("C");
-	emit tree->itemClicked(c, 2);
+	emit tree->itemClicked(c, 3); /* eye column */
 	const bool hidden = entry("C") && !entry("C")->visible;
-	emit tree->itemClicked(layerRow("C"), 2);
+	emit tree->itemClicked(layerRow("C"), 3);
 	R->check(hidden && entry("C") && entry("C")->visible, "layers-eye-toggles");
 
 	/* Reorder: A to the front, one undo entry. */
@@ -949,7 +1237,7 @@ void testLayers()
 		 moved + " then " + topLevelOrder());
 
 	/* Hiding is undoable. */
-	emit tree->itemClicked(layerRow("C"), 2);
+	emit tree->itemClicked(layerRow("C"), 3);
 	const bool hid = entry("C") && !entry("C")->visible;
 	if (undo)
 		undo->trigger();
@@ -1166,6 +1454,7 @@ void checkCleanOutput()
 /* Rounded corners: a cropped item keeps round corners on the program output. */
 OBSSourceAutoRelease g_cornerScene;
 OBSSourceAutoRelease g_beforeCorners;
+OBSSourceAutoRelease g_cornerSceneB;
 
 void prepareCorners()
 {
@@ -1182,8 +1471,6 @@ void prepareCorners()
 	vec2 halfScale;
 	vec2_set(&halfScale, 0.5f, 0.5f);
 	obs_sceneitem_set_scale(half, &halfScale);
-	/* Both items exist before the scene goes on the program (Studio Mode copies it). */
-	obs_frontend_set_current_scene(s);
 	ctx.pin(s);
 	ctx.markDirty();
 
@@ -1202,9 +1489,14 @@ void prepareCorners()
 	OBSSourceAutoRelease filter =
 		obs_source_get_filter_by_name(obs_sceneitem_get_source(half), obs_module_text("Corners.FilterName"));
 	OBSDataAutoRelease fs = filter ? obs_source_get_settings(filter) : nullptr;
-	R->check(h && std::fabs(corners::radius(*h) - 20) < 0.01 && fs &&
-			 std::fabs(obs_data_get_double(fs, "radius") - 40) < 0.01,
-		 "corners-canvas-pixels", fs ? QString::number(obs_data_get_double(fs, "radius")) : "no filter");
+	OBSDataArrayAutoRelease perScene = fs ? obs_data_get_array(fs, "scenes") : nullptr;
+	OBSDataAutoRelease entry0 = perScene ? obs_data_array_item(perScene, 0) : nullptr;
+	const double stored = entry0 ? obs_data_get_double(entry0, "radius") : -1;
+	R->check(h && std::fabs(corners::radius(*h) - 20) < 0.01 && std::fabs(stored - 40) < 0.01 &&
+			 obs_data_get_double(fs, "radius") == 0.0,
+		 "corners-canvas-pixels", QString::number(stored));
+	/* On air once set, as in a show: Studio Mode puts a copy of the scene on the program. */
+	obs_frontend_set_current_scene(s);
 }
 
 void checkCorners()
@@ -1232,14 +1524,48 @@ void checkCorners()
 	if (!getenv("LAYOUTS_SELFTEST_KEEP_SHOTS"))
 		QFile::remove(p);
 
-	/* Undo puts the square corners back (the filter goes away). */
+	/* The same source in another scene keeps square corners: the radius belongs to the scene. */
 	EditContext &ctx = EditContext::instance();
+	obs_source_t *other = obs_scene_get_source(obs_scene_create("Layouts Corners B"));
+	g_cornerSceneB = other;
+	OBSSourceAutoRelease halfSource = obs_get_source_by_name("Rounded half");
+	obs_sceneitem_t *again = obs_scene_add(obs_scene_from_source(other), halfSource);
+	vec2 pos, halfScale;
+	vec2_set(&pos, 1300, 100);
+	vec2_set(&halfScale, 0.5f, 0.5f);
+	obs_sceneitem_set_pos(again, &pos);
+	obs_sceneitem_set_scale(again, &halfScale);
+	obs_frontend_set_current_scene(other);
+	ctx.pin(other);
+	ctx.markDirty();
+	const ItemEntry *h = entry("Rounded half");
+	R->check(h && corners::radius(*h) == 0.0, "corners-per-scene-value",
+		 h ? QString::number(corners::radius(*h)) : "no item");
+}
+
+void checkCornersOtherScene()
+{
+	char *path = obs_frontend_get_last_screenshot();
+	const QString p = QString::fromUtf8(path ? path : "");
+	bfree(path);
+	QImage img(p);
+	const int corner = img.isNull() ? -1 : qGray(img.pixel(1300, 100));
+	R->check(corner > 215, "corners-square-in-other-scene", QString("corner %1").arg(corner));
+	if (!getenv("LAYOUTS_SELFTEST_KEEP_SHOTS"))
+		QFile::remove(p);
+
+	/* Undo puts the square corners back in the first scene (the filter goes away). */
+	EditContext &ctx = EditContext::instance();
+	ctx.pin(g_cornerScene);
+	ctx.markDirty();
 	QAction *undo = findAction(QKeySequence(QKeySequence::Undo));
 	if (undo)
 		undo->trigger();
 	ctx.markDirty();
 	const ItemEntry *h = entry("Rounded half");
-	R->check(undo && h && corners::radius(*h) == 0.0, "corners-undo",
+	OBSSourceAutoRelease halfSource = obs_get_source_by_name("Rounded half");
+	OBSSourceAutoRelease filter = obs_source_get_filter_by_name(halfSource, obs_module_text("Corners.FilterName"));
+	R->check(undo && h && corners::radius(*h) == 0.0 && !filter, "corners-undo",
 		 h ? QString::number(corners::radius(*h)) : "no item");
 
 	/* The next groups expect the scene that was on the program. */
@@ -1248,6 +1574,100 @@ void checkCorners()
 		ctx.pin(g_beforeCorners);
 	}
 	g_beforeCorners = nullptr;
+}
+
+/* Corners from Layouts 0.3 were for every scene: editing one scene keeps the others. */
+void testCornersMigration()
+{
+	EditContext &ctx = EditContext::instance();
+	OBSSourceAutoRelease legacy = colorSource("Legacy", 400, 200, 0xFFFFFFFF);
+	obs_scene_add(obs_scene_from_source(g_cornerScene), legacy);
+	obs_scene_add(obs_scene_from_source(g_cornerSceneB), legacy);
+	OBSDataAutoRelease fs = obs_data_create();
+	obs_data_set_double(fs, "radius", 30);
+	OBSSourceAutoRelease filter = obs_source_create_private(corners::kFilterId, "Legacy corners", fs);
+	obs_source_filter_add(legacy, filter);
+	ctx.pin(g_cornerScene);
+	ctx.markDirty();
+	selectNames({"Legacy"});
+	corners::setRadius(core::parseExpression("10", 0));
+	OBSDataAutoRelease after = obs_source_get_settings(filter);
+	OBSDataArrayAutoRelease list = obs_data_get_array(after, "scenes");
+	double inA = -1, inB = -1;
+	for (size_t i = 0; i < obs_data_array_count(list); i++) {
+		OBSDataAutoRelease it = obs_data_array_item(list, i);
+		const std::string token = obs_data_get_string(it, "scene");
+		if (token == obs_source_get_uuid(g_cornerScene))
+			inA = obs_data_get_double(it, "radius");
+		if (token == obs_source_get_uuid(g_cornerSceneB))
+			inB = obs_data_get_double(it, "radius");
+	}
+	R->check(obs_data_get_double(after, "radius") == 0.0 && std::fabs(inA - 10) < 0.01 &&
+			 std::fabs(inB - 30) < 0.01,
+		 "corners-legacy-split-per-scene", QString("A %1, B %2").arg(inA).arg(inB));
+	obs_source_remove(legacy);
+	ctx.follow();
+	ctx.markDirty();
+}
+
+/* Move Transition (exeldro) draws each source itself during the transition: the corners
+ * must stay. Runs only when the Move Transition plugin is loaded. */
+OBSSourceAutoRelease g_move, g_savedTransition, g_moveA, g_moveB;
+
+bool moveAvailable()
+{
+	return obs_source_get_display_name("move_transition") != nullptr;
+}
+
+void prepareMoveCorners()
+{
+	EditContext &ctx = EditContext::instance();
+	OBSSourceAutoRelease white = colorSource("Moving", 800, 600, 0xFFFFFFFF);
+	for (auto *slot : {&g_moveA, &g_moveB}) {
+		obs_scene_t *scene = obs_scene_create(slot == &g_moveA ? "Move A" : "Move B");
+		*slot = obs_source_get_ref(obs_scene_get_source(scene));
+		obs_sceneitem_t *item = obs_scene_add(scene, white);
+		obs_sceneitem_crop crop = {100, 50, 0, 0};
+		obs_sceneitem_set_crop(item, &crop);
+		vec2 pos;
+		vec2_set(&pos, 200, 265);
+		obs_sceneitem_set_pos(item, &pos);
+		obs_scene_release(scene);
+		ctx.pin(*slot);
+		ctx.markDirty();
+		selectNames({"Moving"});
+		corners::setRadius(core::parseExpression("40", 0));
+	}
+	g_savedTransition = obs_get_output_source(0);
+	g_move = obs_source_create_private("move_transition", "Layouts move test", nullptr);
+	obs_set_output_source(0, g_move);
+	corners::watchProgram();
+	obs_transition_set(g_move, g_moveA);
+	obs_transition_start(g_move, OBS_TRANSITION_MODE_AUTO, 4000, g_moveB);
+}
+
+void checkMoveCorners()
+{
+	char *path = obs_frontend_get_last_screenshot();
+	const QString p = QString::fromUtf8(path ? path : "");
+	bfree(path);
+	QImage img(p);
+	const bool mid = g_move && obs_transition_is_active(g_move);
+	const int corner = img.isNull() ? -1 : qGray(img.pixel(201, 266));
+	const int edge = img.isNull() ? -1 : qGray(img.pixel(550, 266));
+	R->check(mid && corner >= 0 && corner < 40 && edge > 215, "corners-during-move-transition",
+		 QString("active %1, corner %2, edge %3").arg(mid).arg(corner).arg(edge));
+	if (!getenv("LAYOUTS_SELFTEST_KEEP_SHOTS"))
+		QFile::remove(p);
+	obs_set_output_source(0, g_savedTransition);
+	corners::watchProgram();
+	g_move = nullptr;
+	g_savedTransition = nullptr;
+	obs_source_remove(g_moveA);
+	obs_source_remove(g_moveB);
+	g_moveA = nullptr;
+	g_moveB = nullptr;
+	EditContext::instance().follow();
 }
 
 void liveProgramCheck()
@@ -1560,6 +1980,38 @@ void runSelfTest(ui::LayoutsWindow *window)
 				g_window->setGeometry(0, 380, 1200, 620);
 				return;
 			}
+			if (const char *grab = getenv("LAYOUTS_DEMO_TYPES")) {
+				/* 0.4: a show named the way people name it, in Scene mode then Builder mode. */
+				const std::pair<const char *, const char *> names[] = {
+					{"Camera", "CAM _ VALENTIN"},       {"Guest camera", "CAM _ GUEST 1"},
+					{"Slides", "SCREEN _ RIGHT"},       {"Background", "BG _ DYNAMIQUE"},
+					{"Logo", "LOGO _ \xC3\x89MISSION"},
+				};
+				for (const auto &[from, to] : names) {
+					OBSSourceAutoRelease src = obs_get_source_by_name(from);
+					if (src)
+						obs_source_set_name(src, to);
+				}
+				OBSSourceAutoRelease host = obs_get_source_by_name("CAM _ VALENTIN");
+				roles::setRole({host}, core::Role::Host);
+				EditContext::instance().markDirty();
+				selectNames({"CAM _ GUEST 1"});
+				g_window->setGeometry(0, 120, 1400, 820);
+				const QString base = QString::fromUtf8(grab);
+				QTimer::singleShot(1500, [base] {
+					g_window->grab().save(base + "-scene.png");
+					g_window->setMode(ui::LayoutsWindow::Mode::Builder);
+					g_window->builderSources()->selectNames({"BG _ DYNAMIQUE", "CAM _ VALENTIN",
+										 "CAM _ GUEST 1", "SCREEN _ RIGHT"});
+				});
+				QTimer::singleShot(3000, [base] {
+					g_window->grab().save(base + "-builder.png");
+					g_window->layers()->filter()->select(false, core::Role::Camera);
+					g_window->setMode(ui::LayoutsWindow::Mode::Scene);
+				});
+				QTimer::singleShot(4500, [base] { g_window->grab().save(base + "-filter.png"); });
+				return;
+			}
 			if (getenv("LAYOUTS_DEMO_BROADCAST")) {
 				/* Three guests: the Broadcast layouts gallery, first template previewed. */
 				Store::instance().settings().broadcastKinds = 1;
@@ -1620,9 +2072,13 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(300, [] { testCanvasSnapAndRuler(); });
 		R->add(300, [] { testLayers(); });
 		R->add(300, [] { testLayoutsV02(); });
+		R->add(300, [] { testRoles(); });
 		R->add(300, [] { testBroadcast(); });
 		R->add(300, [] { testBroadcastScene(); });
 		R->add(300, [] { testShowScenes(); });
+		R->add(300, [] { testTypes(); });
+		R->add(300, [] { testScenesList(); });
+		R->add(300, [] { testFrameModes(); });
 		R->add(300, [] { unlockAll({"A", "B", "C"}); });
 		R->add(300, [] { testCropMode(); });
 		R->add(300, [] { testHotkeys(); });
@@ -1672,6 +2128,14 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(500, [] { prepareCorners(); });
 		R->add(1000, [] { takeShot(); });
 		R->add(1500, [] { checkCorners(); });
+		R->add(1000, [] { takeShot(); });
+		R->add(1500, [] { checkCornersOtherScene(); });
+		R->add(300, [] { testCornersMigration(); });
+		if (moveAvailable()) {
+			R->add(300, [] { prepareMoveCorners(); });
+			R->add(1800, [] { takeShot(); });
+			R->add(800, [] { checkMoveCorners(); });
+		}
 	}
 	if (enabled("live")) {
 		R->add(300, [] {
