@@ -532,6 +532,7 @@ struct Placed {
 	ItemEntry entry;
 	core::SlotKind kind;
 	core::Rect cell;
+	bool ticker = false;
 };
 
 /* Selected top-level sources that go in tiles: backgrounds and graphics never do. Hosts
@@ -560,7 +561,7 @@ std::vector<Placed> assignSlotsFor(const std::string &key, const core::Broadcast
 		for (size_t i = 0; i < items.size(); i++) {
 			if (!used[i] && kinds[i] == slot.kind) {
 				used[i] = true;
-				out.push_back({items[i], slot.kind, slot.cell});
+				out.push_back({items[i], slot.kind, slot.cell, slot.ticker});
 				break;
 			}
 		}
@@ -572,13 +573,25 @@ std::vector<Placed> assignSlots(const std::string &key, const core::BroadcastSpe
 
 } // namespace
 
-/* Transform that places a source in a slot: cameras fill it (cropped), screens fit. */
-core::ItemTransform slotTransform(const core::ItemModel &m, core::SlotKind kind, const core::Rect &cell)
+/* Transform that places a source in a slot: cameras fill it (cropped), screens fit,
+ * chats fit inside bounds (their size often changes, a browser source may not be
+ * loaded yet: bounds keep them in the cell whatever their size). */
+core::ItemTransform slotTransform(const core::ItemModel &m, core::SlotKind kind, const core::Rect &cell, bool ticker)
 {
 	core::ItemTransform t;
 	t.align = core::kAlignLeft | core::kAlignTop;
 	t.rot = 0;
 	t.boundsType = core::BoundsType::None;
+	if (kind == core::SlotKind::Chat) {
+		t.pos = {cell.x, cell.y};
+		t.scale = {1, 1};
+		t.boundsType = core::BoundsType::ScaleInner;
+		t.bounds = {cell.w, cell.h};
+		t.boundsAlign = ticker ? core::kAlignCenter : (uint32_t)core::kAlignTop;
+		t.cropToBounds = false;
+		t.crop = {};
+		return t;
+	}
 	if (m.sourceWidth == 0 || m.sourceHeight == 0)
 		return m.t;
 	if (kind == core::SlotKind::Camera) {
@@ -613,14 +626,15 @@ std::vector<core::SlotKind> selectionKinds(KindMode mode)
 {
 	std::vector<core::SlotKind> kinds;
 	for (const ItemEntry &e : topLevelSelection()) {
-		if (mode == KindMode::AllCameras)
+		const core::Role r = roles::role(obs_sceneitem_get_source(e.item));
+		if (r == core::Role::Chat)
+			kinds.push_back(core::SlotKind::Chat);
+		else if (mode == KindMode::AllCameras)
 			kinds.push_back(core::SlotKind::Camera);
 		else if (mode == KindMode::AllScreens)
 			kinds.push_back(core::SlotKind::Screen);
 		else
-			kinds.push_back(core::isCameraRole(roles::role(obs_sceneitem_get_source(e.item)))
-						? core::SlotKind::Camera
-						: core::SlotKind::Screen);
+			kinds.push_back(core::isCameraRole(r) ? core::SlotKind::Camera : core::SlotKind::Screen);
 	}
 	return kinds;
 }
@@ -629,8 +643,8 @@ std::vector<core::Frame> broadcastFrames(const std::string &key, const core::Bro
 {
 	std::vector<core::Frame> frames;
 	for (const Placed &p : assignSlots(key, spec, mode)) {
-		const core::ItemModel m{slotTransform(p.entry.model, p.kind, p.cell), p.entry.model.sourceWidth,
-					p.entry.model.sourceHeight};
+		const core::ItemModel m{slotTransform(p.entry.model, p.kind, p.cell, p.ticker),
+					p.entry.model.sourceWidth, p.entry.model.sourceHeight};
 		core::ItemModel full = p.entry.model;
 		full.t = m.t;
 		const core::VisualFrame f = core::visualFrame(full);
@@ -646,7 +660,7 @@ bool applyBroadcast(const std::string &key, const core::BroadcastSpec &spec, Kin
 		return false;
 	std::vector<Change> changes;
 	for (const Placed &p : placed)
-		changes.push_back({p.entry.item, slotTransform(p.entry.model, p.kind, p.cell)});
+		changes.push_back({p.entry.item, slotTransform(p.entry.model, p.kind, p.cell, p.ticker)});
 	showPreview({});
 	if (!EditSession::run(tr("Undo.Broadcast"), changes))
 		return false;
@@ -654,6 +668,11 @@ bool applyBroadcast(const std::string &key, const core::BroadcastSpec &spec, Kin
 		/* The inset camera overlaps the screen: bring it to the front. */
 		for (const Placed &p : placed) {
 			if (p.kind == core::SlotKind::Camera)
+				obs_sceneitem_set_order(p.entry.item, OBS_ORDER_MOVE_TOP);
+		}
+		/* A chat stays above the cameras. */
+		for (const Placed &p : placed) {
+			if (p.kind == core::SlotKind::Chat)
 				obs_sceneitem_set_order(p.entry.item, OBS_ORDER_MOVE_TOP);
 		}
 	}
@@ -713,8 +732,11 @@ obs_source_t *makeScene(const std::vector<Placed> &all, const QString &sceneName
 	if (!scene)
 		return nullptr;
 
-	/* Screens first, cameras on top (a picture-in-picture camera must stay visible). */
+	/* Screens first, cameras on top (a picture-in-picture camera must stay visible),
+	 * chats above the cameras. */
 	std::vector<Placed> stacked = placed;
+	std::stable_partition(stacked.begin(), stacked.end(),
+			      [](const Placed &p) { return p.kind != core::SlotKind::Chat; });
 	std::stable_partition(stacked.begin(), stacked.end(),
 			      [](const Placed &p) { return p.kind == core::SlotKind::Screen; });
 	for (const Placed &p : stacked) {
@@ -724,7 +746,7 @@ obs_source_t *makeScene(const std::vector<Placed> &all, const QString &sceneName
 		obs_transform_info info = {};
 		obs_sceneitem_crop crop = {};
 		obs_sceneitem_get_info2(item, &info);
-		toObs(slotTransform(p.entry.model, p.kind, p.cell), info, crop);
+		toObs(slotTransform(p.entry.model, p.kind, p.cell, p.ticker), info, crop);
 		obs_sceneitem_set_info2(item, &info);
 		obs_sceneitem_set_crop(item, &crop);
 		if (lock)
@@ -761,10 +783,15 @@ int createShowScenes(const core::BroadcastSpec &spec, KindMode mode, bool lock,
 {
 	const std::vector<ItemEntry> items = topLevelSelection();
 	const std::vector<core::SlotKind> kinds = selectionKinds(mode);
-	int created = 0, cams = 0, screens = 0;
+	int created = 0, cams = 0, screens = 0, chats = 0;
 	QString name;
-	/* One full-screen scene per source: the close-ups of the show. */
+	/* One full-screen scene per source: the close-ups of the show (a chat alone is not a
+	 * shot: it only appears in the layouts). */
 	for (size_t i = 0; i < items.size(); i++) {
+		if (kinds[i] == core::SlotKind::Chat) {
+			chats++;
+			continue;
+		}
 		const bool camera = kinds[i] == core::SlotKind::Camera;
 		(camera ? cams : screens)++;
 		const std::vector<Placed> placed =
@@ -774,8 +801,9 @@ int createShowScenes(const core::BroadcastSpec &spec, KindMode mode, bool lock,
 			created++;
 	}
 	/* Then every layout made for the whole selection. */
-	for (const core::BroadcastTemplate &t : core::templatesFor(cams, screens)) {
-		if (t.cameras + t.screens < 2)
+	const core::Rect canvas = EditContext::instance().canvasRect();
+	for (const core::BroadcastTemplate &t : core::templatesFor(cams, screens, chats, canvas.h > canvas.w)) {
+		if (t.cameras + t.screens + t.chats < 2)
 			continue; /* the same as the close-up above */
 		const std::vector<Placed> placed = assignSlotsFor(t.key, spec, items, kinds);
 		if (!placed.empty() && makeScene(placed, templateName(t.key), lock, name))

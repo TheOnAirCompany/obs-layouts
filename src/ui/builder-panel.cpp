@@ -356,7 +356,7 @@ builder::Options BuilderPanel::options() const
 void BuilderPanel::refresh()
 {
 	const std::vector<OBSSource> picked = sources_->selectedSources();
-	int hosts = 0, cams = 0, screens = 0, bgs = 0, cgs = 0, unset = 0;
+	int hosts = 0, cams = 0, screens = 0, chats = 0, bgs = 0, cgs = 0, unset = 0;
 	for (const OBSSource &s : picked) {
 		switch (roles::role(s)) {
 		case core::Role::Host:
@@ -367,6 +367,9 @@ void BuilderPanel::refresh()
 			break;
 		case core::Role::Screen:
 			screens++;
+			break;
+		case core::Role::Chat:
+			chats++;
 			break;
 		case core::Role::Background:
 			bgs++;
@@ -387,6 +390,7 @@ void BuilderPanel::refresh()
 	add(hosts, core::Role::Host);
 	add(cams, core::Role::Camera);
 	add(screens, core::Role::Screen);
+	add(chats, core::Role::Chat);
 	add(bgs, core::Role::Background);
 	add(cgs, core::Role::Graphics);
 	QString text = parts.isEmpty() ? T("Builder.SelectHint")
@@ -396,9 +400,10 @@ void BuilderPanel::refresh()
 	summary_->setText(text);
 
 	QStringList keys;
-	for (const core::BroadcastTemplate &t : core::templatesFor(hosts + cams, screens))
+	const double aspect = canvasAspect();
+	for (const core::BroadcastTemplate &t : core::templatesFor(hosts + cams, screens, chats, aspect < 1))
 		keys << QString::fromStdString(t.key);
-	gallery_->setTemplates(keys, canvasAspect());
+	gallery_->setTemplates(keys, aspect);
 	const bool any = !keys.isEmpty();
 	gallery_->setVisible(any);
 	empty_->setVisible(!any && !parts.isEmpty());
@@ -406,7 +411,7 @@ void BuilderPanel::refresh()
 	background_->setEnabled(bgs > 0);
 	graphics_->setEnabled(cgs > 0);
 	scene_->setEnabled(any);
-	show_->setEnabled(hosts + cams + screens > 0);
+	show_->setEnabled(hosts + cams + screens + chats > 0);
 }
 
 void BuilderPanel::flash(QPushButton *button, const QString &text)

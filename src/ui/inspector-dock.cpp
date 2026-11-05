@@ -910,23 +910,25 @@ void InspectorDock::syncBroadcast()
 	broadcastMargin_->setValue(s.broadcastMargin);
 	broadcastLock_->setChecked(s.broadcastLock);
 
-	int cams = 0, screens = 0;
+	int cams = 0, screens = 0, chats = 0;
 	for (core::SlotKind k : commands::selectionKinds((commands::KindMode)s.broadcastKinds))
-		(k == core::SlotKind::Camera ? cams : screens)++;
-	broadcastSummary_->setText(T("Broadcast.Summary").arg(cams).arg(screens));
+		(k == core::SlotKind::Camera ? cams : k == core::SlotKind::Chat ? chats : screens)++;
+	broadcastSummary_->setText(chats > 0 ? T("Broadcast.SummaryChats").arg(cams).arg(screens).arg(chats)
+					     : T("Broadcast.Summary").arg(cams).arg(screens));
 
-	const std::vector<core::BroadcastTemplate> list = core::templatesFor(cams, screens);
+	const double aspect = canvasAspect();
+	const std::vector<core::BroadcastTemplate> list = core::templatesFor(cams, screens, chats, aspect < 1);
 	QStringList keys;
 	for (const core::BroadcastTemplate &t : list)
 		keys << QString::fromStdString(t.key);
-	static_cast<BroadcastGallery *>(broadcastGallery_)->setTemplates(keys, canvasAspect());
+	static_cast<BroadcastGallery *>(broadcastGallery_)->setTemplates(keys, aspect);
 	const bool any = !keys.isEmpty();
 	broadcastGallery_->setVisible(any);
 	broadcastEmpty_->setVisible(!any);
 	broadcastEmpty_->setText(T("Broadcast.None"));
 	broadcastApply_->setEnabled(any);
 	broadcastScene_->setEnabled(any);
-	broadcastShow_->setEnabled(cams + screens > 0);
+	broadcastShow_->setEnabled(cams + screens + chats > 0);
 	updating_ = was;
 }
 

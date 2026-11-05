@@ -53,6 +53,8 @@ const char *roleKeySuffix(core::Role r)
 		return "Background";
 	case core::Role::Graphics:
 		return "Graphics";
+	case core::Role::Chat:
+		return "Chat";
 	case core::Role::None:
 		break;
 	}
@@ -147,8 +149,9 @@ QIcon dotIcon(const QColor &c)
 
 const std::vector<core::Role> &roleOrder()
 {
-	static const std::vector<core::Role> order{core::Role::Host,       core::Role::Camera,   core::Role::Screen,
-						   core::Role::Background, core::Role::Graphics, core::Role::None};
+	static const std::vector<core::Role> order{core::Role::Host, core::Role::Camera,     core::Role::Screen,
+						   core::Role::Chat, core::Role::Background, core::Role::Graphics,
+						   core::Role::None};
 	return order;
 }
 
@@ -165,6 +168,8 @@ QColor roleColor(core::Role r)
 		return QColor::fromRgba(tokens::kRoleBackground);
 	case core::Role::Graphics:
 		return QColor::fromRgba(tokens::kRoleGraphics);
+	case core::Role::Chat:
+		return QColor::fromRgba(tokens::kRoleChat);
 	case core::Role::None:
 		break;
 	}

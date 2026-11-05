@@ -118,6 +118,9 @@ Plan plan(const std::vector<OBSSource> &sources, const Options &options, const T
 		case core::Role::Graphics:
 			p.graphics.push_back(s);
 			break;
+		case core::Role::Chat:
+			p.chats.push_back(s);
+			break;
 		case core::Role::None:
 			break;
 		}
@@ -133,11 +136,12 @@ Plan plan(const std::vector<OBSSource> &sources, const Options &options, const T
 				{"Screen1Full", soloName(QString::fromUtf8(obs_source_get_name(s))), {}, {s}});
 	}
 	if (options.layouts) {
-		for (const core::BroadcastTemplate &t :
-		     core::templatesFor((int)p.cameras.size(), (int)p.screens.size())) {
-			if (t.cameras + t.screens < 2)
+		const core::Rect canvas = EditContext::instance().canvasRect();
+		for (const core::BroadcastTemplate &t : core::templatesFor((int)p.cameras.size(), (int)p.screens.size(),
+									   (int)p.chats.size(), canvas.h > canvas.w)) {
+			if (t.cameras + t.screens + t.chats < 2)
 				continue; /* the same as a full-screen scene */
-			p.scenes.push_back({t.key, templateName(t.key), p.cameras, p.screens});
+			p.scenes.push_back({t.key, templateName(t.key), p.cameras, p.screens, p.chats});
 		}
 	}
 	return p;
@@ -149,7 +153,7 @@ Plan single(const std::vector<OBSSource> &sources, const std::string &key, const
 	none.solo = false;
 	none.layouts = false;
 	Plan p = plan(sources, none, nullptr, nullptr);
-	p.scenes.push_back({key, name, p.cameras, p.screens});
+	p.scenes.push_back({key, name, p.cameras, p.screens, p.chats});
 	return p;
 }
 
@@ -183,22 +187,26 @@ std::vector<QString> create(const Plan &plan, const Options &options)
 			}
 		}
 
-		/* Tiles: cameras in reading order (hosts first), then screens. */
+		/* Tiles: cameras in reading order (hosts first), then screens, then chats. */
 		const std::vector<core::Slot> tiles = core::buildBroadcast(spec.key, canvas, options.spec);
-		size_t ci = 0, si = 0;
-		std::vector<std::pair<obs_source_t *, core::ItemTransform>> screens, cameras;
+		size_t ci = 0, si = 0, ti = 0;
+		std::vector<std::pair<obs_source_t *, core::ItemTransform>> screens, cameras, chats;
 		for (const core::Slot &slot : tiles) {
 			const bool camera = slot.kind == core::SlotKind::Camera;
-			const std::vector<OBSSource> &pool = camera ? spec.cameras : spec.screens;
-			size_t &i = camera ? ci : si;
+			const bool chat = slot.kind == core::SlotKind::Chat;
+			const std::vector<OBSSource> &pool = camera ? spec.cameras : chat ? spec.chats : spec.screens;
+			size_t &i = camera ? ci : chat ? ti : si;
 			if (i >= pool.size())
 				continue;
 			obs_source_t *s = pool[i++];
-			(camera ? cameras : screens)
-				.push_back({s, commands::slotTransform(modelOf(s), slot.kind, slot.cell)});
+			(camera ? cameras
+			 : chat ? chats
+				: screens)
+				.push_back({s, commands::slotTransform(modelOf(s), slot.kind, slot.cell, slot.ticker)});
 		}
-		/* Screens below, cameras above (a picture-in-picture camera stays visible). */
-		for (auto *list : {&screens, &cameras}) {
+		/* Screens below, cameras above (a picture-in-picture camera stays visible), chats
+		 * above the cameras, graphics above everything. */
+		for (auto *list : {&screens, &cameras, &chats}) {
 			for (const auto &[source, t] : *list) {
 				obs_sceneitem_t *item = obs_scene_add(scene, source);
 				if (!item)
