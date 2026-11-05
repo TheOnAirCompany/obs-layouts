@@ -774,7 +774,8 @@ int createShowScenes(const core::BroadcastSpec &spec, KindMode mode, bool lock,
 			created++;
 	}
 	/* Then every layout made for the whole selection. */
-	for (const core::BroadcastTemplate &t : core::templatesFor(cams, screens)) {
+	const core::Rect canvas = EditContext::instance().canvasRect();
+	for (const core::BroadcastTemplate &t : core::templatesFor(cams, screens, 0, canvas.h > canvas.w)) {
 		if (t.cameras + t.screens < 2)
 			continue; /* the same as the close-up above */
 		const std::vector<Placed> placed = assignSlotsFor(t.key, spec, items, kinds);

@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "broadcast.hpp"
+#include "broadcast-inventive.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -93,16 +94,17 @@ const std::vector<BroadcastTemplate> &broadcastTemplates()
 			l.push_back({"Screen1Cam" + std::to_string(n) + "Column", n, 1});
 		for (int n = 2; n <= 6; n++)
 			l.push_back({"Screen1Cam" + std::to_string(n) + "Strip", n, 1});
+		appendInventiveTemplates(l);
 		return l;
 	}();
 	return list;
 }
 
-std::vector<BroadcastTemplate> templatesFor(int cameras, int screens)
+std::vector<BroadcastTemplate> templatesFor(int cameras, int screens, int chats, bool portrait)
 {
 	std::vector<BroadcastTemplate> out;
 	for (const BroadcastTemplate &t : broadcastTemplates()) {
-		if (t.cameras == cameras && t.screens == screens)
+		if (t.cameras == cameras && t.screens == screens && t.chats == chats && !(portrait && t.landscapeOnly))
 			out.push_back(t);
 	}
 	return out;
@@ -260,6 +262,9 @@ std::vector<Slot> buildBroadcast(const std::string &key, const Rect &canvas, con
 {
 	if (!(canvas.w > 0) || !(canvas.h > 0))
 		return {};
+	std::vector<Slot> inventive;
+	if (buildInventiveTemplate(key, canvas, spec, inventive))
+		return inventive;
 	return canvas.h > canvas.w ? buildPortrait(key, canvas, spec) : buildLandscape(key, canvas, spec);
 }
 

@@ -133,8 +133,9 @@ Plan plan(const std::vector<OBSSource> &sources, const Options &options, const T
 				{"Screen1Full", soloName(QString::fromUtf8(obs_source_get_name(s))), {}, {s}});
 	}
 	if (options.layouts) {
+		const core::Rect canvas = EditContext::instance().canvasRect();
 		for (const core::BroadcastTemplate &t :
-		     core::templatesFor((int)p.cameras.size(), (int)p.screens.size())) {
+		     core::templatesFor((int)p.cameras.size(), (int)p.screens.size(), 0, canvas.h > canvas.w)) {
 			if (t.cameras + t.screens < 2)
 				continue; /* the same as a full-screen scene */
 			p.scenes.push_back({t.key, templateName(t.key), p.cameras, p.screens});

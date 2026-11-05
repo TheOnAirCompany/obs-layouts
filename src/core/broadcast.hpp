@@ -68,11 +68,13 @@ struct BroadcastTemplate {
 /* Every template, in display order. */
 const std::vector<BroadcastTemplate> &broadcastTemplates();
 
-/* Templates that use exactly this number of cameras and screens. */
-std::vector<BroadcastTemplate> templatesFor(int cameras, int screens);
+/* Templates that use exactly this number of cameras, screens and chats. On a portrait
+ * canvas the landscapeOnly templates are left out. */
+std::vector<BroadcastTemplate> templatesFor(int cameras, int screens, int chats = 0, bool portrait = false);
 
 /* Slots of a template on a canvas. Camera slots come first, in reading order, then
- * screen slots. Unknown keys give no slot. On a portrait canvas (taller than wide) the
+ * screen slots; inventive templates (broadcast-inventive.hpp) list theirs back to front
+ * instead, kinds mixed, the main guest flagged `host`. Unknown keys give no slot. On a portrait canvas (taller than wide) the
  * guests stack instead of sitting side by side and screens span the width at the top. */
 std::vector<Slot> buildBroadcast(const std::string &key, const Rect &canvas, const BroadcastSpec &spec);
 
