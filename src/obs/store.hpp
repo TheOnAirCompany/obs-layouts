@@ -73,6 +73,7 @@ struct ViewSettings {
 	bool builderBackground = true;
 	bool builderGraphics = true;
 	QColor guideColor{0xFF, 0x3D, 0x71};
+	int morphDurationMs = 300; /* animated layout change (AUTO), key "morph.durationMs" */
 };
 
 class Store : public QObject {

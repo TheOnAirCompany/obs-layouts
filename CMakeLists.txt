@@ -61,6 +61,10 @@ target_sources(
     src/core/broadcast.hpp
     src/core/roles.cpp
     src/core/roles.hpp
+    src/core/morph.cpp
+    src/core/morph.hpp
+    src/obs/morph.cpp
+    src/obs/morph.hpp
     src/obs/obs-convert.hpp
     src/obs/store.cpp
     src/obs/store.hpp

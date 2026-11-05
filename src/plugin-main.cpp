@@ -30,6 +30,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/corners.hpp"
 #include "obs/edit-context.hpp"
 #include "obs/hotkeys.hpp"
+#include "obs/morph.hpp"
 #include "obs/store.hpp"
 #include "ui/canvas-dock.hpp"
 #include "ui/canvas-view.hpp"
@@ -157,6 +158,7 @@ bool obs_module_load(void)
 				g_window->open();
 		});
 
+	layouts::morph::init();
 	obs_frontend_add_event_callback(onFrontendEvent, nullptr);
 	obs_frontend_add_save_callback(onSave, nullptr);
 
@@ -168,6 +170,7 @@ void obs_module_unload(void)
 {
 	obs_frontend_remove_save_callback(onSave, nullptr);
 	obs_frontend_remove_event_callback(onFrontendEvent, nullptr);
+	layouts::morph::shutdown();
 	layouts::ConstraintWatcher::instance().stop();
 	layouts::EditContext::instance().shutdown();
 	obs_log(LOG_INFO, "plugin unloaded");
