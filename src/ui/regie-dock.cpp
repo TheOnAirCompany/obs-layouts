@@ -39,7 +39,7 @@ namespace layouts::ui {
 
 namespace {
 
-QString tr(const char *key)
+QString loc(const char *key)
 {
 	return QString::fromUtf8(obs_module_text(key));
 }
@@ -82,19 +82,19 @@ RegieDock::RegieDock(QWidget *parent) : QWidget(parent)
 	root->setSpacing(tokens::kSectionSpacing);
 
 	auto *top = new QHBoxLayout;
-	top->addWidget(new QLabel(tr("Regie.Plateau")));
+	top->addWidget(new QLabel(loc("Regie.Plateau")));
 	plateau_ = new QComboBox;
-	plateau_->setToolTip(tr("Regie.PlateauTooltip"));
+	plateau_->setToolTip(loc("Regie.PlateauTooltip"));
 	top->addWidget(plateau_, 1);
 	root->addLayout(top);
 
 	studioBanner_ = new QWidget;
 	auto *banner = new QHBoxLayout(studioBanner_);
 	banner->setContentsMargins(0, 0, 0, 0);
-	auto *bannerText = new QLabel(tr("Regie.StudioOff"));
+	auto *bannerText = new QLabel(loc("Regie.StudioOff"));
 	bannerText->setWordWrap(true);
 	banner->addWidget(bannerText, 1);
-	auto *enable = new QPushButton(tr("Regie.EnableStudio"));
+	auto *enable = new QPushButton(loc("Regie.EnableStudio"));
 	banner->addWidget(enable);
 	root->addWidget(studioBanner_);
 	connect(enable, &QPushButton::clicked, this, [] { obs_frontend_set_preview_program_mode(true); });
@@ -114,10 +114,10 @@ RegieDock::RegieDock(QWidget *parent) : QWidget(parent)
 	root->addWidget(summary_);
 
 	auto *buttons = new QHBoxLayout;
-	cut_ = new QPushButton(tr("Regie.Cut"));
+	cut_ = new QPushButton(loc("Regie.Cut"));
 	cut_->setMinimumHeight(tokens::kRegieCutHeight);
-	cut_->setToolTip(tr("Regie.CutTooltip"));
-	auto_ = new QPushButton(tr("Regie.Auto"));
+	cut_->setToolTip(loc("Regie.CutTooltip"));
+	auto_ = new QPushButton(loc("Regie.Auto"));
 	auto_->setMinimumHeight(tokens::kRegieCutHeight);
 	auto_->setEnabled(false);
 	auto_->setToolTip("0.6");
@@ -139,7 +139,7 @@ void RegieDock::fillPlateaus()
 {
 	filling_ = true;
 	plateau_->clear();
-	plateau_->addItem(tr("Regie.NoPlateau"));
+	plateau_->addItem(loc("Regie.NoPlateau"));
 	struct obs_frontend_source_list scenes = {};
 	obs_frontend_get_scenes(&scenes);
 	const QString current = Regie::instance().plateau();
@@ -172,7 +172,7 @@ void RegieDock::rebuild()
 	}
 
 	if (!r.plateauSource()) {
-		auto *hint = new QLabel(tr("Regie.PickPlateau"));
+		auto *hint = new QLabel(loc("Regie.PickPlateau"));
 		hint->setWordWrap(true);
 		rowsLayout_->addWidget(hint);
 		rowsLayout_->addStretch(1);
@@ -180,7 +180,7 @@ void RegieDock::rebuild()
 		return;
 	}
 	if (r.layouts().empty()) {
-		auto *hint = new QLabel(tr("Regie.NoSources"));
+		auto *hint = new QLabel(loc("Regie.NoSources"));
 		hint->setWordWrap(true);
 		rowsLayout_->addWidget(hint);
 		rowsLayout_->addStretch(1);
@@ -189,7 +189,7 @@ void RegieDock::rebuild()
 	}
 
 	/* LAYOUTS */
-	rowsLayout_->addWidget(rowTitle(tr("Regie.Layouts")));
+	rowsLayout_->addWidget(rowTitle(loc("Regie.Layouts")));
 	auto *grid = new QWidget;
 	auto *gl = new QGridLayout(grid);
 	gl->setContentsMargins(0, 0, 0, 0);
@@ -217,27 +217,28 @@ void RegieDock::rebuild()
 	rowsLayout_->addWidget(grid);
 
 	/* One BUS per slot of the preview layout */
-	const std::vector<core::Slot> slots = r.slotsOf(r.preview().key);
-	for (size_t i = 0; i < slots.size(); i++) {
-		const bool screen = slots[i].kind == core::SlotKind::Screen;
-		rowsLayout_->addWidget(rowTitle(QString(tr(screen ? "Regie.BusScreen" : "Regie.BusCamera")).arg(i + 1)));
+	const std::vector<core::Slot> tiles = r.slotsOf(r.preview().key);
+	for (size_t i = 0; i < tiles.size(); i++) {
+		const bool screen = tiles[i].kind == core::SlotKind::Screen;
+		rowsLayout_->addWidget(
+			rowTitle(QString(loc(screen ? "Regie.BusScreen" : "Regie.BusCamera")).arg(i + 1)));
 		auto *bus = new QWidget;
 		auto *bl = new QGridLayout(bus);
 		bl->setContentsMargins(0, 0, 0, 0);
 		bl->setSpacing(tokens::kRowSpacing);
 		int m = 0;
 		for (const RegieSource &s : r.sources()) {
-			if (s.kind != slots[i].kind)
+			if (s.kind != tiles[i].kind)
 				continue;
 			auto *b = new QPushButton(QString::fromStdString(s.name));
 			b->setMinimumHeight(tokens::kRegieButton);
 			b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-			const bool inSlot = i < r.preview().slots.size() && r.preview().slots[i] == s.name;
-			const bool inProgramSlot = i < r.program().slots.size() && r.program().slots[i] == s.name;
+			const bool inSlot = i < r.preview().tiles.size() && r.preview().tiles[i] == s.name;
+			const bool inProgramSlot = i < r.program().tiles.size() && r.program().tiles[i] == s.name;
 			/* The slot's buttons light like a mixer bus: this slot on program (red), this
 			 * slot on preview (green). */
 			b->setStyleSheet(tallyStyle(inProgramSlot && r.onProgram(s.name), studio && inSlot));
-			b->setToolTip(QString(tr("Regie.SourceTooltip")).arg(QString::fromStdString(s.name)));
+			b->setToolTip(QString(loc("Regie.SourceTooltip")).arg(QString::fromStdString(s.name)));
 			const int slot = (int)i;
 			const std::string name = s.name;
 			connect(b, &QPushButton::clicked, this, [slot, name] { Regie::instance().assign(slot, name); });
@@ -250,12 +251,11 @@ void RegieDock::rebuild()
 
 	/* PREVIEW summary: "Duo — 1 Alice · 2 Bob" */
 	QStringList parts;
-	for (size_t i = 0; i < r.preview().slots.size(); i++)
-		parts << QString("%1 %2").arg(i + 1).arg(QString::fromStdString(r.preview().slots[i]));
+	for (size_t i = 0; i < r.preview().tiles.size(); i++)
+		parts << QString("%1 %2").arg(i + 1).arg(QString::fromStdString(r.preview().tiles[i]));
 	summary_->setText(QString("<b>%1</b> %2 — %3")
-				  .arg(tr(studio ? "Regie.Preview" : "Regie.Program"),
-				       layoutName(r.preview().key).toHtmlEscaped(),
-				       parts.join(" · ").toHtmlEscaped()));
+				  .arg(loc(studio ? "Regie.Preview" : "Regie.Program"),
+				       layoutName(r.preview().key).toHtmlEscaped(), parts.join(" · ").toHtmlEscaped()));
 }
 
 } // namespace layouts::ui

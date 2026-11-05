@@ -189,9 +189,8 @@ void wsAssignSlot(obs_data_t *req, obs_data_t *res, void *)
 	/* slot is 1-based, like the hotkeys and the dock */
 	const int slot = (int)obs_data_get_int(req, "slot") - 1;
 	const std::string source = obs_data_get_string(req, "source");
-	onUiThread([res, slot, source] {
-		reply(res, Regie::instance().assign(slot, source), "unknown slot or source");
-	});
+	onUiThread(
+		[res, slot, source] { reply(res, Regie::instance().assign(slot, source), "unknown slot or source"); });
 }
 
 void wsSwap(obs_data_t *req, obs_data_t *res, void *)
@@ -302,8 +301,8 @@ void Regie::scan()
 
 void Regie::fill(RegieComposition &c) const
 {
-	const std::vector<core::Slot> slots = slotsOf(c.key);
-	std::vector<std::string> kept(slots.size());
+	const std::vector<core::Slot> tiles = slotsOf(c.key);
+	std::vector<std::string> kept(tiles.size());
 	std::vector<std::string> used;
 	auto kindOf = [this](const std::string &name, core::SlotKind &kind) {
 		for (const RegieSource &s : sources_) {
@@ -315,25 +314,25 @@ void Regie::fill(RegieComposition &c) const
 		return false;
 	};
 	/* Keep what the operator chose when it still fits the slot... */
-	for (size_t i = 0; i < slots.size() && i < c.slots.size(); i++) {
+	for (size_t i = 0; i < tiles.size() && i < c.tiles.size(); i++) {
 		core::SlotKind kind;
-		if (kindOf(c.slots[i], kind) && kind == slots[i].kind &&
-		    std::find(used.begin(), used.end(), c.slots[i]) == used.end()) {
-			kept[i] = c.slots[i];
-			used.push_back(c.slots[i]);
+		if (kindOf(c.tiles[i], kind) && kind == tiles[i].kind &&
+		    std::find(used.begin(), used.end(), c.tiles[i]) == used.end()) {
+			kept[i] = c.tiles[i];
+			used.push_back(c.tiles[i]);
 		}
 	}
-	/* ...then fill the empty slots with the next free sources of the right kind, the
+	/* ...then fill the empty tiles with the next free sources of the right kind, the
 	 * sources of the previous composition first (a layout change keeps the guests). */
-	std::vector<std::string> order = c.slots;
+	std::vector<std::string> order = c.tiles;
 	for (const RegieSource &s : sources_)
 		order.push_back(s.name);
-	for (size_t i = 0; i < slots.size(); i++) {
+	for (size_t i = 0; i < tiles.size(); i++) {
 		if (!kept[i].empty())
 			continue;
 		for (const std::string &name : order) {
 			core::SlotKind kind;
-			if (kindOf(name, kind) && kind == slots[i].kind &&
+			if (kindOf(name, kind) && kind == tiles[i].kind &&
 			    std::find(used.begin(), used.end(), name) == used.end()) {
 				kept[i] = name;
 				used.push_back(name);
@@ -341,7 +340,7 @@ void Regie::fill(RegieComposition &c) const
 			}
 		}
 	}
-	c.slots = kept;
+	c.tiles = kept;
 }
 
 void Regie::refresh()
@@ -386,8 +385,8 @@ OBSSource Regie::twin(bool create)
 	if (!create)
 		return nullptr;
 	/* Same sources, shared (references), groups copied by OBS. */
-	obs_scene_t *dup = obs_scene_duplicate(obs_scene_from_source(plateau), name.toUtf8().constData(),
-					       OBS_SCENE_DUP_REFS);
+	obs_scene_t *dup =
+		obs_scene_duplicate(obs_scene_from_source(plateau), name.toUtf8().constData(), OBS_SCENE_DUP_REFS);
 	if (!dup)
 		return nullptr;
 	OBSSource out(obs_scene_get_source(dup));
@@ -415,8 +414,8 @@ bool Regie::apply(obs_source_t *sceneSource, const RegieComposition &c)
 	obs_scene_t *scene = obs_scene_from_source(sceneSource);
 	if (!scene || c.key.empty())
 		return false;
-	const std::vector<core::Slot> slots = core::buildBroadcast(c.key, canvasRect(sceneSource), spec());
-	if (slots.empty())
+	const std::vector<core::Slot> tiles = core::buildBroadcast(c.key, canvasRect(sceneSource), spec());
+	if (tiles.empty())
 		return false;
 	auto managed = [this](const std::string &name) {
 		return std::any_of(sources_.begin(), sources_.end(),
@@ -426,9 +425,9 @@ bool Regie::apply(obs_source_t *sceneSource, const RegieComposition &c)
 	for (const ItemRef &r : topItems(scene)) {
 		if (!managed(r.name))
 			continue;
-		const auto it = std::find(c.slots.begin(), c.slots.end(), r.name);
-		const size_t i = (size_t)(it - c.slots.begin());
-		if (it == c.slots.end() || i >= slots.size()) {
+		const auto it = std::find(c.tiles.begin(), c.tiles.end(), r.name);
+		const size_t i = (size_t)(it - c.tiles.begin());
+		if (it == c.tiles.end() || i >= tiles.size()) {
 			obs_sceneitem_set_visible(r.item, false);
 			continue;
 		}
@@ -438,13 +437,13 @@ bool Regie::apply(obs_source_t *sceneSource, const RegieComposition &c)
 		obs_sceneitem_get_info2(r.item, &info);
 		obs_sceneitem_get_crop(r.item, &crop);
 		const core::ItemModel m{fromObs(info, crop), obs_source_get_width(src), obs_source_get_height(src)};
-		toObs(commands::slotTransform(m, slots[i].kind, slots[i].cell), info, crop);
+		toObs(commands::slotTransform(m, tiles[i].kind, tiles[i].cell), info, crop);
 		obs_sceneitem_defer_update_begin(r.item);
 		obs_sceneitem_set_info2(r.item, &info);
 		obs_sceneitem_set_crop(r.item, &crop);
 		obs_sceneitem_defer_update_end(r.item);
 		obs_sceneitem_set_visible(r.item, true);
-		if (pip && slots[i].kind == core::SlotKind::Camera)
+		if (pip && tiles[i].kind == core::SlotKind::Camera)
 			obs_sceneitem_set_order(r.item, OBS_ORDER_MOVE_TOP);
 	}
 	return true;
@@ -503,37 +502,37 @@ bool Regie::favorite(int index)
 
 bool Regie::assign(int slot, const std::string &source)
 {
-	const std::vector<core::Slot> slots = slotsOf(preview_.key);
-	if (slot < 0 || slot >= (int)slots.size())
+	const std::vector<core::Slot> tiles = slotsOf(preview_.key);
+	if (slot < 0 || slot >= (int)tiles.size())
 		return false;
-	const auto src = std::find_if(sources_.begin(), sources_.end(),
-				      [&](const RegieSource &s) { return s.name == source; });
+	const auto src =
+		std::find_if(sources_.begin(), sources_.end(), [&](const RegieSource &s) { return s.name == source; });
 	if (src == sources_.end())
 		return false;
-	preview_.slots.resize(slots.size());
-	const auto other = std::find(preview_.slots.begin(), preview_.slots.end(), source);
-	if (other != preview_.slots.end()) {
-		const int o = (int)(other - preview_.slots.begin());
+	preview_.tiles.resize(tiles.size());
+	const auto other = std::find(preview_.tiles.begin(), preview_.tiles.end(), source);
+	if (other != preview_.tiles.end()) {
+		const int o = (int)(other - preview_.tiles.begin());
 		if (o == slot)
 			return true;
 		/* Already in another slot: the two swap (when the kinds allow it). */
-		if (slots[(size_t)o].kind != slots[(size_t)slot].kind && !preview_.slots[(size_t)slot].empty())
+		if (tiles[(size_t)o].kind != tiles[(size_t)slot].kind && !preview_.tiles[(size_t)slot].empty())
 			return false;
 		return swap(o, slot);
 	}
-	if (src->kind != slots[(size_t)slot].kind)
+	if (src->kind != tiles[(size_t)slot].kind)
 		return false;
-	preview_.slots[(size_t)slot] = source;
+	preview_.tiles[(size_t)slot] = source;
 	return prepare();
 }
 
 bool Regie::swap(int a, int b)
 {
-	const std::vector<core::Slot> slots = slotsOf(preview_.key);
-	if (a < 0 || b < 0 || a >= (int)slots.size() || b >= (int)slots.size())
+	const std::vector<core::Slot> tiles = slotsOf(preview_.key);
+	if (a < 0 || b < 0 || a >= (int)tiles.size() || b >= (int)tiles.size())
 		return false;
-	preview_.slots.resize(slots.size());
-	std::swap(preview_.slots[(size_t)a], preview_.slots[(size_t)b]);
+	preview_.tiles.resize(tiles.size());
+	std::swap(preview_.tiles[(size_t)a], preview_.tiles[(size_t)b]);
 	return prepare();
 }
 
@@ -564,14 +563,14 @@ void Regie::stateTo(obs_data_t *out) const
 		OBSDataAutoRelease d = obs_data_create();
 		obs_data_set_string(d, "layout", c.key.c_str());
 		OBSDataArrayAutoRelease arr = obs_data_array_create();
-		const std::vector<core::Slot> slots = slotsOf(c.key);
-		for (size_t i = 0; i < c.slots.size(); i++) {
+		const std::vector<core::Slot> tiles = slotsOf(c.key);
+		for (size_t i = 0; i < c.tiles.size(); i++) {
 			OBSDataAutoRelease s = obs_data_create();
 			obs_data_set_int(s, "slot", (long long)i + 1);
 			obs_data_set_string(s, "kind",
-					    i < slots.size() && slots[i].kind == core::SlotKind::Screen ? "screen"
+					    i < tiles.size() && tiles[i].kind == core::SlotKind::Screen ? "screen"
 													: "camera");
-			obs_data_set_string(s, "source", c.slots[i].c_str());
+			obs_data_set_string(s, "source", c.tiles[i].c_str());
 			obs_data_array_push_back(arr, s);
 		}
 		obs_data_set_array(d, "slots", arr);
@@ -609,7 +608,7 @@ void Regie::save(obs_data_t *data)
 	obs_data_set_string(d, "plateau", plateau_.toUtf8().constData());
 	obs_data_set_string(d, "layout", preview_.key.c_str());
 	OBSDataArrayAutoRelease arr = obs_data_array_create();
-	for (const std::string &s : preview_.slots) {
+	for (const std::string &s : preview_.tiles) {
 		OBSDataAutoRelease e = obs_data_create();
 		obs_data_set_string(e, "source", s.c_str());
 		obs_data_array_push_back(arr, e);
@@ -630,7 +629,7 @@ void Regie::load(obs_data_t *data)
 		OBSDataArrayAutoRelease arr = obs_data_get_array(d, "slots");
 		for (size_t i = 0; arr && i < obs_data_array_count(arr); i++) {
 			OBSDataAutoRelease e = obs_data_array_item(arr, i);
-			preview_.slots.push_back(obs_data_get_string(e, "source"));
+			preview_.tiles.push_back(obs_data_get_string(e, "source"));
 		}
 		program_ = preview_;
 	}

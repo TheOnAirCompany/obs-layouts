@@ -49,9 +49,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 namespace layouts {
 
 struct RegieComposition {
-	std::string key;               /* broadcast template */
-	std::vector<std::string> slots; /* source name per slot, empty = nothing */
-	bool operator==(const RegieComposition &o) const { return key == o.key && slots == o.slots; }
+	std::string key;                /* broadcast template */
+	std::vector<std::string> tiles; /* source name per slot, empty = nothing */
+	bool operator==(const RegieComposition &o) const { return key == o.key && tiles == o.tiles; }
 };
 
 struct RegieSource {
