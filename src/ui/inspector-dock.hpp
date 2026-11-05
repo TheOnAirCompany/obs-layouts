@@ -88,6 +88,7 @@ private:
 
 	std::map<commands::Field, NumericField *> fields_;
 	RefPointPicker *ref_ = nullptr;
+	NumericField *radius_ = nullptr;
 	QToolButton *ratio_ = nullptr;
 	std::vector<QToolButton *> alignButtons_;
 	std::vector<QToolButton *> distributeButtons_;

@@ -26,6 +26,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "core/expression.hpp"
 #include "obs/commands.hpp"
 #include "obs/constraints.hpp"
+#include "obs/corners.hpp"
 #include "obs/edit-context.hpp"
 #include "obs/hotkeys.hpp"
 #include "obs/obs-convert.hpp"
@@ -755,6 +756,24 @@ void testBroadcast()
 	R->check(ea && h == core::HConstraint::Left && v == core::VConstraint::Top,
 		 "broadcast-unlock-resets-constraints");
 
+	/* A mirrored webcam stays mirrored in its slot, and still fills it. */
+	resetItem("A", 100, 100);
+	resetItem("B", 700, 400);
+	ctx.markDirty();
+	selectNames({"A"});
+	commands::flip(core::Axis::X);
+	ctx.markDirty();
+	selectNames({"A", "B"});
+	commands::applyBroadcast("Cam2Split", spec, commands::KindMode::AllCameras, false);
+	ctx.markDirty();
+	vec2 mirrored = {};
+	if ((ea = entry("A")))
+		obs_sceneitem_get_scale(ea->item, &mirrored);
+	const core::Rect a3 = box("A");
+	R->check(ea && mirrored.x < 0 && mirrored.y > 0 && std::fabs(a3.x) < 0.6 && std::fabs(a3.w - half) < 1.0 &&
+			 std::fabs(a3.h - 1080) < 1.0,
+		 "broadcast-keeps-flip", rectStr(a3) + QString(" sx %1").arg(mirrored.x));
+
 	/* The Inspector lists the templates for the selection. */
 	Store::instance().settings().broadcastKinds = 1;
 	selectNames({"A", "B", "C"});
@@ -1142,6 +1161,93 @@ void checkCleanOutput()
 			 .arg(img.width())
 			 .arg(img.height()));
 	QFile::remove(p);
+}
+
+/* Rounded corners: a cropped item keeps round corners on the program output. */
+OBSSourceAutoRelease g_cornerScene;
+OBSSourceAutoRelease g_beforeCorners;
+
+void prepareCorners()
+{
+	EditContext &ctx = EditContext::instance();
+	g_beforeCorners = obs_frontend_get_current_scene();
+	obs_source_t *s = obs_scene_get_source(obs_scene_create("Layouts Corners"));
+	g_cornerScene = s;
+	/* 800x600 white, cropped 100 left / 50 top: visible 700x550 at (200, 265). */
+	obs_sceneitem_t *item = addColor(obs_scene_from_source(s), "Rounded", 800, 600, 0xFFFFFFFF, 200, 265);
+	obs_sceneitem_crop crop = {100, 50, 0, 0};
+	obs_sceneitem_set_crop(item, &crop);
+	/* 400x200 at half size, not cropped: visible 200x100 at (1300, 100). */
+	obs_sceneitem_t *half = addColor(obs_scene_from_source(s), "Rounded half", 400, 200, 0xFFFFFFFF, 1300, 100);
+	vec2 halfScale;
+	vec2_set(&halfScale, 0.5f, 0.5f);
+	obs_sceneitem_set_scale(half, &halfScale);
+	/* Both items exist before the scene goes on the program (Studio Mode copies it). */
+	obs_frontend_set_current_scene(s);
+	ctx.pin(s);
+	ctx.markDirty();
+
+	selectNames({"Rounded"});
+	corners::setRadius(core::parseExpression("40", 0));
+	ctx.markDirty();
+	const ItemEntry *e = entry("Rounded");
+	R->check(e && std::fabs(corners::radius(*e) - 40) < 0.01, "corners-radius-set",
+		 e ? QString::number(corners::radius(*e)) : "no item");
+
+	/* Half size: the field still shows canvas pixels, the source keeps 80 px. */
+	selectNames({"Rounded half"});
+	corners::setRadius(core::parseExpression("20", 0));
+	ctx.markDirty();
+	const ItemEntry *h = entry("Rounded half");
+	OBSSourceAutoRelease filter =
+		obs_source_get_filter_by_name(obs_sceneitem_get_source(half), obs_module_text("Corners.FilterName"));
+	OBSDataAutoRelease fs = filter ? obs_source_get_settings(filter) : nullptr;
+	R->check(h && std::fabs(corners::radius(*h) - 20) < 0.01 && fs &&
+			 std::fabs(obs_data_get_double(fs, "radius") - 40) < 0.01,
+		 "corners-canvas-pixels", fs ? QString::number(obs_data_get_double(fs, "radius")) : "no filter");
+}
+
+void checkCorners()
+{
+	char *path = obs_frontend_get_last_screenshot();
+	const QString p = QString::fromUtf8(path ? path : "");
+	bfree(path);
+	QImage img(p);
+	R->check(!img.isNull(), "corners-screenshot", p);
+	if (img.isNull())
+		return;
+	auto lum = [&](int x, int y) {
+		return qGray(img.pixel(x, y));
+	};
+	/* Visible rect 200..900 x 265..815; the corners are cut, the edges are not. */
+	const int cut = std::max({lum(201, 266), lum(898, 266), lum(201, 813), lum(898, 813)});
+	const int kept = std::min({lum(550, 266), lum(201, 540), lum(898, 540), lum(550, 813), lum(240, 305)});
+	R->check(cut < 40 && kept > 215, "corners-follow-crop",
+		 QString("corner max %1, edge min %2").arg(cut).arg(kept));
+	/* Half-size item, 200x100 at (1300, 100), 20 px corners. */
+	const int cutHalf = std::max({lum(1300, 100), lum(1499, 100), lum(1300, 199), lum(1499, 199)});
+	const int keptHalf = std::min({lum(1400, 100), lum(1300, 150), lum(1320, 120), lum(1400, 150)});
+	R->check(cutHalf < 40 && keptHalf > 215, "corners-scaled-item",
+		 QString("corner max %1, edge min %2").arg(cutHalf).arg(keptHalf));
+	if (!getenv("LAYOUTS_SELFTEST_KEEP_SHOTS"))
+		QFile::remove(p);
+
+	/* Undo puts the square corners back (the filter goes away). */
+	EditContext &ctx = EditContext::instance();
+	QAction *undo = findAction(QKeySequence(QKeySequence::Undo));
+	if (undo)
+		undo->trigger();
+	ctx.markDirty();
+	const ItemEntry *h = entry("Rounded half");
+	R->check(undo && h && corners::radius(*h) == 0.0, "corners-undo",
+		 h ? QString::number(corners::radius(*h)) : "no item");
+
+	/* The next groups expect the scene that was on the program. */
+	if (g_beforeCorners) {
+		obs_frontend_set_current_scene(g_beforeCorners);
+		ctx.pin(g_beforeCorners);
+	}
+	g_beforeCorners = nullptr;
 }
 
 void liveProgramCheck()
@@ -1561,6 +1667,11 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(500, [] { prepareCleanOutput(); });
 		R->add(1000, [] { takeShot(); });
 		R->add(1500, [] { checkCleanOutput(); });
+	}
+	if (enabled("corners")) {
+		R->add(500, [] { prepareCorners(); });
+		R->add(1000, [] { takeShot(); });
+		R->add(1500, [] { checkCorners(); });
 	}
 	if (enabled("live")) {
 		R->add(300, [] {

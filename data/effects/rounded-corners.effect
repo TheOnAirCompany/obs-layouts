@@ -1,0 +1,55 @@
+// Layouts for OBS - rounded corners mask.
+// The mask is computed in source pixels on the visible rectangle (the source minus the
+// crop of the scene item being drawn), with a one pixel anti-aliased edge.
+
+uniform float4x4 ViewProj;
+uniform texture2d image;
+
+uniform float2 size;   // source size in pixels
+uniform float4 rect;   // visible rectangle in source pixels: left, top, right, bottom
+uniform float2 radius; // corner radius in source pixels (x, y)
+
+sampler_state textureSampler {
+	Filter    = Linear;
+	AddressU  = Clamp;
+	AddressV  = Clamp;
+};
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
+
+float coverage(float2 p)
+{
+	float2 center = (rect.xy + rect.zw) * 0.5;
+	float2 extent = (rect.zw - rect.xy) * 0.5;
+	float2 r = min(radius, extent);
+	float2 q = abs(p - center) - (extent - r);
+	float2 n = max(q, float2(0.0, 0.0)) / max(r, float2(0.0001, 0.0001));
+	float d = (length(n) - 1.0) * min(r.x, r.y);
+	return saturate(0.5 - d);
+}
+
+float4 PSRound(VertData v_in) : TARGET
+{
+	float4 rgba = image.Sample(textureSampler, v_in.uv);
+	return rgba * coverage(v_in.uv * size);
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSRound(v_in);
+	}
+}
