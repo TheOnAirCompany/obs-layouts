@@ -9,6 +9,14 @@ uniform float2 size;   // source size in pixels
 uniform float4 rect;   // visible rectangle in source pixels: left, top, right, bottom
 uniform float2 radius; // corner radius in source pixels (x, y)
 
+// Optional convex polygon intersected with the rounded rectangle (diagonal layouts):
+// up to 8 points in source pixels, two per float4, clockwise on screen (y down).
+uniform float  polyCount; // 0: no polygon
+uniform float4 poly01;
+uniform float4 poly23;
+uniform float4 poly45;
+uniform float4 poly67;
+
 sampler_state textureSampler {
 	Filter    = Linear;
 	AddressU  = Clamp;
@@ -28,6 +36,36 @@ VertData VSDefault(VertData v_in)
 	return vert_out;
 }
 
+// Signed distance to the line of edge a -> b, positive outside (the left of a -> b).
+float edgeDistance(float2 p, float2 a, float2 b)
+{
+	float2 e = b - a;
+	float len = max(length(e), 0.0001);
+	return ((p.x - a.x) * e.y - (p.y - a.y) * e.x) / len;
+}
+
+float polygonDistance(float2 p)
+{
+	float n = polyCount;
+	float d = -100000.0;
+	float2 last = poly01.xy;
+	if (n > 7.5) last = poly67.zw;
+	else if (n > 6.5) last = poly67.xy;
+	else if (n > 5.5) last = poly45.zw;
+	else if (n > 4.5) last = poly45.xy;
+	else if (n > 3.5) last = poly23.zw;
+	else last = poly23.xy;
+	d = max(d, edgeDistance(p, poly01.xy, poly01.zw));
+	d = max(d, edgeDistance(p, poly01.zw, poly23.xy));
+	if (n > 3.5) d = max(d, edgeDistance(p, poly23.xy, poly23.zw));
+	if (n > 4.5) d = max(d, edgeDistance(p, poly23.zw, poly45.xy));
+	if (n > 5.5) d = max(d, edgeDistance(p, poly45.xy, poly45.zw));
+	if (n > 6.5) d = max(d, edgeDistance(p, poly45.zw, poly67.xy));
+	if (n > 7.5) d = max(d, edgeDistance(p, poly67.xy, poly67.zw));
+	d = max(d, edgeDistance(p, last, poly01.xy));
+	return d;
+}
+
 float coverage(float2 p)
 {
 	float2 center = (rect.xy + rect.zw) * 0.5;
@@ -36,6 +74,12 @@ float coverage(float2 p)
 	float2 q = abs(p - center) - (extent - r);
 	float2 n = max(q, float2(0.0, 0.0)) / max(r, float2(0.0001, 0.0001));
 	float d = (length(n) - 1.0) * min(r.x, r.y);
+	if (min(r.x, r.y) < 0.01) {
+		float2 b = abs(p - center) - extent; // square corners (polygon only)
+		d = max(b.x, b.y);
+	}
+	if (polyCount > 2.5)
+		d = max(d, polygonDistance(p));
 	return saturate(0.5 - d);
 }
 

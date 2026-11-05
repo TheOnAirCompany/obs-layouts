@@ -73,6 +73,8 @@ target_sources(
     src/core/style.hpp
     src/core/slot-apply.cpp
     src/core/slot-apply.hpp
+    src/core/shape.cpp
+    src/core/shape.hpp
     src/obs/obs-convert.hpp
     src/obs/store.cpp
     src/obs/store.hpp
