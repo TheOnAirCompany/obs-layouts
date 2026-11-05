@@ -520,11 +520,11 @@ bool transitionRadius(Filter *f, obs_source_t *source, float l, float t, float r
 	OBSSourceAutoRelease tr = raw;
 	if (!tr || obs_source_get_type(tr) != OBS_SOURCE_TYPE_TRANSITION || !obs_transition_is_active(tr))
 		return false;
-	OBSSourceAutoRelease a = obs_transition_get_source(tr, OBS_TRANSITION_SOURCE_A);
-	OBSSourceAutoRelease b = obs_transition_get_source(tr, OBS_TRANSITION_SOURCE_B);
+	OBSSourceAutoRelease sa = obs_transition_get_source(tr, OBS_TRANSITION_SOURCE_A);
+	OBSSourceAutoRelease sb = obs_transition_get_source(tr, OBS_TRANSITION_SOURCE_B);
 	Radius ra, rb;
-	const bool inA = radiusIn(f, a, source, ra);
-	const bool inB = radiusIn(f, b, source, rb);
+	const bool inA = radiusIn(f, sa, source, ra);
+	const bool inB = radiusIn(f, sb, source, rb);
 	if (!inA && !inB)
 		return false;
 	if (!inA || !inB) {
@@ -949,7 +949,7 @@ std::vector<core::Vec2> itemPolygon(obs_sceneitem_t *item)
 			json = QByteArray(obs_data_get_json(obj));
 	}
 	const QJsonArray points = QJsonDocument::fromJson(json).object().value("polygon").toArray();
-	for (const QJsonValue &v : points) {
+	for (const QJsonValue v : points) {
 		const QJsonArray pt = v.toArray();
 		if (pt.size() >= 2)
 			out.push_back({pt.at(0).toDouble(), pt.at(1).toDouble()});
