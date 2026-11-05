@@ -97,6 +97,14 @@ std::vector<core::SlotKind> selectionKinds(KindMode mode);
 /* Transform that places a source in a broadcast tile: cameras fill it (cropped on the
  * face), screens fit; a flipped source stays flipped. */
 core::ItemTransform slotTransform(const core::ItemModel &m, core::SlotKind kind, const core::Rect &cell);
+/* Same, turned by the slot rotation around the cell center (0.5). */
+core::ItemTransform slotTransform(const core::ItemModel &m, const core::Slot &slot);
+/* Writes the shape and frame of the slot in the item style override (private setting
+ * "layouts_style"); an item moving to a plain slot loses what a slot had added. */
+void applySlotStyle(obs_sceneitem_t *item, const core::Slot &slot);
+/* Stacks the items of a template in slot order (back to front), keeping them in the
+ * places they already take among the other items (background below, graphics above). */
+void stackInSlotOrder(const std::vector<obs_sceneitem_t *> &backToFront);
 /* Locks an item and makes it scale with the canvas. */
 void lockItem(obs_sceneitem_t *item);
 /* Target frames (one per selected item that gets a slot) for a template. */

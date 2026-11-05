@@ -67,6 +67,10 @@ target_sources(
     src/core/broadcast-inventive.hpp
     src/core/roles.cpp
     src/core/roles.hpp
+    src/core/style.cpp
+    src/core/style.hpp
+    src/core/slot-apply.cpp
+    src/core/slot-apply.hpp
     src/obs/obs-convert.hpp
     src/obs/store.cpp
     src/obs/store.hpp
