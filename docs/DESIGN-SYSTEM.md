@@ -44,6 +44,7 @@ is used for state (selection, snapping, live).
 | `kCrop` (0.2) | `#FF9F0A` | crop mode frame and handles |
 | `kThumbCamera` (0.2) | `#5FB4F5` | broadcast layouts gallery: camera tiles |
 | `kThumbScreen` (0.2) | `#C9A24A` | broadcast layouts gallery: screen tiles |
+| `kLayersWidth` (0.3) | 240 px | Layers panel width on first launch (pending review) |
 | `kOutside` | `#1B1C1F` | around the canvas |
 | `kCanvasBackdrop` | black | canvas behind the scene |
 | `kLiveFrame` | `#E5484D`, 2 px | frame around the canvas when on air |

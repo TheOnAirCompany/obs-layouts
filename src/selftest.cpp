@@ -33,6 +33,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "ui/canvas-dock.hpp"
 #include "ui/canvas-view.hpp"
 #include "ui/inspector-dock.hpp"
+#include "ui/layers-panel.hpp"
 #include "ui/layouts-window.hpp"
 #include "ui/ruler.hpp"
 
@@ -47,6 +48,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QMainWindow>
 #include <QKeyEvent>
 #include <QListWidget>
+#include <QTreeWidget>
 #include <QMouseEvent>
 #include <QTimer>
 
@@ -845,6 +847,89 @@ void testShowScenes()
 		obs_source_remove(leaked);
 }
 
+QTreeWidgetItem *layerRow(const char *name)
+{
+	QTreeWidget *tree = g_window->layers()->tree();
+	for (QTreeWidgetItemIterator it(tree); *it; ++it) {
+		if ((*it)->text(0) == name)
+			return *it;
+	}
+	return nullptr;
+}
+
+QString topLevelOrder()
+{
+	QTreeWidget *tree = g_window->layers()->tree();
+	QStringList names;
+	for (int i = 0; i < tree->topLevelItemCount(); i++)
+		names << tree->topLevelItem(i)->text(0);
+	return names.join(',');
+}
+
+void testLayers()
+{
+	EditContext &ctx = EditContext::instance();
+	ui::LayersPanel *layers = g_window->layers();
+	layers->refresh();
+	QTreeWidget *tree = layers->tree();
+	QTreeWidgetItem *group = layerRow("G");
+	/* Front on top, as libobs stacks them (enumeration runs from the back). */
+	QStringList inGroup;
+	if (const ItemEntry *g = entry("G"))
+		obs_sceneitem_group_enum_items(
+			g->item,
+			[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+				((QStringList *)p)
+					->prepend(
+						QString::fromUtf8(obs_source_get_name(obs_sceneitem_get_source(item))));
+				return true;
+			},
+			&inGroup);
+	QStringList rows;
+	for (int i = 0; group && i < group->childCount(); i++)
+		rows << group->child(i)->text(0);
+	R->check(topLevelOrder() == "G,C,B,A" && rows.size() == 2 && rows == inGroup, "layers-front-on-top",
+		 topLevelOrder() + " / " + rows.join(',') + " vs " + inGroup.join(','));
+
+	/* Canvas -> layers. */
+	selectNames({"C"});
+	emit ctx.itemsChanged();
+	R->check(tree->selectedItems().size() == 1 && tree->selectedItems()[0]->text(0) == "C",
+		 "layers-follow-canvas-selection");
+
+	/* Layers -> canvas (and OBS). */
+	tree->clearSelection();
+	if (QTreeWidgetItem *b = layerRow("B"))
+		b->setSelected(true);
+	if (QTreeWidgetItem *d = layerRow("D"))
+		d->setSelected(true);
+	std::vector<const ItemEntry *> sel = ctx.selection();
+	QStringList names;
+	for (const ItemEntry *e : sel)
+		names << e->name;
+	names.sort();
+	R->check(names.join(',') == "B,D", "layers-select-sources", names.join(','));
+
+	/* Eye column hides and shows. */
+	QTreeWidgetItem *c = layerRow("C");
+	emit tree->itemClicked(c, 2);
+	const bool hidden = entry("C") && !entry("C")->visible;
+	emit tree->itemClicked(layerRow("C"), 2);
+	R->check(hidden && entry("C") && entry("C")->visible, "layers-eye-toggles");
+
+	/* Reorder: A to the front, one undo entry. */
+	layers->reorder(layerRow("A"), nullptr, 0);
+	layers->refresh();
+	const QString moved = topLevelOrder();
+	QAction *undo = findAction(QKeySequence(QKeySequence::Undo));
+	if (undo)
+		undo->trigger();
+	ctx.markDirty();
+	layers->refresh();
+	R->check(moved == "A,G,C,B" && topLevelOrder() == "G,C,B,A", "layers-reorder-undo",
+		 moved + " then " + topLevelOrder());
+}
+
 void testCropMode()
 {
 	EditContext &ctx = EditContext::instance();
@@ -1372,6 +1457,7 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(300, [] { testCommands(); });
 		R->add(300, [] { testUndo(); });
 		R->add(300, [] { testCanvasSnapAndRuler(); });
+		R->add(300, [] { testLayers(); });
 		R->add(300, [] { testLayoutsV02(); });
 		R->add(300, [] { testBroadcast(); });
 		R->add(300, [] { testBroadcastScene(); });
@@ -1387,7 +1473,8 @@ void runSelfTest(ui::LayoutsWindow *window)
 		static uint64_t frames0 = 0;
 		R->add(300, [] {
 			R->check(g_window->isWindow() && g_dock->window() == g_window &&
-					 g_window->inspector()->window() == g_window,
+					 g_window->inspector()->window() == g_window &&
+					 g_window->layers()->window() == g_window,
 				 "window-holds-canvas-and-inspector");
 			g_window->hide();
 		});

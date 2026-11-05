@@ -21,6 +21,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "canvas-dock.hpp"
 #include "canvas-view.hpp"
 #include "inspector-dock.hpp"
+#include "layers-panel.hpp"
 #include "theme.hpp"
 
 #include "obs/store.hpp"
@@ -42,20 +43,24 @@ LayoutsWindow::LayoutsWindow(QWidget *obsMainWindow) : QWidget(obsMainWindow, Qt
 	lay->setContentsMargins(0, 0, 0, 0);
 	split_ = new QSplitter(Qt::Horizontal, this);
 	split_->setChildrenCollapsible(false);
+	layers_ = new LayersPanel(split_);
+	layers_->setMinimumWidth(160);
 	canvas_ = new CanvasDock(split_);
 	inspector_ = new InspectorDock(split_);
 	inspector_->setMinimumWidth(260);
+	split_->addWidget(layers_);
 	split_->addWidget(canvas_);
 	split_->addWidget(inspector_);
-	split_->setStretchFactor(0, 1);
-	split_->setStretchFactor(1, 0);
+	split_->setStretchFactor(0, 0);
+	split_->setStretchFactor(1, 1);
+	split_->setStretchFactor(2, 0);
 	lay->addWidget(split_);
 
 	const ViewSettings &s = Store::instance().settings();
 	if (!s.splitterState.isEmpty())
 		split_->restoreState(s.splitterState);
 	else
-		split_->setSizes({900, tokens::kInspectorWidth});
+		split_->setSizes({tokens::kLayersWidth, 900, tokens::kInspectorWidth});
 }
 
 void LayoutsWindow::open()

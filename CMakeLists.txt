@@ -78,6 +78,8 @@ target_sources(
     src/ui/widgets.hpp
     src/ui/inspector-dock.cpp
     src/ui/inspector-dock.hpp
+    src/ui/layers-panel.cpp
+    src/ui/layers-panel.hpp
     src/ui/canvas-view.cpp
     src/ui/canvas-view.hpp
     src/ui/ruler.cpp

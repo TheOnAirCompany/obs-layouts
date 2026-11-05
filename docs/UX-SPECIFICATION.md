@@ -25,6 +25,18 @@ The Canvas toolbar has a scene picker:
 
 The Inspector always shows the selection of the edited scene.
 
+## Layers (0.3)
+Left panel of the Layouts window (default width 240 px, resizable down to 160 px). The sources of the
+edited scene as a tree, front on top like a design tool's layers; groups unfold and remember being
+folded while the scene stays the same. Each row: type icon (camera, screen, window, image, text,
+browser, media, color, group, scene, audio), name, lock, eye. Hidden sources are dimmed.
+- Click selects, Shift / Cmd extends; the selection is the OBS selection, so the Canvas, the Inspector
+  and the OBS Sources dock follow, and the other way round.
+- The eye and the lock act on one source; both respect the block-on-air policy.
+- Double-click (or Return) renames the source; a name already taken is refused.
+- Drag and drop reorders inside the same scene or group (one undo entry); dropping into another group
+  is refused.
+
 ## Inspector
 
 ### Empty state

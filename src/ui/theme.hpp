@@ -38,6 +38,7 @@ constexpr int kPanelMargin = 10;    /* inner margin of the dock */
 constexpr int kFieldHeight = 24;
 constexpr int kFieldMinWidth = 44;   /* numeric fields shrink down to this */
 constexpr int kInspectorWidth = 300; /* default dock width on first launch */
+constexpr int kLayersWidth = 240;    /* default Layers panel width on first launch */
 constexpr int kIconButton = 26;      /* square icon button */
 constexpr int kIconSize = 16;
 constexpr int kLabelWidth = 16;         /* scrub label "X", "W"... */

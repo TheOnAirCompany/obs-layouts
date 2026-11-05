@@ -16,6 +16,10 @@ Layouts for OBS is a native OBS Studio plugin that brings the composition tools 
 
 ## What it adds
 
+### Layers
+
+The left panel of the Layouts window: every source of the edited scene, front on top, groups unfolded. Click to select (Shift / Cmd for several), the eye hides, the lock locks, double-click renames, drag reorders (undoable). No need to go back to the OBS Sources dock.
+
 ### Inspector
 
 The right panel of the Layouts window. It always shows the selection of the edited scene.

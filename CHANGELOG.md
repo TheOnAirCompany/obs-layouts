@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 — not released yet
+
+- **Layers panel** on the left of the Layouts window, like a design tool: the sources of the edited
+  scene as a tree (front on top, groups unfold), selection in sync with the Canvas and OBS, eye and
+  lock on each row, double-click to rename, drag to reorder (one undo entry).
+
 ## 0.2.0 — 2026-11-04
 
 - **Layouts window**: the Canvas and the Inspector now live together in one regular window
