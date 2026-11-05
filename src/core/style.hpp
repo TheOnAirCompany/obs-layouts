@@ -23,8 +23,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * "layouts_style", same JSON as toJson). Values below are provisional until the
  * design review. */
 
+#include "geometry.hpp"
+
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace layouts::core {
 
@@ -41,11 +44,16 @@ struct Style {
 	double shadowBlur = 24, shadowOffsetX = 0, shadowOffsetY = 8, shadowOpacity = 0.35;
 	uint32_t shadowColor = 0xFF000000;
 	bool fadeShadowInTransition = true;
+	/* Diagonal mask of a Polygon slot: corners in cell-normalized coordinates (0..1,
+	 * clockwise). Empty = no mask. JSON key "polygon": [[x, y], ...]. */
+	std::vector<Vec2> polygon;
 };
 
-/* Radius in canvas pixels for a visible size w x h. */
+/* Radius in canvas pixels for a visible size w x h (never more than half the short side). */
 double styleRadius(const Style &s, double w, double h);
 
+/* Compact JSON object. fromJson starts from the defaults: missing keys keep them and
+ * unknown keys are ignored. Returns false (out untouched) on malformed JSON. */
 std::string toJson(const Style &s);
 bool fromJson(const std::string &json, Style &out);
 

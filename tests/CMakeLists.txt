@@ -22,6 +22,7 @@ add_executable(
   test-layout.cpp
   test-broadcast.cpp
   test-roles.cpp
+  test-slot-apply.cpp
   ${CORE_DIR}/geometry.cpp
   ${CORE_DIR}/item-model.cpp
   ${CORE_DIR}/arrange.cpp
@@ -32,6 +33,8 @@ add_executable(
   ${CORE_DIR}/layout.cpp
   ${CORE_DIR}/broadcast.cpp
   ${CORE_DIR}/roles.cpp
+  ${CORE_DIR}/style.cpp
+  ${CORE_DIR}/slot-apply.cpp
 )
 target_include_directories(layouts-core-tests PRIVATE "${CORE_DIR}")
 
