@@ -20,12 +20,14 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "broadcast-gallery.hpp"
 #include "role-ui.hpp"
+#include "style-editor.hpp"
 #include "theme.hpp"
 #include "widgets.hpp"
 
 #include "obs/constraints.hpp"
 #include "obs/corners.hpp"
 #include "obs/edit-context.hpp"
+#include "obs/item-style.hpp"
 #include "obs/store.hpp"
 
 #include <obs-frontend-api.h>
@@ -103,6 +105,7 @@ InspectorDock::InspectorDock(QWidget *parent) : QWidget(parent)
 		live_->setVisible(true);
 	});
 	connect(&Store::instance(), &Store::settingsChanged, this, &InspectorDock::refresh);
+	connect(&Store::instance(), &Store::typeStylesChanged, this, &InspectorDock::refresh);
 	refresh();
 }
 
@@ -373,13 +376,7 @@ void InspectorDock::build()
 		fr->addStretch();
 		g->addWidget(fitRow, 1, 0, 1, 3);
 
-		radius_ = new NumericField(QString::fromUtf8("\xE2\x95\xAD"), T("Field.Radius"), body);
-		radius_->setDecimals(0);
-		connect(radius_, &NumericField::committed, this,
-			[](const core::Expression &e) { corners::setRadius(e); });
-		connect(radius_, &NumericField::scrubbed, this,
-			[](double delta, bool finished) { corners::scrub(delta, finished); });
-		g->addWidget(radius_, 2, 0);
+		/* Corner radius moved to the Style section (0.5). */
 
 		/* How the image fills its frame when W and H change its shape. */
 		auto *modeRow = new QWidget(body);
@@ -416,6 +413,9 @@ void InspectorDock::build()
 		g->setColumnStretch(1, 1);
 		v->addWidget(section(T("Section.Size"), body));
 	}
+
+	styleSection_ = buildStyleSection();
+	v->addWidget(styleSection_);
 
 	/* ---- distribute & spacing (multi) ---- */
 	{
@@ -692,20 +692,7 @@ void InspectorDock::refresh()
 		frameMode_->setExclusive(true);
 	}
 
-	/* Corner radius: groups have none. */
-	{
-		std::vector<double> radii;
-		for (const ItemEntry *e : sel) {
-			if (!e->isGroup)
-				radii.push_back(corners::radius(*e));
-		}
-		radius_->setEnabled(!radii.empty());
-		radius_->setPercentBase(0);
-		if (radii.empty() || allEqual(radii))
-			radius_->setValue(radii.empty() ? 0.0 : radii.front());
-		else
-			radius_->setMixed();
-	}
+	syncStyle(sel);
 
 	if (multi) {
 		std::vector<core::ArrangeItem> items;
@@ -954,6 +941,83 @@ void InspectorDock::previewBroadcast(bool force)
 }
 
 /* ------------------------------------------------------------ constraints */
+
+/* Selected items that can carry a style (groups cannot). */
+static std::vector<obs_sceneitem_t *> styledItems()
+{
+	std::vector<obs_sceneitem_t *> out;
+	for (const ItemEntry *e : EditContext::instance().selection()) {
+		if (!e->isGroup && e->item)
+			out.push_back(e->item);
+	}
+	return out;
+}
+
+QWidget *InspectorDock::buildStyleSection()
+{
+	auto *w = new QWidget(content_);
+	auto *l = new QVBoxLayout(w);
+	l->setContentsMargins(0, 0, 0, 0);
+	l->setSpacing(tokens::kRowSpacing);
+
+	/* Title row: STYLE, the override dot, then "Reset to type" and "Styles by type". */
+	auto *head = new QWidget(w);
+	auto *hl = row(head);
+	hl->setSpacing(4);
+	hl->addWidget(sectionTitle(T("Section.Style"), head));
+	overrideDot_ = new QLabel(head);
+	{
+		const int d = tokens::kOverrideDot;
+		QPixmap pm(d * 2, d * 2);
+		pm.setDevicePixelRatio(2.0);
+		pm.fill(Qt::transparent);
+		QPainter p(&pm);
+		p.setRenderHint(QPainter::Antialiasing);
+		p.setPen(Qt::NoPen);
+		p.setBrush(QColor::fromRgba(tokens::kOverrideDotColor));
+		p.drawEllipse(QRectF(0, 0, d, d));
+		p.end();
+		overrideDot_->setPixmap(pm);
+		overrideDot_->setFixedSize(d, d);
+	}
+	overrideDot_->setToolTip(T("Style.Override"));
+	hl->addWidget(overrideDot_, 0, Qt::AlignVCenter);
+	hl->addStretch();
+	styleReset_ = iconButton("undo-2", T("Style.ResetToType"), head);
+	connect(styleReset_, &QToolButton::clicked, this, [] { itemstyle::resetToType(styledItems()); });
+	hl->addWidget(styleReset_);
+	auto *byType = iconButton("settings", T("Style.ByType"), head);
+	connect(byType, &QToolButton::clicked, this, [this] {
+		const auto items = styledItems();
+		const core::Role role = items.empty() ? core::Role::Camera : itemstyle::itemRole(items.front());
+		auto *dlg = new StylesByTypeDialog(role, this);
+		dlg->show();
+	});
+	hl->addWidget(byType);
+	l->addWidget(head);
+
+	style_ = new StyleEditor(w);
+	connect(style_, &StyleEditor::changed, this,
+		[](const StyleChange &change) { itemstyle::edit(styledItems(), change); });
+	l->addWidget(style_);
+	return w;
+}
+
+void InspectorDock::syncStyle(const std::vector<const ItemEntry *> &sel)
+{
+	std::vector<core::Style> styles;
+	bool overridden = false;
+	for (const ItemEntry *e : sel) {
+		if (e->isGroup || !e->item)
+			continue;
+		styles.push_back(itemstyle::effective(e->item));
+		overridden = overridden || itemstyle::differsFromType(e->item);
+	}
+	styleSection_->setEnabled(!styles.empty());
+	style_->setStyles(styles);
+	overrideDot_->setVisible(overridden);
+	styleReset_->setEnabled(overridden);
+}
 
 QWidget *InspectorDock::buildConstraintSection()
 {

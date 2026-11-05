@@ -537,7 +537,7 @@ void registerFilter()
 	obs_register_source(&info);
 }
 
-bool setBorderShadow(obs_sceneitem_t *item, const core::Style &style)
+bool setBorderShadow(obs_sceneitem_t *item, const core::Style &style, bool undo)
 {
 	if (!item || obs_sceneitem_is_group(item))
 		return false;
@@ -577,7 +577,7 @@ bool setBorderShadow(obs_sceneitem_t *item, const core::Style &style)
 	writeSource(source, looks);
 	OBSDataAutoRelease after = snapshot(source);
 
-	if (strcmp(obs_data_get_json(before), obs_data_get_json(after)) != 0) {
+	if (undo && strcmp(obs_data_get_json(before), obs_data_get_json(after)) != 0) {
 		const QString name =
 			tr("Undo.Format").arg(tr("Undo.BorderShadow"), QString::fromUtf8(obs_source_get_name(scene)));
 		obs_frontend_add_undo_redo_action(name.toUtf8().constData(), applyData, applyData,

@@ -80,7 +80,9 @@ void scrub(double delta, bool finished);
  * radius mode and its mask polygon (cell-normalized, convex, up to 8 points; read from
  * "layouts_style".polygon when polygon is null) for the item's scene (its parent scene
  * for an item of a group), as one undo step. Returns false for groups and scenes. */
-bool applyItemStyle(obs_sceneitem_t *item, const core::Style &style, const std::vector<core::Vec2> *polygon = nullptr);
+/* undo false: the caller records its own step (the Style section does). */
+bool applyItemStyle(obs_sceneitem_t *item, const core::Style &style, const std::vector<core::Vec2> *polygon = nullptr,
+		    bool undo = true);
 
 /* The "polygon" of an item's "layouts_style", made convex (empty: none). */
 std::vector<core::Vec2> itemPolygon(obs_sceneitem_t *item);

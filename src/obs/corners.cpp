@@ -957,7 +957,7 @@ std::vector<core::Vec2> itemPolygon(obs_sceneitem_t *item)
 	return core::shape::convexPolygon(out);
 }
 
-bool applyItemStyle(obs_sceneitem_t *item, const core::Style &style, const std::vector<core::Vec2> *polygon)
+bool applyItemStyle(obs_sceneitem_t *item, const core::Style &style, const std::vector<core::Vec2> *polygon, bool undo)
 {
 	obs_source_t *source = item ? obs_sceneitem_get_source(item) : nullptr;
 	if (!source || obs_source_is_group(source) || obs_source_is_scene(source))
@@ -984,7 +984,8 @@ bool applyItemStyle(obs_sceneitem_t *item, const core::Style &style, const std::
 	writeSettings(source, st);
 
 	OBSDataAutoRelease after = snapshot(targets);
-	addUndo(before, after, QString::fromUtf8(obs_source_get_name(sceneSource)));
+	if (undo)
+		addUndo(before, after, QString::fromUtf8(obs_source_get_name(sceneSource)));
 	EditContext::instance().markDirty();
 	return true;
 }

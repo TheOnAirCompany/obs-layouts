@@ -39,7 +39,7 @@ void registerFilter();
 /* Border and shadow of a scene item in its own scene (not the other scenes that show the
  * same source), as one undo step. Nothing left (no border, no shadow) removes the scene's
  * value, and the filter once no scene uses it. Groups are skipped. */
-bool setBorderShadow(obs_sceneitem_t *item, const core::Style &style);
+bool setBorderShadow(obs_sceneitem_t *item, const core::Style &style, bool undo = true);
 
 /* Values of a scene item in its own scene (border and shadow fields only); false when it
  * has none. */

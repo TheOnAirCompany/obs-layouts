@@ -158,8 +158,11 @@ std::string Store::guidesJson()
 void Store::restoreGuidesJson(const char *json)
 {
 	OBSDataAutoRelease d = obs_data_create_from_json(json);
-	if (d)
-		loadGuides(d); /* emits guidesChanged */
+	if (d) {
+		const auto styles = typeStyles_; /* guide undo never touches type styles */
+		loadGuides(d);                   /* emits guidesChanged */
+		typeStyles_ = styles;
+	}
 }
 
 void Store::beginGuideEdit()
@@ -211,14 +214,41 @@ void Store::saveGuides(obs_data_t *data)
 	OBSDataArrayAutoRelease global = guidesToArray(r.global);
 	obs_data_set_array(root, "global", global);
 
+	for (const auto &[role, style] : typeStyles_) {
+		const std::string key = std::string("styles.") + core::roleKey(role);
+		obs_data_set_string(root, key.c_str(), core::toJson(style).c_str());
+	}
+
 	obs_data_set_obj(data, kCollectionKey, root);
+}
+
+core::Style Store::typeStyle(core::Role role) const
+{
+	auto it = typeStyles_.find(role);
+	return it != typeStyles_.end() ? it->second : core::Style{};
+}
+
+void Store::setTypeStyle(core::Role role, const core::Style &style)
+{
+	typeStyles_[role] = style;
+	emit typeStylesChanged();
+	obs_frontend_save(); /* type styles live in the scene collection */
 }
 
 void Store::loadGuides(obs_data_t *data)
 {
 	OBSDataAutoRelease root = obs_data_get_obj(data, kCollectionKey);
 	core::GuideDocument::Records r;
+	typeStyles_.clear();
 	if (root) {
+		for (const core::Role role : {core::Role::None, core::Role::Host, core::Role::Camera,
+					      core::Role::Screen, core::Role::Background, core::Role::Graphics}) {
+			const std::string key = std::string("styles.") + core::roleKey(role);
+			const char *json = obs_data_get_string(root, key.c_str());
+			core::Style st;
+			if (json && *json && core::fromJson(json, st))
+				typeStyles_[role] = st;
+		}
 		r.version = (int)obs_data_get_int(root, "version");
 		OBSDataArrayAutoRelease scenes = obs_data_get_array(root, "scenes");
 		const size_t n = scenes ? obs_data_array_count(scenes) : 0;
@@ -254,6 +284,7 @@ void Store::loadGuides(obs_data_t *data)
 	obs_frontend_source_list_free(&scenes);
 
 	emit guidesChanged();
+	emit typeStylesChanged();
 }
 
 void Store::loadSettings()
