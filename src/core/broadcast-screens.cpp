@@ -223,17 +223,39 @@ const std::vector<Entry> &entries()
 			 scr(s, {{40, 281, 900, 518}});
 		 }},
 		{"Screen3", 0, 3,
-		 [](Slots &s, double) { scr(s, {{0, 0, 1280, 720}, {1288, 0, 632, 356}, {1288, 364, 632, 356}}); }},
-		{"Screen4Grid", 0, 4, [](Slots &s, double) { scr(s, fitAll(A, grid(kFull, 2, 2, 8))); }},
+		 [](Slots &s, double) {
+			 scr(s, {{0, 0, 1280, 720}, {1288, 0, 632, 356}, {1288, 364, 632, 356}});
+		 }},
+		{"Screen4Grid", 0, 4,
+		 [](Slots &s, double) {
+			 scr(s, fitAll(A, grid(kFull, 2, 2, 8)));
+		 }},
 
 		/* Screens alone. */
-		{"Screen1Framed", 0, 1, [](Slots &s, double) { scr(s, {fit(A, inset(kFull, 90))}); }},
-		{"Screen2Stacked", 0, 2, [](Slots &s, double) { scr(s, colOf(2, A, inset(kFull, 30), 20)); }},
+		{"Screen1Framed", 0, 1,
+		 [](Slots &s, double) {
+			 scr(s, {fit(A, inset(kFull, 90))});
+		 }},
+		{"Screen2Stacked", 0, 2,
+		 [](Slots &s, double) {
+			 scr(s, colOf(2, A, inset(kFull, 30), 20));
+		 }},
 		{"Screen2BigSmall", 0, 2,
-		 [](Slots &s, double G) { scr(s, {fit(A, {0, 0, 1400, H}), fit(A, {1400 + G, 0, W - 1400 - G, H})}); }},
-		{"Screen2Pip", 0, 2, [](Slots &s, double) { scr(s, {kFull, pip(560)}); }},
-		{"Screen3Row", 0, 3, [](Slots &s, double) { scr(s, rowOf(3, A, inset(kFull, 20), 16)); }},
-		{"Screen3TwoOne", 0, 3, [](Slots &s, double) { scr(s, rowsOf({2, 1}, A, inset(kFull, 20), 16)); }},
+		 [](Slots &s, double G) {
+			 scr(s, {fit(A, {0, 0, 1400, H}), fit(A, {1400 + G, 0, W - 1400 - G, H})});
+		 }},
+		{"Screen2Pip", 0, 2,
+		 [](Slots &s, double) {
+			 scr(s, {kFull, pip(560)});
+		 }},
+		{"Screen3Row", 0, 3,
+		 [](Slots &s, double) {
+			 scr(s, rowOf(3, A, inset(kFull, 20), 16));
+		 }},
+		{"Screen3TwoOne", 0, 3,
+		 [](Slots &s, double) {
+			 scr(s, rowsOf({2, 1}, A, inset(kFull, 20), 16));
+		 }},
 		{"Screen4Strip", 0, 4,
 		 [](Slots &s, double G) {
 			 scr(s, {fit(A, {0, 0, W, 780})});
@@ -305,11 +327,26 @@ const std::vector<Entry> &entries()
 			 cams(s, grid(fit(A, halves[1]), 2, 2, G));
 			 scr(s, {fit(A, halves[0])});
 		 }},
-		{"Screen1Cam4Sides", 4, 1, [](Slots &s, double) { sides(s, 2); }},
-		{"Screen1Cam4L", 4, 1, [](Slots &s, double G) { lShape(s, G, 2); }},
-		{"Screen1Cam5L", 5, 1, [](Slots &s, double G) { lShape(s, G, 3); }},
-		{"Screen1Cam6L", 6, 1, [](Slots &s, double G) { lShape(s, G, 4); }},
-		{"Screen1Cam6Sides", 6, 1, [](Slots &s, double) { sides(s, 3); }},
+		{"Screen1Cam4Sides", 4, 1,
+		 [](Slots &s, double) {
+			 sides(s, 2);
+		 }},
+		{"Screen1Cam4L", 4, 1,
+		 [](Slots &s, double G) {
+			 lShape(s, G, 2);
+		 }},
+		{"Screen1Cam5L", 5, 1,
+		 [](Slots &s, double G) {
+			 lShape(s, G, 3);
+		 }},
+		{"Screen1Cam6L", 6, 1,
+		 [](Slots &s, double G) {
+			 lShape(s, G, 4);
+		 }},
+		{"Screen1Cam6Sides", 6, 1,
+		 [](Slots &s, double) {
+			 sides(s, 3);
+		 }},
 		{"Screen1Cam6Grid", 6, 1,
 		 [](Slots &s, double G) {
 			 const double sw = (W - G) * 0.55;
@@ -437,8 +474,9 @@ bool buildScreenTemplate(const std::string &key, const Rect &canvas, const Broad
 	/* Cameras first (host first), then screens. */
 	std::stable_partition(design.begin(), design.end(), [](const DSlot &d) { return d.kind != K::Screen; });
 	for (const DSlot &d : design) {
-		Slot s{d.kind == K::Screen ? SlotKind::Screen : SlotKind::Camera,
-		       {ox + d.r.x * k, oy + d.r.y * k, d.r.w * k, d.r.h * k}};
+		Slot s;
+		s.kind = d.kind == K::Screen ? SlotKind::Screen : SlotKind::Camera;
+		s.cell = {ox + d.r.x * k, oy + d.r.y * k, d.r.w * k, d.r.h * k};
 		s.host = d.kind == K::Host;
 		if (d.round)
 			s.shape = SlotShape::Round;

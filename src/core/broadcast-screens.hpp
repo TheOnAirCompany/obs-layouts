@@ -42,8 +42,7 @@ namespace layouts::core {
 void appendScreenTemplates(std::vector<BroadcastTemplate> &list);
 
 /* Builds a screen template. Returns false (and leaves `out` alone) for other keys. */
-bool buildScreenTemplate(const std::string &key, const Rect &canvas, const BroadcastSpec &spec,
-			 std::vector<Slot> &out);
+bool buildScreenTemplate(const std::string &key, const Rect &canvas, const BroadcastSpec &spec, std::vector<Slot> &out);
 
 /* Stacking of overlapping cells: the indices of the cells drawn over another one (a cell
  * that overlaps a larger cell: PiP camera, bubble, floating screen), largest first. Bring
