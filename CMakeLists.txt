@@ -92,6 +92,8 @@ target_sources(
     src/ui/builder-panel.cpp
     src/ui/builder-panel.hpp
     src/ui/role-ui.cpp
+    src/ui/scenes-list.cpp
+    src/ui/scenes-list.hpp
     src/ui/role-ui.hpp
     src/ui/layers-panel.hpp
     src/ui/canvas-view.cpp

@@ -39,6 +39,13 @@ browser, media, color, group, scene, audio), name, lock, eye. Hidden sources are
   can't go into a group (OBS has no nested groups). One row at a time. One undo entry, holding the
   whole order of the scene: libobs transform states do not carry the order or the grouping.
 
+### Scenes (0.4)
+Above Layers, in a resizable split: "Follow OBS (scene)" then every scene (other canvases as
+"Canvas › Scene"). Clicking a scene edits it in the window (Layers, Canvas, Inspector) without
+changing the program or the preview; the first row goes back to following OBS. The scene on the
+program has a red dot (in Studio Mode, the scene whose private copy is on the program). Same
+choice as the scene menu of the Canvas toolbar, which stays.
+
 ### Types and filter (0.4)
 - A pill after the name shows the source's type: HOST, CAM, SCREEN, BG, CG, or a dashed "?" when
   not set. Clicking it opens the type menu; when the row is selected, the type applies to every

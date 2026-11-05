@@ -41,6 +41,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "ui/layers-panel.hpp"
 #include "ui/layouts-window.hpp"
 #include "ui/role-ui.hpp"
+#include "ui/scenes-list.hpp"
 #include "ui/ruler.hpp"
 
 #include <obs-frontend-api.h>
@@ -861,6 +862,49 @@ void testTypes()
 	ctx.follow();
 	ctx.markDirty();
 	R->check(g_window->layers()->isVisible(), "builder-back-to-scene-mode");
+}
+
+/* Scenes above Layers: a click edits another scene, nothing changes on air. */
+void testScenesList()
+{
+	EditContext &ctx = EditContext::instance();
+	ctx.follow();
+	obs_scene_t *extra = obs_scene_create("Layouts Other Scene");
+	OBSSourceAutoRelease extraSource = obs_source_get_ref(obs_scene_get_source(extra));
+	obs_scene_release(extra);
+	ui::ScenesList *list = g_window->layers()->scenes();
+	list->refresh();
+	OBSSourceAutoRelease program = obs_frontend_get_current_scene();
+	const QString programName = QString::fromUtf8(obs_source_get_name(program));
+	QListWidgetItem *other = nullptr, *onAir = nullptr;
+	for (int i = 1; i < list->count(); i++) {
+		if (list->item(i)->text() == programName)
+			onAir = list->item(i);
+		else if (!other && !list->item(i)->text().contains(QString::fromUtf8("\xE2\x80\xBA")))
+			other = list->item(i);
+	}
+	/* A fresh collection in Studio Mode can have nothing on the program yet. */
+	R->check(other && (!program || (onAir && !onAir->toolTip().isEmpty())), "scenes-list-marks-program",
+		 QString("%1 rows, program '%2'").arg(list->count()).arg(programName));
+	if (!other) {
+		obs_source_remove(extraSource);
+		return;
+	}
+	const QString otherName = other->text();
+	emit list->itemClicked(other); /* the list is rebuilt after the click */
+	QApplication::processEvents();
+	OBSSourceAutoRelease programAfter = obs_frontend_get_current_scene();
+	R->check(!ctx.following() && ctx.sceneName() == otherName && programAfter.Get() == program.Get(),
+		 "scenes-list-edits-scene", ctx.sceneName());
+	emit list->itemClicked(list->item(0));
+	QApplication::processEvents();
+	/* Follow OBS edits the preview scene in Studio Mode, the program otherwise. */
+	OBSSourceAutoRelease followed = obs_frontend_preview_program_mode_active()
+						? obs_frontend_get_current_preview_scene()
+						: obs_frontend_get_current_scene();
+	R->check(ctx.following() && followed && ctx.sceneName() == QString::fromUtf8(obs_source_get_name(followed)),
+		 "scenes-list-follow-obs", ctx.sceneName());
+	obs_source_remove(extraSource);
 }
 
 void unlockAll(std::initializer_list<const char *> names)
@@ -1826,8 +1870,8 @@ void runSelfTest(ui::LayoutsWindow *window)
 				QTimer::singleShot(1500, [base] {
 					g_window->grab().save(base + "-scene.png");
 					g_window->setMode(ui::LayoutsWindow::Mode::Builder);
-					g_window->builderSources()->selectNames(
-						{"BG _ DYNAMIQUE", "CAM _ VALENTIN", "CAM _ GUEST 1", "SCREEN _ RIGHT"});
+					g_window->builderSources()->selectNames({"BG _ DYNAMIQUE", "CAM _ VALENTIN",
+										 "CAM _ GUEST 1", "SCREEN _ RIGHT"});
 				});
 				QTimer::singleShot(3000, [base] {
 					g_window->grab().save(base + "-builder.png");
@@ -1902,6 +1946,7 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(300, [] { testBroadcastScene(); });
 		R->add(300, [] { testShowScenes(); });
 		R->add(300, [] { testTypes(); });
+		R->add(300, [] { testScenesList(); });
 		R->add(300, [] { unlockAll({"A", "B", "C"}); });
 		R->add(300, [] { testCropMode(); });
 		R->add(300, [] { testHotkeys(); });

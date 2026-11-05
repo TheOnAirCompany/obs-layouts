@@ -10,6 +10,9 @@
   NDI, DeckLink = Cam; display or window capture = Screen). A web source named `CAM ...` is now
   a camera in broadcast layouts.
 - **Filter Layers by type**: a row of chips (All, Host, Cam, Screen, BG, CG, Not set) with counts.
+- **Scenes above Layers**, like the pages of a design tool: click a scene to edit it in the Layouts
+  window without changing what is on air (the first row follows OBS); the scene on the program
+  has a red dot. Handy to fix one element of a scene made by the Builder.
 - **Layouts Builder** (Tools > Layouts Builder, or the Scene | Builder switch at the top left of
   the window): every source of the collection once, whatever scene it is in, with its type and
   the number of scenes that use it. Select the sources you want (Cmd / Shift): the broadcast

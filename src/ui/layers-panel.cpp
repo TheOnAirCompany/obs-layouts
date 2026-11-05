@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "layers-panel.hpp"
 
 #include "role-ui.hpp"
+#include "scenes-list.hpp"
 #include "theme.hpp"
 #include "widgets.hpp"
 
@@ -30,6 +31,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QDropEvent>
 #include <QHeaderView>
 #include <QLabel>
+#include <QSplitter>
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
 #include <QVBoxLayout>
@@ -265,9 +267,31 @@ private:
 LayersPanel::LayersPanel(QWidget *parent) : QWidget(parent)
 {
 	setObjectName("LayoutsLayersPanel");
-	auto *v = new QVBoxLayout(this);
+	/* Scenes on top (which scene is edited), Layers below, resizable. */
+	auto *outer = new QVBoxLayout(this);
+	outer->setContentsMargins(0, 0, 0, 0);
+	auto *split = new QSplitter(Qt::Vertical, this);
+	split->setChildrenCollapsible(false);
+	outer->addWidget(split);
+
+	auto *top = new QWidget(split);
+	auto *tv = new QVBoxLayout(top);
+	tv->setContentsMargins(tokens::kPanelMargin, tokens::kPanelMargin, 0, 0);
+	tv->setSpacing(tokens::kRowSpacing);
+	tv->addWidget(sectionTitle(T("Scenes.Title"), top));
+	scenes_ = new ScenesList(top);
+	scenes_->setMinimumHeight(60);
+	tv->addWidget(scenes_, 1);
+
+	auto *body = new QWidget(split);
+	auto *v = new QVBoxLayout(body);
 	v->setContentsMargins(tokens::kPanelMargin, tokens::kPanelMargin, 0, tokens::kPanelMargin);
 	v->setSpacing(tokens::kRowSpacing);
+	split->addWidget(top);
+	split->addWidget(body);
+	split->setStretchFactor(0, 0);
+	split->setStretchFactor(1, 1);
+	split->setSizes({170, 600});
 
 	v->addWidget(sectionTitle(T("Layers.Title"), this));
 	filter_ = new RoleFilterBar(this);
