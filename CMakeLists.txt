@@ -109,6 +109,9 @@ target_sources(
     src/obs/hotkeys.hpp
     src/obs/item-style.cpp
     src/obs/item-style.hpp
+    src/obs/regie.cpp
+    src/obs/regie.hpp
+    src/third-party/obs-websocket-api.h
     src/obs/commands.hpp
     src/ui/theme.cpp
     src/ui/theme.hpp
@@ -119,6 +122,8 @@ target_sources(
     src/ui/layers-panel.cpp
     src/ui/broadcast-gallery.cpp
     src/ui/broadcast-gallery.hpp
+    src/ui/regie-dock.cpp
+    src/ui/regie-dock.hpp
     src/ui/builder-panel.cpp
     src/ui/builder-panel.hpp
     src/ui/role-ui.cpp

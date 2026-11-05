@@ -188,6 +188,16 @@ int mirrorBits()
 
 } // namespace
 
+
+/* Exported for the Switcher dock: the gallery colors, the stored mirror. */
+QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor &screen, const QColor &bg,
+		     double aspect)
+{
+	const ViewSettings &s = Store::instance().settings();
+	return broadcastThumb(key, ThumbColors{camera, screen, QColor::fromRgba(tokens::kThumbChat), bg}, aspect,
+			      s.broadcastMirrorH, s.broadcastMirrorV);
+}
+
 BroadcastGallery::BroadcastGallery(QWidget *parent) : QListWidget(parent)
 {
 	setViewMode(QListView::IconMode);
