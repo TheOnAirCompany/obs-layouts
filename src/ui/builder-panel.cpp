@@ -156,7 +156,7 @@ void BuilderSources::rebuild()
 	tree_->clear();
 	const QColor text = palette().color(QPalette::WindowText);
 	QColor dim = text;
-	dim.setAlphaF(0.5);
+	dim.setAlphaF(0.5f);
 	std::map<core::Role, int> counts;
 	const std::vector<OBSSource> sources = roles::videoSources();
 	for (const OBSSource &s : sources) {

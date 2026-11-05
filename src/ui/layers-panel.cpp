@@ -379,7 +379,7 @@ void LayersPanel::rebuild()
 	updating_ = true;
 	const QColor text = palette().color(QPalette::WindowText);
 	QColor dim = text;
-	dim.setAlphaF(0.35);
+	dim.setAlphaF(0.35f);
 	tree_->clear();
 	std::map<int64_t, QTreeWidgetItem *> groups;
 	std::map<core::Role, int> counts;
