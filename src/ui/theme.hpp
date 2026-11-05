@@ -63,14 +63,13 @@ constexpr QRgb kThumbCamera = 0xFF5FB4F5; /* broadcast gallery: camera tiles */
 constexpr QRgb kThumbScreen = 0xFFC9A24A; /* broadcast gallery: screen tiles */
 constexpr QRgb kThumbFrame = 0xFFF4F1EA;  /* broadcast gallery: Polaroid border, provisional */
 /* Source types (0.4): pills in Layers and the Builder, filter dots. */
-constexpr QRgb kRoleHost = 0xFF7ED6C4; /* provisional, see the Builder review page */
+constexpr QRgb kRoleHost = 0xFF7ED6C4;
 constexpr QRgb kRoleCamera = kThumbCamera;
 constexpr QRgb kRoleScreen = kThumbScreen;
-constexpr QRgb kRoleChat = 0xFFB5D96B; /* provisional */
 constexpr QRgb kRoleBackground = 0xFF8E8AA3;
 constexpr QRgb kRoleGraphics = 0xFFE2708A;
-constexpr QRgb kRoleChat = 0xFFB5D96B;       /* provisional */
-constexpr QRgb kThumbChat = kRoleChat;       /* provisional: broadcast gallery, chat tiles */
+constexpr QRgb kRoleChat = 0xFFB5D96B;
+constexpr QRgb kThumbChat = kRoleChat; /* broadcast gallery: chat tiles */
 constexpr QRgb kRoleNone = 0xFF7D828E;       /* dashed outline, "not set" */
 constexpr QRgb kRolePillText = 0xFF15171C;   /* text on a filled pill */
 constexpr QRgb kCrop = 0xFFFF9F0A;           /* crop mode handles and frame */
