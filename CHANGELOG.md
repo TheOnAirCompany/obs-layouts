@@ -25,6 +25,8 @@
 - **Rounded corners belong to the scene**: the same camera can be round in one scene and square
   in another. Corners set with 0.3 (for every scene) are split per scene the first time you edit
   one, so the other scenes keep what they had.
+- Rounded corners stay during **Move Transition** (exeldro) and other transitions that draw the
+  sources themselves: the radius goes smoothly from the first scene's to the second's.
 
 ## 0.3.0 — not released yet
 

@@ -171,6 +171,8 @@ void visibleRect(float w, float h, float &left, float &top, float &right, float 
 
 const enum gs_color_space kSpaces[] = {GS_CS_SRGB, GS_CS_SRGB_16F, GS_CS_709_EXTENDED};
 
+bool transitionRadius(Filter *f, obs_source_t *source, Radius &out);
+
 void filterRender(void *data, gs_effect_t *)
 {
 	auto *f = static_cast<Filter *>(data);
@@ -186,6 +188,12 @@ void filterRender(void *data, gs_effect_t *)
 			if (it != f->scenes.end())
 				rad = it->second;
 		}
+	}
+	/* Drawn outside any scene: a transition that draws sources itself (Move). */
+	if (t_scenes.empty()) {
+		Radius during;
+		if (transitionRadius(f, obs_filter_get_parent(f->context), during))
+			rad = during;
 	}
 	if (!f->effect || rad.r < 0.5f || !w || !h) {
 		obs_source_skip_video_filter(f->context);
@@ -273,6 +281,102 @@ enum gs_color_space markerColorSpace(void *data, size_t count, const enum gs_col
 	auto *m = static_cast<SceneMarker *>(data);
 	obs_source_t *target = obs_filter_get_target(m->context);
 	return target ? obs_source_get_color_space(target, count, preferred) : GS_CS_SRGB;
+}
+
+/* ---- transitions that draw the sources themselves ------------------------------ */
+
+/* Token of a scene, read from its marker filter (render thread safe). */
+std::string tokenOf(obs_source_t *scene)
+{
+	struct Find {
+		std::string token;
+		bool found = false;
+	} f;
+	obs_source_enum_filters(
+		scene,
+		[](obs_source_t *, obs_source_t *filter, void *p) {
+			auto *f = static_cast<Find *>(p);
+			if (f->found || strcmp(obs_source_get_unversioned_id(filter), kSceneFilterId) != 0)
+				return;
+			auto *m = static_cast<SceneMarker *>(obs_obj_get_data(filter));
+			if (!m)
+				return;
+			std::lock_guard<std::mutex> g(m->lock);
+			f->token = m->token;
+			f->found = true;
+		},
+		&f);
+	return f.token;
+}
+
+/* Radius of the source in this scene; false when the scene doesn't show it. */
+bool radiusIn(Filter *f, obs_source_t *sceneSource, obs_source_t *source, Radius &out)
+{
+	obs_scene_t *scene = sceneSource ? obs_scene_from_source(sceneSource) : nullptr;
+	if (!scene || !source || !obs_scene_find_source_recursive(scene, obs_source_get_name(source)))
+		return false;
+	const std::string token = tokenOf(sceneSource);
+	std::lock_guard<std::mutex> g(f->lock);
+	const auto it = f->scenes.find(token);
+	out = it != f->scenes.end() ? it->second : f->any;
+	return true;
+}
+
+float easeInOutCubic(float t)
+{
+	return t < 0.5f ? 4.0f * t * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 3.0f) / 2.0f;
+}
+
+/* Move Transition and the like draw each source of the two scenes themselves, never the
+ * scenes: no scene marker runs. The radius then comes from the transition on the
+ * program: the one of scene A, the one of scene B, or a blend of both while the source
+ * moves from one to the other (eased like Move's default, cubic in and out). */
+/* The transition on the program, kept from the UI thread: asking libobs for the output
+ * channel while rendering would wait on the lock the render itself holds. */
+std::mutex g_programLock;
+OBSWeakSource g_program;
+
+void frontendEvent(enum obs_frontend_event event, void *)
+{
+	switch (event) {
+	case OBS_FRONTEND_EVENT_FINISHED_LOADING:
+	case OBS_FRONTEND_EVENT_SCENE_CHANGED:
+	case OBS_FRONTEND_EVENT_TRANSITION_CHANGED:
+	case OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED:
+	case OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED:
+	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED:
+		watchProgram();
+		break;
+	default:
+		break;
+	}
+}
+
+bool transitionRadius(Filter *f, obs_source_t *source, Radius &out)
+{
+	obs_source_t *raw = nullptr;
+	{
+		std::lock_guard<std::mutex> g(g_programLock);
+		raw = g_program ? obs_weak_source_get_source(g_program) : nullptr;
+	}
+	OBSSourceAutoRelease tr = raw;
+	if (!tr || obs_source_get_type(tr) != OBS_SOURCE_TYPE_TRANSITION || !obs_transition_is_active(tr))
+		return false;
+	OBSSourceAutoRelease a = obs_transition_get_source(tr, OBS_TRANSITION_SOURCE_A);
+	OBSSourceAutoRelease b = obs_transition_get_source(tr, OBS_TRANSITION_SOURCE_B);
+	Radius ra, rb;
+	const bool inA = radiusIn(f, a, source, ra);
+	const bool inB = radiusIn(f, b, source, rb);
+	if (!inA && !inB)
+		return false;
+	if (!inA || !inB) {
+		out = inA ? ra : rb;
+		return true;
+	}
+	const float t = easeInOutCubic(std::clamp(obs_transition_get_time(tr), 0.0f, 1.0f));
+	out.r = ra.r + (rb.r - ra.r) * t;
+	out.ratio = ra.ratio + (rb.ratio - ra.ratio) * t;
+	return true;
 }
 
 /* ---- editing ------------------------------------------------------------------ */
@@ -566,6 +670,14 @@ Scrub g_scrub;
 
 } // namespace
 
+void watchProgram()
+{
+	OBSSourceAutoRelease tr = obs_get_output_source(0);
+	OBSWeakSourceAutoRelease weak = tr ? obs_source_get_weak_source(tr) : nullptr;
+	std::lock_guard<std::mutex> g(g_programLock);
+	g_program = weak.Get();
+}
+
 void registerFilter()
 {
 	struct obs_source_info info = {};
@@ -593,6 +705,7 @@ void registerFilter()
 	marker.video_render = markerRender;
 	marker.video_get_color_space = markerColorSpace;
 	obs_register_source(&marker);
+	obs_frontend_add_event_callback(frontendEvent, nullptr);
 }
 
 double radius(const ItemEntry &e)

@@ -1539,6 +1539,66 @@ void testCornersMigration()
 	ctx.markDirty();
 }
 
+/* Move Transition (exeldro) draws each source itself during the transition: the corners
+ * must stay. Runs only when the Move Transition plugin is loaded. */
+OBSSourceAutoRelease g_move, g_savedTransition, g_moveA, g_moveB;
+
+bool moveAvailable()
+{
+	return obs_source_get_display_name("move_transition") != nullptr;
+}
+
+void prepareMoveCorners()
+{
+	EditContext &ctx = EditContext::instance();
+	OBSSourceAutoRelease white = colorSource("Moving", 800, 600, 0xFFFFFFFF);
+	for (auto *slot : {&g_moveA, &g_moveB}) {
+		obs_scene_t *scene = obs_scene_create(slot == &g_moveA ? "Move A" : "Move B");
+		*slot = obs_source_get_ref(obs_scene_get_source(scene));
+		obs_sceneitem_t *item = obs_scene_add(scene, white);
+		obs_sceneitem_crop crop = {100, 50, 0, 0};
+		obs_sceneitem_set_crop(item, &crop);
+		vec2 pos;
+		vec2_set(&pos, 200, 265);
+		obs_sceneitem_set_pos(item, &pos);
+		obs_scene_release(scene);
+		ctx.pin(*slot);
+		ctx.markDirty();
+		selectNames({"Moving"});
+		corners::setRadius(core::parseExpression("40", 0));
+	}
+	g_savedTransition = obs_get_output_source(0);
+	g_move = obs_source_create_private("move_transition", "Layouts move test", nullptr);
+	obs_set_output_source(0, g_move);
+	corners::watchProgram();
+	obs_transition_set(g_move, g_moveA);
+	obs_transition_start(g_move, OBS_TRANSITION_MODE_AUTO, 4000, g_moveB);
+}
+
+void checkMoveCorners()
+{
+	char *path = obs_frontend_get_last_screenshot();
+	const QString p = QString::fromUtf8(path ? path : "");
+	bfree(path);
+	QImage img(p);
+	const bool mid = g_move && obs_transition_is_active(g_move);
+	const int corner = img.isNull() ? -1 : qGray(img.pixel(201, 266));
+	const int edge = img.isNull() ? -1 : qGray(img.pixel(550, 266));
+	R->check(mid && corner >= 0 && corner < 40 && edge > 215, "corners-during-move-transition",
+		 QString("active %1, corner %2, edge %3").arg(mid).arg(corner).arg(edge));
+	if (!getenv("LAYOUTS_SELFTEST_KEEP_SHOTS"))
+		QFile::remove(p);
+	obs_set_output_source(0, g_savedTransition);
+	corners::watchProgram();
+	g_move = nullptr;
+	g_savedTransition = nullptr;
+	obs_source_remove(g_moveA);
+	obs_source_remove(g_moveB);
+	g_moveA = nullptr;
+	g_moveB = nullptr;
+	EditContext::instance().follow();
+}
+
 void liveProgramCheck()
 {
 	EditContext &ctx = EditContext::instance();
@@ -1999,6 +2059,11 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(1000, [] { takeShot(); });
 		R->add(1500, [] { checkCornersOtherScene(); });
 		R->add(300, [] { testCornersMigration(); });
+		if (moveAvailable()) {
+			R->add(300, [] { prepareMoveCorners(); });
+			R->add(1800, [] { takeShot(); });
+			R->add(800, [] { checkMoveCorners(); });
+		}
 	}
 	if (enabled("live")) {
 		R->add(300, [] {

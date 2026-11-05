@@ -40,6 +40,10 @@ constexpr const char *kSceneFilterId = "layouts_scene_corners";
 
 void registerFilter();
 
+/* Remembers the transition on the program (called on OBS events; self-test after setting
+ * the output channel itself). */
+void watchProgram();
+
 /* Radius of an item in canvas pixels, 0 when its corners are square. */
 double radius(const ItemEntry &e);
 

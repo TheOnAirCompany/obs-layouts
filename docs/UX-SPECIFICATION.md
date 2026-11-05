@@ -106,6 +106,11 @@ Scene name, canvas size and a hint on how to select.
   duplicated by OBS (Studio Mode) keeps its original's corners; a scene duplicated by the user
   gets its own value the first time it is edited. A radius set for every scene (0.3, or the
   filter's own property) is split into per-scene values the first time one scene is edited.
+  Transitions that draw each source themselves instead of the scenes (Move Transition) run no
+  scene filter: the corner filter then takes the transition on the program (remembered from
+  the UI thread on scene and transition changes), the radius of the source in its scene A and
+  in its scene B, and blends them with the transition time eased cubic in and out (Move's
+  default); a source in only one of the two scenes keeps that scene's radius.
   One Edit > Undo entry per change (a whole scrub included).
 
 ### Multiple selection
