@@ -34,11 +34,22 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace layouts::core {
 
-enum class SlotKind { Camera, Screen };
+enum class SlotKind { Camera, Screen, Chat };
+
+/* How a slot is cut out (0.5). Round = radius 50 % of the short side (bubbles, pills).
+ * Polygon = diagonal mask, `polygon` holds its corners in cell-normalized coordinates
+ * (0..1, clockwise). */
+enum class SlotShape { Rect, Round, Polygon };
 
 struct Slot {
 	SlotKind kind;
 	Rect cell;
+	double rotation = 0; /* degrees, clockwise, around the cell center */
+	SlotShape shape = SlotShape::Rect;
+	std::vector<Vec2> polygon;
+	bool frame = false;  /* the template wants a border (Polaroid) */
+	bool ticker = false; /* chat shown as a horizontal band */
+	bool host = false;   /* the main guest of the layout (Host role first) */
 };
 
 struct BroadcastSpec {
@@ -50,6 +61,8 @@ struct BroadcastTemplate {
 	std::string key; /* stable id, also the localization key suffix */
 	int cameras;
 	int screens;
+	int chats = 0;
+	bool landscapeOnly = false; /* 0.5 templates are drawn for 16:9 only */
 };
 
 /* Every template, in display order. */
