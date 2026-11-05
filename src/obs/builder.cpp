@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "builder.hpp"
 
 #include "commands.hpp"
+#include "core/broadcast-screens.hpp"
 #include "edit-context.hpp"
 #include "obs-convert.hpp"
 #include "roles.hpp"
@@ -187,6 +188,7 @@ std::vector<QString> create(const Plan &plan, const Options &options)
 		const std::vector<core::Slot> tiles = core::buildBroadcast(spec.key, canvas, options.spec);
 		size_t ci = 0, si = 0;
 		std::vector<std::pair<obs_source_t *, core::ItemTransform>> screens, cameras;
+		std::vector<core::Rect> screenCells, cameraCells;
 		for (const core::Slot &slot : tiles) {
 			const bool camera = slot.kind == core::SlotKind::Camera;
 			const std::vector<OBSSource> &pool = camera ? spec.cameras : spec.screens;
@@ -196,18 +198,29 @@ std::vector<QString> create(const Plan &plan, const Options &options)
 			obs_source_t *s = pool[i++];
 			(camera ? cameras : screens)
 				.push_back({s, commands::slotTransform(modelOf(s), slot.kind, slot.cell)});
+			(camera ? cameraCells : screenCells).push_back(slot.cell);
 		}
+		std::vector<obs_sceneitem_t *> added;
+		std::vector<core::Rect> addedCells;
 		/* Screens below, cameras above (a picture-in-picture camera stays visible). */
-		for (auto *list : {&screens, &cameras}) {
-			for (const auto &[source, t] : *list) {
-				obs_sceneitem_t *item = obs_scene_add(scene, source);
+		for (int pass = 0; pass < 2; pass++) {
+			const auto &list = pass == 0 ? screens : cameras;
+			const auto &cells = pass == 0 ? screenCells : cameraCells;
+			for (size_t k = 0; k < list.size(); k++) {
+				obs_sceneitem_t *item = obs_scene_add(scene, list[k].first);
 				if (!item)
 					continue;
-				apply(item, t);
+				apply(item, list[k].second);
 				if (options.lock)
 					commands::lockItem(item);
+				added.push_back(item);
+				addedCells.push_back(cells[k]);
 			}
 		}
+		/* A smaller tile over a larger one (screen floating over a camera, screen PiP) goes
+		 * in front of it. */
+		for (size_t i : core::overlayOrder(addedCells))
+			obs_sceneitem_set_order(added[i], OBS_ORDER_MOVE_TOP);
 
 		/* Graphics on top, where they already are in the show. */
 		if (options.graphics) {

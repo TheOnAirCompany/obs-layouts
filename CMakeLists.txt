@@ -58,6 +58,8 @@ target_sources(
     src/core/layout.cpp
     src/core/layout.hpp
     src/core/broadcast.cpp
+    src/core/broadcast-screens.cpp
+    src/core/broadcast-screens.hpp
     src/core/broadcast.hpp
     src/core/roles.cpp
     src/core/roles.hpp

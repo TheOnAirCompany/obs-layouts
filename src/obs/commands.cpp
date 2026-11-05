@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "commands.hpp"
+#include "core/broadcast-screens.hpp"
 
 #include "edit-context.hpp"
 #include "constraints.hpp"
@@ -650,13 +651,13 @@ bool applyBroadcast(const std::string &key, const core::BroadcastSpec &spec, Kin
 	showPreview({});
 	if (!EditSession::run(tr("Undo.Broadcast"), changes))
 		return false;
-	if (key.find("Pip") != std::string::npos) {
-		/* The inset camera overlaps the screen: bring it to the front. */
-		for (const Placed &p : placed) {
-			if (p.kind == core::SlotKind::Camera)
-				obs_sceneitem_set_order(p.entry.item, OBS_ORDER_MOVE_TOP);
-		}
-	}
+	/* Overlapping slots (PiP camera, bubble, screen floating over a camera): the smaller
+	 * cell goes in front of the larger one, whatever the slot order. */
+	std::vector<core::Rect> cells;
+	for (const Placed &p : placed)
+		cells.push_back(p.cell);
+	for (size_t i : core::overlayOrder(cells))
+		obs_sceneitem_set_order(placed[i].entry.item, OBS_ORDER_MOVE_TOP);
 	/* The checkbox decides the final state: a locked layout re-applied without the lock is
 	 * freed again (constraints set by the lock go back to the default too). */
 	for (const Placed &p : placed) {
