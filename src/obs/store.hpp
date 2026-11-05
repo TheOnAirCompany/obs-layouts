@@ -72,6 +72,7 @@ struct ViewSettings {
 	int broadcastKinds = 0; /* 0 auto, 1 all cameras, 2 all screens */
 	bool builderBackground = true;
 	bool builderGraphics = true;
+	bool failoverEnabled = true; /* a dropped camera / screen reorganizes the program ("failover.enabled") */
 	QColor guideColor{0xFF, 0x3D, 0x71};
 };
 
