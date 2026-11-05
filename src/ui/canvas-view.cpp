@@ -35,6 +35,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QCursor>
 #include <QFontMetrics>
 #include <QGuiApplication>
 #include <QInputDialog>
@@ -1552,8 +1553,27 @@ bool CanvasView::event(QEvent *e)
 	return QWidget::event(e);
 }
 
+bool CanvasView::refreshResizeForModifier(QKeyEvent *e)
+{
+	/* Shift (ratio) and Alt (from center) apply at once during a resize, without
+	 * waiting for the pointer to move, like Figma. */
+	if (e->key() != Qt::Key_Shift && e->key() != Qt::Key_Alt)
+		return false;
+	if (!dragStarted_ || (mode_ != Mode::Resize && mode_ != Mode::ResizeMulti))
+		return false;
+	altHeld_ = e->modifiers() & Qt::AltModifier;
+	const QPointF p = mapFromGlobal(QCursor::pos().toPointF());
+	if (mode_ == Mode::Resize)
+		updateResize(p, e->modifiers());
+	else
+		updateResizeMulti(p, e->modifiers());
+	return true;
+}
+
 void CanvasView::keyPressEvent(QKeyEvent *e)
 {
+	if (refreshResizeForModifier(e))
+		return;
 	EditContext &ctx = EditContext::instance();
 	const bool shift = e->modifiers() & Qt::ShiftModifier;
 	switch (e->key()) {
@@ -1658,6 +1678,8 @@ void CanvasView::keyReleaseEvent(QKeyEvent *e)
 			unsetCursor();
 		return;
 	}
+	if (refreshResizeForModifier(e))
+		return;
 	if (e->key() == Qt::Key_Alt) {
 		altHeld_ = false;
 		rebuildOverlay();

@@ -158,6 +158,7 @@ private:
 	void updateResize(const QPointF &p, Qt::KeyboardModifiers mods);
 	/* The inspector ratio lock, inverted while Shift is held. */
 	static bool resizeKeepsRatio(Qt::KeyboardModifiers mods);
+	bool refreshResizeForModifier(QKeyEvent *e);
 	void updateCrop(const QPointF &p);
 	bool canCrop();
 	void updateRotate(const QPointF &p, Qt::KeyboardModifiers mods);
