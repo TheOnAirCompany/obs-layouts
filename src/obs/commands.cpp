@@ -554,16 +554,27 @@ std::vector<Placed> assignSlotsFor(const std::string &key, const core::Broadcast
 				   const std::vector<ItemEntry> &items, const std::vector<core::SlotKind> &kinds)
 {
 	const std::vector<core::Slot> targets = core::buildBroadcast(key, EditContext::instance().canvasRect(), spec);
-	std::vector<Placed> out;
+	/* Host slots are served first (the items come Host role first), then the others; the
+	 * result keeps the slot order, which is the back-to-front order of overlapping slots. */
+	std::vector<int> pick(targets.size(), -1);
 	std::vector<bool> used(items.size(), false);
-	for (const core::Slot &slot : targets) {
-		for (size_t i = 0; i < items.size(); i++) {
-			if (!used[i] && kinds[i] == slot.kind) {
-				used[i] = true;
-				out.push_back({items[i], slot.kind, slot.cell});
-				break;
+	for (int pass = 0; pass < 2; pass++) {
+		for (size_t s = 0; s < targets.size(); s++) {
+			if (targets[s].host != (pass == 0))
+				continue;
+			for (size_t i = 0; i < items.size(); i++) {
+				if (!used[i] && kinds[i] == targets[s].kind) {
+					used[i] = true;
+					pick[s] = (int)i;
+					break;
+				}
 			}
 		}
+	}
+	std::vector<Placed> out;
+	for (size_t s = 0; s < targets.size(); s++) {
+		if (pick[s] >= 0)
+			out.push_back({items[pick[s]], targets[s].kind, targets[s].cell});
 	}
 	return out;
 }
