@@ -136,7 +136,7 @@ QIcon broadcastThumb(const std::string &key, const ThumbColors &c, double aspect
 	const core::Rect canvas{area.x(), area.y(), area.width(), area.height()};
 	core::BroadcastSpec spec;
 	spec.gap = 2;
-	const std::vector<core::Slot> slots =
+	const std::vector<core::Slot> tiles =
 		core::mirrorSlots(core::buildBroadcast(key, canvas, spec), canvas, mirrorH, mirrorV);
 	/* Template values are in 1920-wide canvas pixels (frame borders). */
 	const double k = area.width() / 1920.0;
@@ -151,7 +151,7 @@ QIcon broadcastThumb(const std::string &key, const ThumbColors &c, double aspect
 		p.setBrush(c.bg);
 		p.drawRoundedRect(area, 3, 3);
 		p.setClipRect(area);
-		for (const core::Slot &s : slots)
+		for (const core::Slot &s : tiles)
 			drawSlot(p, s, c, k);
 		p.end();
 		icon.addPixmap(pm);

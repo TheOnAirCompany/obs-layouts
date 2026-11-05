@@ -31,6 +31,6 @@ namespace layouts::core {
  * axis (v). Cells move to the other side, rotations are negated when the picture is
  * mirrored on a single axis, polygons are mirrored inside their cell (corners kept
  * clockwise). The slot order is kept, so the assignment of sources does not change. */
-std::vector<Slot> mirrorSlots(const std::vector<Slot> &slots, const Rect &canvas, bool h, bool v);
+std::vector<Slot> mirrorSlots(const std::vector<Slot> &in, const Rect &canvas, bool h, bool v);
 
 } // namespace layouts::core

@@ -22,9 +22,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace layouts::core {
 
-std::vector<Slot> mirrorSlots(const std::vector<Slot> &slots, const Rect &canvas, bool h, bool v)
+std::vector<Slot> mirrorSlots(const std::vector<Slot> &in, const Rect &canvas, bool h, bool v)
 {
-	std::vector<Slot> out = slots;
+	std::vector<Slot> out = in;
 	if (!h && !v)
 		return out;
 	for (Slot &s : out) {
