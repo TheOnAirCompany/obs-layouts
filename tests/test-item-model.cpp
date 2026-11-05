@@ -240,3 +240,65 @@ TEST("item: zero-sized sources are left untouched")
 	CHECK(t.pos == m.t.pos);
 	CHECK(t.scale == m.t.scale);
 }
+
+TEST("frame: fill a 16:9 camera into a square, centered anchor")
+{
+	ItemModel m;
+	m.sourceWidth = 1920;
+	m.sourceHeight = 1080;
+	m.t.scale = {0.5, 0.5};
+	m.t.pos = {100, 100}; /* 960 x 540 frame */
+	const RefPoint center = RefPoint::fromIndex(4);
+	const Vec2 c0 = visualFrame(m).center();
+	ItemModel r = m;
+	r.t = setFrame(m, Affine::identity(), 540, 540, FrameMode::Fill, center);
+	const VisualFrame f = visualFrame(r);
+	CHECK(std::fabs(f.width - 540) < 1e-6 && std::fabs(f.height - 540) < 1e-6);
+	CHECK(r.t.crop.left == 420 && r.t.crop.right == 420 && r.t.crop.top == 0 && r.t.crop.bottom == 0);
+	CHECK(std::fabs(r.t.scale.x - 0.5) < 1e-9 && std::fabs(r.t.scale.y - 0.5) < 1e-9); /* not distorted */
+	CHECK(std::fabs(f.center().x - c0.x) < 1e-6 && std::fabs(f.center().y - c0.y) < 1e-6);
+}
+
+TEST("frame: the anchor picks the part of the picture and the fixed point")
+{
+	ItemModel m;
+	m.sourceWidth = 1920;
+	m.sourceHeight = 1080;
+	m.t.scale = {0.5, 0.5};
+	const RefPoint topLeft = RefPoint::fromIndex(0), right = RefPoint::fromIndex(5);
+	ItemModel r = m;
+	r.t = setFrame(m, Affine::identity(), 540, 540, FrameMode::Fill, topLeft);
+	CHECK(r.t.crop.left == 0 && r.t.crop.right == 840);
+	CHECK(std::fabs(visualFrame(r).point(topLeft).x) < 1e-6);
+	r.t = setFrame(m, Affine::identity(), 540, 540, FrameMode::Fill, right);
+	CHECK(r.t.crop.left == 840 && r.t.crop.right == 0);
+	CHECK(std::fabs(visualFrame(r).point(right).x - 960) < 1e-6);
+	/* Mirrored webcam: the visual left is the source's right. */
+	m.t.scale = {-0.5, 0.5};
+	m.t.pos = {960, 0};
+	r.t = setFrame(m, Affine::identity(), 540, 540, FrameMode::Fill, topLeft);
+	CHECK(r.t.crop.right == 0 && r.t.crop.left == 840 && r.t.scale.x < 0);
+}
+
+TEST("frame: fit keeps the whole picture, stretch distorts, same shape only scales")
+{
+	ItemModel m;
+	m.sourceWidth = 1920;
+	m.sourceHeight = 1080;
+	m.t.scale = {0.5, 0.5};
+	const RefPoint center = RefPoint::fromIndex(4);
+	ItemModel r = m;
+	r.t = setFrame(m, Affine::identity(), 540, 540, FrameMode::Fit, center);
+	CHECK(r.t.boundsType == BoundsType::ScaleInner && std::fabs(r.t.bounds.x - 540) < 1e-9 && r.t.crop == Crop() &&
+	      std::fabs(visualFrame(r).width - 540) < 1e-6);
+	r.t = setFrame(m, Affine::identity(), 540, 540, FrameMode::Stretch, center);
+	CHECK(std::fabs(r.t.scale.x - 0.28125) < 1e-9 && std::fabs(r.t.scale.y - 0.5) < 1e-9);
+	/* A manual crop survives a resize that keeps the shape. */
+	m.t.crop.left = 100;
+	r.t = setFrame(m, Affine::identity(), 910, 540, FrameMode::Fill, center);
+	CHECK(r.t.crop.left == 100);
+	/* Ratio button: the largest 1:1 frame inside 960 x 540. */
+	m.t.crop = Crop();
+	r.t = setFrameRatio(m, Affine::identity(), 1.0, FrameMode::Fill, center);
+	CHECK(std::fabs(visualFrame(r).width - 540) < 1e-6 && std::fabs(visualFrame(r).height - 540) < 1e-6);
+}

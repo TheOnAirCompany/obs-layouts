@@ -69,6 +69,14 @@ bool flip(Axis axis);
 bool fit(core::FitMode mode);
 bool originalSize();
 bool resetTransform();
+
+/* How each item fills its frame when W and H change its shape (saved on the scene item,
+ * Fill by default). Setting it refills the current frame of the selection. */
+core::FrameMode frameMode(obs_sceneitem_t *item);
+bool setFrameMode(core::FrameMode mode);
+/* The largest frame with this width / height ratio inside each selected item's frame,
+ * anchored on the reference point. */
+bool setRatio(double ratio);
 bool setBoundsType(core::BoundsType type);
 bool setBoundsAlignment(uint32_t align);
 bool setCropToBounds(bool crop);

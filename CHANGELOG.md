@@ -10,6 +10,12 @@
   NDI, DeckLink = Cam; display or window capture = Screen). A web source named `CAM ...` is now
   a camera in broadcast layouts.
 - **Filter Layers by type**: a row of chips (All, Host, Cam, Screen, BG, CG, Not set) with counts.
+- **Frame modes: Fill, Fit, Stretch** (Inspector, Dimensions). Changing W and H, or a ratio button
+  (16:9, 1:1, 4:5, 9:16), changes the shape of the frame without distorting the image: Fill (the
+  default) covers the frame and crops what goes past, Fit keeps the whole image with empty bands,
+  Stretch distorts as OBS does. The 3×3 reference point is both the point that stays in place and
+  the part of the image that is kept. Rounded corners sit on the visible frame. A resize that
+  keeps the shape only scales, so a manual crop is kept.
 - **Scenes above Layers**, like the pages of a design tool: click a scene to edit it in the Layouts
   window without changing what is on air (the first row follows OBS); the scene on the program
   has a red dot. Handy to fix one element of a scene made by the Builder.

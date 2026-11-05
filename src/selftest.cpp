@@ -907,6 +907,77 @@ void testScenesList()
 	obs_source_remove(extraSource);
 }
 
+/* Frame modes: W and H change the shape of a 16:9 camera without distorting it. */
+void testFrameModes()
+{
+	EditContext &ctx = EditContext::instance();
+	ViewSettings &vs = Store::instance().settings();
+	const bool lock = vs.ratioLock;
+	const int refPoint = vs.refPoint;
+	vs.ratioLock = false;
+	vs.refPoint = 4; /* center */
+	obs_sceneitem_t *item = addColor(ctx.scene(), "Frame cam", 1920, 1080, 0xFF808080, 100, 100);
+	vec2 half;
+	vec2_set(&half, 0.5f, 0.5f);
+	obs_sceneitem_set_scale(item, &half);
+	ctx.markDirty();
+	selectNames({"Frame cam"});
+	const core::Vec2 c0 = entry("Frame cam")->frame.center();
+	commands::setField(commands::Field::W, core::parseExpression("540", 1920));
+	ctx.markDirty();
+	const ItemEntry *e = entry("Frame cam");
+	R->check(e && commands::frameMode(e->item) == core::FrameMode::Fill && std::fabs(e->frame.width - 540) < 0.6 &&
+			 std::fabs(e->frame.height - 540) < 0.6 && e->model.t.crop.left == 420 &&
+			 e->model.t.crop.right == 420 && std::fabs(e->model.t.scale.x - 0.5) < 1e-6 &&
+			 std::fabs(e->model.t.scale.y - 0.5) < 1e-6 && std::fabs(e->frame.center().x - c0.x) < 0.6 &&
+			 std::fabs(e->frame.center().y - c0.y) < 0.6,
+		 "frame-fill-square-not-distorted",
+		 e ? rectStr(box("Frame cam")) +
+				 QString(" crop %1/%2").arg(e->model.t.crop.left).arg(e->model.t.crop.right)
+		   : "no item");
+
+	/* Back to 16:9 with the ratio button: the largest 16:9 inside the square. */
+	commands::setRatio(16.0 / 9.0);
+	ctx.markDirty();
+	e = entry("Frame cam");
+	R->check(e && std::fabs(e->frame.width - 540) < 0.6 && std::fabs(e->frame.height - 303.75) < 0.6 &&
+			 e->model.t.crop.left == 0 && e->model.t.crop.right == 0,
+		 "frame-ratio-button", e ? rectStr(box("Frame cam")) : "no item");
+	commands::setRatio(1.0);
+	ctx.markDirty();
+	e = entry("Frame cam");
+	const double side = e ? e->frame.width : 0;
+	R->check(e && std::fabs(e->frame.width - e->frame.height) < 0.6 && e->model.t.crop.left > 0,
+		 "frame-ratio-square", e ? rectStr(box("Frame cam")) : "no item");
+
+	/* Fit: the whole picture in the same square (bounding box). */
+	commands::setFrameMode(core::FrameMode::Fit);
+	ctx.markDirty();
+	e = entry("Frame cam");
+	R->check(e && commands::frameMode(e->item) == core::FrameMode::Fit &&
+			 e->model.t.boundsType == core::BoundsType::ScaleInner && e->model.t.crop == core::Crop() &&
+			 std::fabs(e->frame.width - side) < 0.6 && std::fabs(e->frame.height - side) < 0.6,
+		 "frame-fit-bounds", e ? rectStr(box("Frame cam")) : "no item");
+
+	/* Stretch: as in OBS, the image is distorted. */
+	resetItem("Frame cam", 100, 100);
+	obs_sceneitem_set_scale(item, &half);
+	ctx.markDirty();
+	commands::setFrameMode(core::FrameMode::Stretch);
+	ctx.markDirty();
+	commands::setField(commands::Field::W, core::parseExpression("540", 1920));
+	ctx.markDirty();
+	e = entry("Frame cam");
+	R->check(e && e->model.t.crop == core::Crop() && std::fabs(e->model.t.scale.x - 0.28125) < 1e-6 &&
+			 std::fabs(e->model.t.scale.y - 0.5) < 1e-6,
+		 "frame-stretch-distorts", e ? QString("%1 x %2").arg(e->model.t.scale.x).arg(e->model.t.scale.y) : "");
+
+	obs_sceneitem_remove(item);
+	vs.ratioLock = lock;
+	vs.refPoint = refPoint;
+	ctx.markDirty();
+}
+
 void unlockAll(std::initializer_list<const char *> names)
 {
 	for (const char *n : names) {
@@ -2007,6 +2078,7 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(300, [] { testShowScenes(); });
 		R->add(300, [] { testTypes(); });
 		R->add(300, [] { testScenesList(); });
+		R->add(300, [] { testFrameModes(); });
 		R->add(300, [] { unlockAll({"A", "B", "C"}); });
 		R->add(300, [] { testCropMode(); });
 		R->add(300, [] { testHotkeys(); });

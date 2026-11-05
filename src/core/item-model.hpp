@@ -121,6 +121,23 @@ ItemTransform moveRefTo(const ItemModel &m, const Affine &parent, const RefPoint
 ItemTransform setWorldSize(const ItemModel &m, const Affine &parent, double width, double height,
 			   const RefPoint &anchor);
 
+/* How the content fills its frame when the frame changes shape (0.4).
+ *   Fill    scales uniformly to cover the frame and crops what goes past it
+ *   Fit     shows the whole source, scaled uniformly inside the frame (bounding box)
+ *   Stretch scales each axis to the frame (the image is distorted) */
+enum class FrameMode { Fill, Fit, Stretch };
+
+/* Gives the item a visible frame of width x height (world units). The anchor is both the
+ * point of the frame that stays in place and, for Fill and Fit, the part of the image
+ * that stays (top-left keeps the top-left of the picture...). When the frame keeps its
+ * shape, the item is only scaled (a manual crop is kept). Flips and rotation are kept. */
+ItemTransform setFrame(const ItemModel &m, const Affine &parent, double width, double height, FrameMode mode,
+		       const RefPoint &anchor);
+
+/* The largest frame with this width / height ratio inside the current frame. */
+ItemTransform setFrameRatio(const ItemModel &m, const Affine &parent, double ratio, FrameMode mode,
+			    const RefPoint &anchor);
+
 ItemTransform setWorldRotation(const ItemModel &m, const Affine &parent, double deg);
 ItemTransform rotateBy(const ItemModel &m, const Affine &parent, double deltaDeg);
 ItemTransform flip(const ItemModel &m, const Affine &parent, Axis axis);

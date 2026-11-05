@@ -291,6 +291,68 @@ ItemTransform setWorldSize(const ItemModel &m, const Affine &parent, double widt
 	return keepAnchor(m, parent, t, anchor);
 }
 
+ItemTransform setFrame(const ItemModel &m, const Affine &parent, double width, double height, FrameMode mode,
+		       const RefPoint &anchor)
+{
+	if (!hasArea(m) || !(width > 0) || !(height > 0) || !std::isfinite(width) || !std::isfinite(height))
+		return m.t;
+	const VisualFrame f = visualFrame(m, parent);
+	const bool sameShape = f.width > 0 && f.height > 0 && std::fabs(width / height - f.width / f.height) < 1e-6;
+	if (mode == FrameMode::Stretch || (sameShape && mode == FrameMode::Fill && m.t.boundsType == BoundsType::None))
+		return setWorldSize(m, parent, width, height, anchor);
+
+	/* World -> local (a group may scale its items). */
+	const double px = std::hypot(parent.a, parent.b), py = std::hypot(parent.c, parent.d);
+	const double w = width / (px > 1e-12 ? px : 1.0), h = height / (py > 1e-12 ? py : 1.0);
+	const double sw = m.sourceWidth, sh = m.sourceHeight;
+	/* The anchor is in visual space: a flipped axis keeps the opposite side of the source. */
+	const double ax = m.t.scale.x < 0 ? 1.0 - anchor.fx : anchor.fx;
+	const double ay = m.t.scale.y < 0 ? 1.0 - anchor.fy : anchor.fy;
+
+	ItemTransform t = m.t;
+	t.cropToBounds = false;
+	if (mode == FrameMode::Fill) {
+		const double s = std::max(w / sw, h / sh);
+		const int ex = std::max(0, (int)std::lround(sw - w / s));
+		const int ey = std::max(0, (int)std::lround(sh - h / s));
+		t.crop.left = (int)std::lround(ex * ax);
+		t.crop.right = ex - t.crop.left;
+		t.crop.top = (int)std::lround(ey * ay);
+		t.crop.bottom = ey - t.crop.top;
+		t.boundsType = BoundsType::None;
+		t.bounds = {};
+		/* Whole source pixels are cropped: a tiny per-axis correction keeps the exact frame. */
+		t.scale.x = std::copysign(w / (sw - ex), m.t.scale.x);
+		t.scale.y = std::copysign(h / (sh - ey), m.t.scale.y);
+	} else {
+		t.crop = Crop();
+		t.boundsType = BoundsType::ScaleInner;
+		t.bounds = {w, h};
+		t.boundsAlign = (anchor.fx < 0.25   ? kAlignLeft
+				 : anchor.fx > 0.75 ? kAlignRight
+						    : 0u) |
+				(anchor.fy < 0.25   ? kAlignTop
+				 : anchor.fy > 0.75 ? kAlignBottom
+						    : 0u);
+		t.scale = {std::copysign(1.0, m.t.scale.x), std::copysign(1.0, m.t.scale.y)};
+	}
+	return keepAnchor(m, parent, t, anchor);
+}
+
+ItemTransform setFrameRatio(const ItemModel &m, const Affine &parent, double ratio, FrameMode mode,
+			    const RefPoint &anchor)
+{
+	const VisualFrame f = visualFrame(m, parent);
+	if (!(ratio > 0) || !(f.width > 0) || !(f.height > 0))
+		return m.t;
+	double w = f.width, h = f.height;
+	if (w / h > ratio)
+		w = h * ratio;
+	else
+		h = w / ratio;
+	return setFrame(m, parent, w, h, mode, anchor);
+}
+
 ItemTransform setWorldRotation(const ItemModel &m, const Affine &parent, double deg)
 {
 	if (!std::isfinite(deg))

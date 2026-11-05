@@ -66,6 +66,8 @@ core::ItemModel modelWith(const ItemEntry &e, const core::ItemTransform &t)
 core::AlignTarget g_target = core::AlignTarget::Selection;
 std::pair<int64_t, int64_t> g_key{-1, -1};
 
+constexpr const char *kFrameKey = "layouts_frame";
+
 /* Returns the transform after setting one field of an item to v. */
 core::ItemTransform withField(const ItemEntry &e, Field f, double v)
 {
@@ -95,7 +97,7 @@ core::ItemTransform withField(const ItemEntry &e, Field f, double v)
 				w = w * v / h;
 			h = v;
 		}
-		return core::setWorldSize(m, e.parent, w, h, r);
+		return core::setFrame(m, e.parent, w, h, frameMode(e.item), r);
 	}
 	case Field::Rotation:
 		return core::setWorldRotation(m, e.parent, v);
@@ -843,6 +845,53 @@ bool pasteProperties(unsigned mask)
 			return m.t;
 		},
 		false);
+}
+
+core::FrameMode frameMode(obs_sceneitem_t *item)
+{
+	if (!item)
+		return core::FrameMode::Fill;
+	OBSDataAutoRelease priv = obs_sceneitem_get_private_settings(item);
+	const char *v = obs_data_get_string(priv, kFrameKey);
+	if (strcmp(v, "fit") == 0)
+		return core::FrameMode::Fit;
+	if (strcmp(v, "stretch") == 0)
+		return core::FrameMode::Stretch;
+	return core::FrameMode::Fill;
+}
+
+bool setFrameMode(core::FrameMode mode)
+{
+	const char *key = mode == core::FrameMode::Fit ? "fit" : mode == core::FrameMode::Stretch ? "stretch" : "fill";
+	const std::vector<ItemEntry> sel = selectionCopy();
+	if (sel.empty() || !EditContext::instance().canEdit())
+		return false;
+	for (const ItemEntry &e : sel) {
+		OBSDataAutoRelease priv = obs_sceneitem_get_private_settings(e.item);
+		obs_data_set_string(priv, kFrameKey, key);
+	}
+	/* The same frame, filled the new way. */
+	std::vector<Change> changes;
+	for (const ItemEntry &e : sel) {
+		if (!e.locked && !e.isGroup)
+			changes.push_back({e.item, core::setFrame(e.model, e.parent, e.frame.width, e.frame.height,
+								  mode, ref())});
+	}
+	const bool ok = changes.empty() || EditSession::run(tr("Undo.Frame"), changes);
+	EditContext::instance().markDirty();
+	return ok;
+}
+
+bool setRatio(double ratio)
+{
+	return applyPerItem(
+		"Undo.Frame",
+		[&](const ItemEntry &e) {
+			if (e.isGroup)
+				return e.model.t;
+			return core::setFrameRatio(e.model, e.parent, ratio, frameMode(e.item), ref());
+		},
+		true);
 }
 
 } // namespace layouts::commands

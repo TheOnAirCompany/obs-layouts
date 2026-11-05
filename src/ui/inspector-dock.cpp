@@ -380,6 +380,38 @@ void InspectorDock::build()
 		connect(radius_, &NumericField::scrubbed, this,
 			[](double delta, bool finished) { corners::scrub(delta, finished); });
 		g->addWidget(radius_, 2, 0);
+
+		/* How the image fills its frame when W and H change its shape. */
+		auto *modeRow = new QWidget(body);
+		frameMode_ = segmented({T("Frame.Fill"), T("Frame.Fit"), T("Frame.Stretch")}, modeRow);
+		frameMode_->button(0)->setToolTip(T("Frame.FillTooltip"));
+		frameMode_->button(1)->setToolTip(T("Frame.FitTooltip"));
+		frameMode_->button(2)->setToolTip(T("Frame.StretchTooltip"));
+		connect(frameMode_, &QButtonGroup::idClicked, this, [](int id) {
+			commands::setFrameMode(id == 1   ? core::FrameMode::Fit
+					       : id == 2 ? core::FrameMode::Stretch
+							 : core::FrameMode::Fill);
+		});
+		g->addWidget(modeRow, 3, 0, 1, 3);
+
+		auto *ratioRow = new QWidget(body);
+		auto *rr = row(ratioRow);
+		rr->setSpacing(2);
+		const std::pair<const char *, double> ratios[] = {{"16:9", 16.0 / 9.0},
+								  {"1:1", 1.0},
+								  {"4:5", 4.0 / 5.0},
+								  {"9:16", 9.0 / 16.0}};
+		for (const auto &[label, value] : ratios) {
+			auto *b = new QToolButton(ratioRow);
+			b->setText(QString::fromUtf8(label));
+			b->setToolTip(T("Ratio.Tooltip").arg(QString::fromUtf8(label)));
+			b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+			const double r = value;
+			connect(b, &QToolButton::clicked, this, [r] { commands::setRatio(r); });
+			rr->addWidget(b);
+			sizeButtons_.push_back(b);
+		}
+		g->addWidget(ratioRow, 4, 0, 1, 3);
 		g->setColumnStretch(0, 1);
 		g->setColumnStretch(1, 1);
 		v->addWidget(section(T("Section.Size"), body));
@@ -643,6 +675,21 @@ void InspectorDock::refresh()
 			widget->setValue(values.front());
 		else
 			widget->setMixed();
+	}
+
+	/* Frame mode: one checked when the selection agrees, none when mixed. */
+	{
+		std::set<int> modes;
+		for (const ItemEntry *e : sel) {
+			if (!e->isGroup)
+				modes.insert((int)commands::frameMode(e->item));
+		}
+		frameMode_->setExclusive(false);
+		for (QAbstractButton *b : frameMode_->buttons()) {
+			b->setChecked(modes.size() == 1 && frameMode_->id(b) == *modes.begin());
+			b->setEnabled(!modes.empty());
+		}
+		frameMode_->setExclusive(true);
 	}
 
 	/* Corner radius: groups have none. */

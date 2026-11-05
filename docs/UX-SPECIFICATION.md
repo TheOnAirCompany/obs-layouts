@@ -88,9 +88,24 @@ Scene name, canvas size and a hint on how to select.
 | Header | name, source type · scene › group, Lock, Copy properties, Paste properties ▾ |
 | Align | 6 buttons: left, horizontal center, right, top, vertical center, bottom, relative to the canvas |
 | Position | reference point picker (3×3), X, Y, rotation, rotate ±90°, flip H/V |
-| Dimensions | W, H, ratio lock, Fit, Fill, Stretch, Original size, Reset transform, corner radius (0.3) |
+| Dimensions | W, H, ratio lock, Fit, Fill, Stretch, Original size, Reset transform, corner radius (0.3), frame mode Fill / Fit / Stretch and ratio buttons 16:9, 1:1, 4:5, 9:16 (0.4) |
 | Crop | left, right, top, bottom (source pixels) |
 | Bounding box | type, content alignment, crop to bounds |
+
+#### Frame modes (0.4)
+- A segmented row Fill | Fit | Stretch, saved on each scene item (private settings
+  `layouts_frame`, Fill by default); nothing checked when the selection is mixed. Picking a mode
+  refills the current frame of the selection (one undo entry).
+- W and H (typed or scrubbed) set the visible frame. Fill: uniform scale covering the frame, the
+  rest cropped in source pixels (a tiny per-axis correction absorbs the whole-pixel crop). Fit:
+  bounding box "scale to inner bounds" of the frame, crop cleared, content aligned on the
+  reference point. Stretch: per-axis scale, as before. When the frame keeps its shape (ratio lock
+  on), Fill only scales, so a manual crop is kept.
+- The 3×3 reference point is the point of the frame that stays in place and, for Fill, the part
+  of the image kept (top-left keeps the top-left of the picture; mirrored axes are handled).
+- Ratio buttons 16:9, 1:1, 4:5, 9:16: the largest frame of that shape inside the current frame,
+  anchored on the reference point, filled with the item's mode. Locked items are skipped.
+- The Canvas handles keep scaling as before.
 
 #### Corner radius (0.3)
 - One field (label ╭), in canvas pixels, 0 = square corners. Typing, math and scrubbing work as

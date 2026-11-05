@@ -33,6 +33,7 @@ The right panel of the Layouts window. It always shows the selection of the edit
 - **Ratio lock**, **Fit / Fill / Stretch** to the canvas, **original size**, **reset**, **rotate ±90°**, **flip**.
 - **Crop** in source pixels (the image stays in place), **bounding box** type and alignment.
 - **Rounded corners** with a clean anti-aliased mask that follows the crop, without any shader plugin.
+- **Frame modes**: turn a 16:9 camera into a 1:1 or 9:16 tile by typing W and H or with a ratio button; Fill crops instead of distorting, anchored on the reference point.
 - **Multiple selection**: align to the selection, the canvas or a **key object**; distribute centers or spacing; type an **exact gap**; same width / height / size; **Mixed** values.
 - **Copy / paste properties** (position, size, rotation, crop, bounding box).
 - **Broadcast layouts**: select 1 to 6 cameras and up to 2 screens, pick a TV-style layout (duo, three columns, host + guests, grids, screen + guests on the side or below, picture in picture) and apply it, or make a new scene with it. Cameras fill their tile, screens are never cropped. Works on vertical canvases too (guests stack, screens on top). **Create show scenes** makes, in one click, a full-screen scene per guest and screen plus a scene for every layout that fits. **Lock the layout** keeps everything in place.
