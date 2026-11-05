@@ -830,6 +830,19 @@ QWidget *InspectorDock::buildBroadcastSection()
 	broadcastShow_->setToolTip(T("Broadcast.ShowTooltip"));
 	bl->addWidget(broadcastShow_);
 
+	/* 0.5: the scene arranged by hand becomes a layout of the gallery. */
+	auto *userRow = new QWidget(body);
+	auto *url = row(userRow);
+	auto *saveLayout = new QPushButton(T("UserLayout.Save"), userRow);
+	saveLayout->setToolTip(T("UserLayout.SaveTooltip"));
+	auto *importLayouts = new QPushButton(T("UserLayout.ImportShort"), userRow);
+	importLayouts->setToolTip(T("UserLayout.Import"));
+	url->addWidget(saveLayout, 1);
+	url->addWidget(importLayouts);
+	bl->addWidget(userRow);
+	connect(saveLayout, &QPushButton::clicked, this, [this] { saveLayoutDialog(this); });
+	connect(importLayouts, &QPushButton::clicked, this, [this] { importLayoutsDialog(this); });
+
 	auto spec = [] {
 		core::BroadcastSpec s;
 		s.gap = Store::instance().settings().broadcastGap;

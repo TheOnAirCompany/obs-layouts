@@ -79,6 +79,8 @@ target_sources(
     src/obs/builder.hpp
     src/obs/roles.cpp
     src/obs/roles.hpp
+    src/obs/user-layouts.cpp
+    src/obs/user-layouts.hpp
     src/obs/hotkeys.cpp
     src/obs/hotkeys.hpp
     src/obs/commands.hpp

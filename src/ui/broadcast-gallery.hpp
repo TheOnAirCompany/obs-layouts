@@ -20,7 +20,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 /* The gallery of broadcast layouts ("Layouts plateau"): thumbnails of the templates that
  * fit a number of cameras and screens, drawn in the canvas shape. Shared by the Inspector
- * (Scene mode) and the Builder. The template key is in Qt::UserRole of each item. */
+ * (Scene mode) and the Builder. The template key is in Qt::UserRole of each item.
+ * Layouts saved by the user (0.5) carry a small corner marker and a context menu:
+ * Rename, Delete, Export..., Import layouts... */
 
 #include <QListWidget>
 #include <QStringList>
@@ -41,8 +43,18 @@ public:
 	QString currentLabel() const;
 	void fitRows();
 
+	/* Call after any change to the user layouts: every gallery redraws on its next sync. */
+	static void userLayoutsChanged();
+
 protected:
 	void resizeEvent(QResizeEvent *e) override;
+	void contextMenuEvent(QContextMenuEvent *e) override;
 };
+
+/* "Save as layout...": asks a name, saves the scene being edited (selection, or every
+ * visible camera, screen and chat). Returns false when cancelled or nothing to save. */
+bool saveLayoutDialog(QWidget *parent);
+/* "Import layouts...": picks .json files and merges them. */
+void importLayoutsDialog(QWidget *parent);
 
 } // namespace layouts::ui

@@ -23,6 +23,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/edit-context.hpp"
 #include "obs/roles.hpp"
 
+#include "core/user-layouts.hpp"
+
 #include <obs-module.h>
 
 #include <QApplication>
@@ -221,6 +223,10 @@ QString sourceIcon(obs_source_t *src)
 
 QString broadcastLabel(const std::string &key, double aspect)
 {
+	if (core::isUserKey(key)) {
+		const core::UserLayout *l = core::UserLayoutRegistry::instance().find(key);
+		return l ? QString::fromStdString(l->name) : QString();
+	}
 	const std::string base = "Broadcast." + key;
 	const char *portrait = nullptr;
 	if (aspect < 1 && obs_module_get_string((base + ".Portrait").c_str(), &portrait))
