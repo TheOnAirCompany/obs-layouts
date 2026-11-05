@@ -32,10 +32,12 @@ folded while the scene stays the same. Each row: type icon (camera, screen, wind
 browser, media, color, group, scene, audio), name, lock, eye. Hidden sources are dimmed.
 - Click selects, Shift / Cmd extends; the selection is the OBS selection, so the Canvas, the Inspector
   and the OBS Sources dock follow, and the other way round.
-- The eye and the lock act on one source; both respect the block-on-air policy.
-- Double-click (or Return) renames the source; a name already taken is refused.
-- Drag and drop reorders inside the same scene or group (one undo entry); dropping into another group
-  is refused.
+- The eye and the lock act on one source; both respect the block-on-air policy. Undoable.
+- Double-click (or Return) renames the source; a name already taken is refused. Undoable.
+- Drag and drop reorders, and moves a source into or out of a group (drop on the group or among its
+  items); the image stays in place, as with OBS's own list (`obs_scene_reorder_items2`). A group
+  can't go into a group (OBS has no nested groups). One row at a time. One undo entry, holding the
+  whole order of the scene: libobs transform states do not carry the order or the grouping.
 
 ## Inspector
 

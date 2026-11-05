@@ -4,7 +4,9 @@
 
 - **Layers panel** on the left of the Layouts window, like a design tool: the sources of the edited
   scene as a tree (front on top, groups unfold), selection in sync with the Canvas and OBS, eye and
-  lock on each row, double-click to rename, drag to reorder (one undo entry).
+  lock on each row, double-click to rename, drag to reorder or to move a source into or out of a
+  group (the image stays in place). Hiding, locking, renaming, reordering and grouping are all in
+  Edit > Undo.
 
 ## 0.2.0 — 2026-11-04
 

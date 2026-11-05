@@ -928,6 +928,61 @@ void testLayers()
 	layers->refresh();
 	R->check(moved == "A,G,C,B" && topLevelOrder() == "G,C,B,A", "layers-reorder-undo",
 		 moved + " then " + topLevelOrder());
+
+	/* Hiding is undoable. */
+	emit tree->itemClicked(layerRow("C"), 2);
+	const bool hid = entry("C") && !entry("C")->visible;
+	if (undo)
+		undo->trigger();
+	ctx.markDirty();
+	R->check(hid && entry("C") && entry("C")->visible, "layers-eye-undo");
+
+	/* Into a group and back out, the image stays in place; undo and redo. */
+	const core::Rect b0 = box("B");
+	layers->refresh();
+	layers->reorder(layerRow("B"), layerRow("G"), 0);
+	ctx.markDirty();
+	layers->refresh();
+	const ItemEntry *g = entry("G");
+	const ItemEntry *b = entry("B");
+	const bool movedIn = g && b && b->groupId == g->id;
+	const bool kept = std::fabs(box("B").x - b0.x) < 0.6 && std::fabs(box("B").y - b0.y) < 0.6;
+	const QString inside = topLevelOrder();
+	const QString movedRect = rectStr(b0) + "->" + rectStr(box("B"));
+	if (undo)
+		undo->trigger();
+	ctx.markDirty();
+	layers->refresh();
+	const bool backOut = entry("B") && entry("B")->groupId == 0 && topLevelOrder() == "G,C,B,A";
+	QAction *redo = findAction(QKeySequence(QKeySequence::Redo));
+	if (redo)
+		redo->trigger();
+	ctx.markDirty();
+	const bool redone = entry("B") && entry("G") && entry("B")->groupId == entry("G")->id;
+	if (undo)
+		undo->trigger();
+	ctx.markDirty();
+	layers->refresh();
+	/* Renaming from the list is undoable. */
+	if (QTreeWidgetItem *rowA = layerRow("A"))
+		rowA->setText(0, "A renamed");
+	const bool renamed = entry("A renamed") != nullptr;
+	if (undo)
+		undo->trigger();
+	ctx.markDirty();
+	layers->refresh();
+	R->check(renamed && entry("A") && layerRow("A"), "layers-rename-undo");
+
+	R->check(movedIn && kept && inside == "G,C,A" && backOut && redone && entry("B")->groupId == 0 &&
+			 std::fabs(box("B").x - b0.x) < 0.6,
+		 "layers-group-move-undo",
+		 QString("in %1 kept %2 order %3 back %4 redo %5 %6")
+			 .arg(movedIn)
+			 .arg(kept)
+			 .arg(inside)
+			 .arg(backOut)
+			 .arg(redone)
+			 .arg(movedRect));
 }
 
 void testCropMode()

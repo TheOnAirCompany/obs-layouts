@@ -32,6 +32,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QTreeWidgetItemIterator>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <cstring>
 #include <map>
 #include <string>
@@ -82,57 +83,192 @@ QString kindIcon(obs_source_t *src)
 	return "square-dashed";
 }
 
-/* ---- stacking order with undo: libobs transform states do not carry the order ---- */
+/* ---- undoable layer edits ----
+ * Each undo entry names the item by the top scene's uuid, its id and its source's uuid
+ * (ids are kept when an item enters or leaves a group). libobs transform states do not
+ * carry the stacking order, visibility or grouping, so these entries are our own. */
 
-obs_scene_t *orderScene(obs_sceneitem_t *item)
+obs_sceneitem_t *findIn(obs_scene_t *scene, int64_t id, const char *sourceUuid)
 {
-	return obs_sceneitem_get_scene(item); /* the scene, or the group's own scene */
-}
-
-/* {"scene": uuid of the top scene, "group": group name or "", "ids": bottom -> top} */
-std::string orderState(obs_scene_t *top, const char *group, obs_scene_t *scene)
-{
-	OBSDataAutoRelease d = obs_data_create();
-	obs_data_set_string(d, "scene", obs_source_get_uuid(obs_scene_get_source(top)));
-	obs_data_set_string(d, "group", group ? group : "");
-	OBSDataArrayAutoRelease ids = obs_data_array_create();
+	struct Find {
+		int64_t id;
+		const char *uuid;
+		obs_sceneitem_t *out;
+	} f{id, sourceUuid, nullptr};
+	if (!scene)
+		return nullptr;
 	obs_scene_enum_items(
 		scene,
 		[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
-			OBSDataAutoRelease e = obs_data_create();
-			obs_data_set_int(e, "id", obs_sceneitem_get_id(item));
-			obs_data_array_push_back((obs_data_array_t *)p, e);
+			auto *f = (Find *)p;
+			if (obs_sceneitem_get_id(item) == f->id &&
+			    strcmp(obs_source_get_uuid(obs_sceneitem_get_source(item)), f->uuid) == 0) {
+				f->out = item;
+				return false;
+			}
 			return true;
 		},
-		ids.Get());
-	obs_data_set_array(d, "ids", ids);
-	return obs_data_get_json(d);
+		&f);
+	return f.out;
 }
 
-void applyOrderState(const char *json)
+/* The scene that holds the items: the top scene, or the inner scene of a group of it. */
+obs_scene_t *container(obs_scene_t *top, const char *group, obs_sceneitem_t **groupItem = nullptr)
+{
+	if (groupItem)
+		*groupItem = nullptr;
+	if (!group || !*group)
+		return top;
+	obs_sceneitem_t *g = top ? obs_scene_get_group(top, group) : nullptr;
+	if (groupItem)
+		*groupItem = g;
+	return g ? obs_sceneitem_group_get_scene(g) : nullptr;
+}
+
+OBSSourceAutoRelease topScene(obs_data_t *d)
+{
+	return obs_get_source_by_uuid(obs_data_get_string(d, "scene"));
+}
+
+/* ---- stacking order and grouping, as OBS's own Sources list does it ----
+ * obs_scene_reorder_items2 takes the whole scene from back to front, each group
+ * followed by its own items; it keeps every image in place when an item enters or
+ * leaves a group. Undo entries hold that list as {"scene", "items": [{id, source,
+ * group}]}, the items named by id and source uuid. */
+
+using OrderList = std::vector<obs_sceneitem_order_info>;
+
+void appendGroupChildren(OrderList &out, obs_sceneitem_t *group)
+{
+	struct Ctx {
+		OrderList *out;
+		obs_sceneitem_t *group;
+	} c{&out, group};
+	obs_sceneitem_group_enum_items(
+		group,
+		[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+			auto *c = (Ctx *)p;
+			c->out->push_back({c->group, item});
+			return true;
+		},
+		&c);
+}
+
+OrderList currentOrder(obs_scene_t *top)
+{
+	OrderList out;
+	obs_scene_enum_items(
+		top,
+		[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+			auto *out = (OrderList *)p;
+			out->push_back({nullptr, item});
+			if (obs_sceneitem_is_group(item))
+				appendGroupChildren(*out, item);
+			return true;
+		},
+		&out);
+	return out;
+}
+
+OBSDataAutoRelease orderData(obs_scene_t *top, const OrderList &order)
+{
+	OBSDataAutoRelease d = obs_data_create();
+	obs_data_set_string(d, "scene", obs_source_get_uuid(obs_scene_get_source(top)));
+	OBSDataArrayAutoRelease items = obs_data_array_create();
+	for (const obs_sceneitem_order_info &o : order) {
+		OBSDataAutoRelease e = obs_data_create();
+		obs_data_set_int(e, "id", obs_sceneitem_get_id(o.item));
+		obs_data_set_string(e, "source", obs_source_get_uuid(obs_sceneitem_get_source(o.item)));
+		obs_data_set_string(e, "group", o.group ? obs_source_get_name(obs_sceneitem_get_source(o.group)) : "");
+		obs_data_array_push_back(items, e);
+	}
+	obs_data_set_array(d, "items", items);
+	return d;
+}
+
+bool sameOrder(const OrderList &a, const OrderList &b)
+{
+	if (a.size() != b.size())
+		return false;
+	for (size_t i = 0; i < a.size(); i++) {
+		if (a[i].item != b[i].item || a[i].group != b[i].group)
+			return false;
+	}
+	return true;
+}
+
+void applyOrder(const char *json)
 {
 	OBSDataAutoRelease d = obs_data_create_from_json(json);
-	OBSSourceAutoRelease src = obs_get_source_by_uuid(obs_data_get_string(d, "scene"));
-	obs_scene_t *scene = obs_scene_from_source(src);
-	if (!scene)
+	OBSSourceAutoRelease src = topScene(d);
+	obs_scene_t *top = obs_scene_from_source(src);
+	if (!top)
 		return;
-	const char *group = obs_data_get_string(d, "group");
-	if (group && *group) {
-		obs_sceneitem_t *g = obs_scene_get_group(scene, group);
-		scene = g ? obs_sceneitem_group_get_scene(g) : nullptr;
-		if (!scene)
-			return;
+	/* Every item of the scene and of its groups, wherever it is now. */
+	const OrderList now = currentOrder(top);
+	auto lookup = [&now](int64_t id, const char *uuid) -> obs_sceneitem_t * {
+		for (const obs_sceneitem_order_info &o : now) {
+			if (obs_sceneitem_get_id(o.item) == id &&
+			    strcmp(obs_source_get_uuid(obs_sceneitem_get_source(o.item)), uuid) == 0)
+				return o.item;
+		}
+		return nullptr;
+	};
+	OBSDataArrayAutoRelease items = obs_data_get_array(d, "items");
+	OrderList order;
+	for (size_t i = 0; i < obs_data_array_count(items); i++) {
+		OBSDataAutoRelease e = obs_data_array_item(items, i);
+		obs_sceneitem_t *item = lookup(obs_data_get_int(e, "id"), obs_data_get_string(e, "source"));
+		const char *group = obs_data_get_string(e, "group");
+		obs_sceneitem_t *g = group && *group ? obs_scene_get_group(top, group) : nullptr;
+		if (!item || (group && *group && !g))
+			return; /* the scene changed since: leave it alone */
+		order.push_back({g, item});
 	}
-	OBSDataArrayAutoRelease ids = obs_data_get_array(d, "ids");
-	std::vector<obs_sceneitem_t *> order;
-	for (size_t i = 0; i < obs_data_array_count(ids); i++) {
-		OBSDataAutoRelease e = obs_data_array_item(ids, i);
-		if (obs_sceneitem_t *item = obs_scene_find_sceneitem_by_id(scene, obs_data_get_int(e, "id")))
-			order.push_back(item);
-	}
-	if (!order.empty())
-		obs_scene_reorder_items(scene, order.data(), order.size());
+	if (order.size() == now.size())
+		obs_scene_reorder_items2(top, order.data(), order.size());
 	EditContext::instance().markDirty();
+}
+
+/* {"scene", "group", "id", "source", "flag": "visible"|"locked", "value"}. */
+void applyFlag(const char *json)
+{
+	OBSDataAutoRelease d = obs_data_create_from_json(json);
+	OBSSourceAutoRelease src = topScene(d);
+	obs_sceneitem_t *item = findIn(container(obs_scene_from_source(src), obs_data_get_string(d, "group")),
+				       obs_data_get_int(d, "id"), obs_data_get_string(d, "source"));
+	if (!item)
+		return;
+	const bool value = obs_data_get_bool(d, "value");
+	if (strcmp(obs_data_get_string(d, "flag"), "visible") == 0)
+		obs_sceneitem_set_visible(item, value);
+	else
+		obs_sceneitem_set_locked(item, value);
+	EditContext::instance().markDirty();
+}
+
+/* {"source": uuid, "name"}. */
+void applyName(const char *json)
+{
+	OBSDataAutoRelease d = obs_data_create_from_json(json);
+	OBSSourceAutoRelease src = obs_get_source_by_uuid(obs_data_get_string(d, "source"));
+	if (src)
+		obs_source_set_name(src, obs_data_get_string(d, "name"));
+	EditContext::instance().markDirty();
+}
+
+QString groupName(const ItemEntry &e)
+{
+	return e.groupId != 0 && e.group ? QString::fromUtf8(obs_source_get_name(obs_sceneitem_get_source(e.group)))
+					 : QString();
+}
+
+void addUndo(const QString &what, void (*undo)(const char *), void (*redo)(const char *), obs_data_t *before,
+	     obs_data_t *after)
+{
+	const QString name = T("Undo.Format").arg(what, EditContext::instance().sceneName());
+	obs_frontend_add_undo_redo_action(name.toUtf8().constData(), undo, redo, obs_data_get_json(before),
+					  obs_data_get_json(after), false);
 }
 
 } // namespace
@@ -150,15 +286,9 @@ protected:
 			e->ignore();
 			return;
 		}
-		QTreeWidgetItem *parentBefore = moved->parent();
 		QTreeWidget::dropEvent(e);
-		/* Qt has moved the row: keep it only inside its own scene or group. */
+		/* Qt has moved the row; reorder() applies it (or puts a group back). */
 		QTreeWidgetItem *parentAfter = moved->parent();
-		if (parentAfter != parentBefore) {
-			panel_->signature_.clear();
-			panel_->rebuild();
-			return;
-		}
 		const int index = parentAfter ? parentAfter->indexOfChild(moved) : indexOfTopLevelItem(moved);
 		panel_->reorder(moved, parentAfter, index);
 	}
@@ -336,12 +466,27 @@ void LayersPanel::onClicked(QTreeWidgetItem *row, int column)
 	EditContext &ctx = EditContext::instance();
 	const ItemEntry *e =
 		ctx.find(row->data(kName, kIdRole).toLongLong(), row->data(kName, kGroupRole).toLongLong());
-	if (!e || !ctx.canEdit())
+	if (!e || !ctx.canEdit() || !ctx.sceneSource())
 		return;
-	if (column == kLock)
-		obs_sceneitem_set_locked(e->item, !e->locked);
+	const bool lock = column == kLock;
+	const bool before = lock ? e->locked : e->visible;
+	OBSSceneItem item = e->item;
+	OBSDataAutoRelease d = obs_data_create();
+	obs_data_set_string(d, "scene", obs_source_get_uuid(ctx.sceneSource()));
+	obs_data_set_string(d, "group", groupName(*e).toUtf8().constData());
+	obs_data_set_int(d, "id", e->id);
+	obs_data_set_string(d, "source", obs_source_get_uuid(obs_sceneitem_get_source(item)));
+	obs_data_set_string(d, "flag", lock ? "locked" : "visible");
+	OBSDataAutoRelease after = obs_data_create();
+	obs_data_apply(after, d);
+	obs_data_set_bool(d, "value", before);
+	obs_data_set_bool(after, "value", !before);
+	if (lock)
+		obs_sceneitem_set_locked(item, !before);
 	else
-		obs_sceneitem_set_visible(e->item, !e->visible);
+		obs_sceneitem_set_visible(item, !before);
+	const char *what = lock ? (before ? "Layers.Unlock" : "Layers.Lock") : (before ? "Layers.Hide" : "Layers.Show");
+	addUndo(T(what), applyFlag, applyFlag, d, after);
 	ctx.markDirty();
 }
 
@@ -356,8 +501,17 @@ void LayersPanel::onRenamed(QTreeWidgetItem *row, int column)
 		return;
 	const QString name = row->text(kName).trimmed();
 	OBSSourceAutoRelease taken = obs_get_source_by_name(name.toUtf8().constData());
-	if (!name.isEmpty() && name != e->name && !taken)
-		obs_source_set_name(obs_sceneitem_get_source(e->item), name.toUtf8().constData());
+	obs_source_t *source = obs_sceneitem_get_source(e->item);
+	if (!name.isEmpty() && name != e->name && !taken) {
+		OBSDataAutoRelease before = obs_data_create(), after = obs_data_create();
+		obs_data_set_string(before, "source", obs_source_get_uuid(source));
+		obs_data_set_string(before, "name", e->name.toUtf8().constData());
+		obs_data_apply(after, before);
+		obs_data_set_string(after, "name", name.toUtf8().constData());
+		obs_source_set_name(source, name.toUtf8().constData());
+		addUndo(T("Undo.Rename"), applyName, applyName, before, after);
+	}
+	ctx.markDirty(); /* names live in the snapshot */
 	/* Refused or unchanged: the row shows the real name again. */
 	signature_.clear();
 	QMetaObject::invokeMethod(this, &LayersPanel::refresh, Qt::QueuedConnection);
@@ -366,22 +520,63 @@ void LayersPanel::onRenamed(QTreeWidgetItem *row, int column)
 void LayersPanel::reorder(QTreeWidgetItem *moved, QTreeWidgetItem *parentAfter, int indexAfter)
 {
 	EditContext &ctx = EditContext::instance();
-	const ItemEntry *e =
-		ctx.find(moved->data(kName, kIdRole).toLongLong(), moved->data(kName, kGroupRole).toLongLong());
-	const int siblings = parentAfter ? parentAfter->childCount() : tree_->topLevelItemCount();
-	if (e && ctx.canEdit() && ctx.scene()) {
-		obs_scene_t *top = ctx.scene();
-		obs_scene_t *scene = orderScene(e->item);
-		const char *group =
-			e->groupId != 0 && e->group ? obs_source_get_name(obs_sceneitem_get_source(e->group)) : nullptr;
-		const std::string before = orderState(top, group, scene);
-		/* Rows run front to back; OBS positions count from the back. */
-		obs_sceneitem_set_order_position(e->item, siblings - 1 - indexAfter);
-		const std::string after = orderState(top, group, scene);
-		if (after != before) {
-			const QString name = T("Undo.Format").arg(T("Undo.Order"), ctx.sceneName());
-			obs_frontend_add_undo_redo_action(name.toUtf8().constData(), applyOrderState, applyOrderState,
-							  before.c_str(), after.c_str(), false);
+	obs_scene_t *top = ctx.scene();
+	/* Place the row (a drop has already done it). OBS has no nested groups. */
+	QTreeWidgetItem *parentBefore = moved->parent();
+	if (moved->data(kName, kIsGroupRole).toBool() && (parentAfter || parentBefore)) {
+		signature_.clear(); /* puts the rows back */
+		rebuild();
+		syncSelection();
+		return;
+	}
+	const int indexBefore = parentBefore ? parentBefore->indexOfChild(moved) : tree_->indexOfTopLevelItem(moved);
+	if (parentBefore != parentAfter || indexBefore != indexAfter) {
+		if (parentBefore)
+			parentBefore->takeChild(indexBefore);
+		else
+			tree_->takeTopLevelItem(indexBefore);
+		const int count = parentAfter ? parentAfter->childCount() : tree_->topLevelItemCount();
+		const int at = std::clamp(indexAfter, 0, count);
+		if (parentAfter)
+			parentAfter->insertChild(at, moved);
+		else
+			tree_->insertTopLevelItem(at, moved);
+	}
+
+	if (top && ctx.canEdit()) {
+		/* The scene, back to front, as the rows now show it (rows run front to back). */
+		auto itemOf = [&ctx](QTreeWidgetItem *row) -> obs_sceneitem_t * {
+			const ItemEntry *e = ctx.find(row->data(kName, kIdRole).toLongLong(),
+						      row->data(kName, kGroupRole).toLongLong());
+			return e ? e->item.Get() : nullptr;
+		};
+		OrderList order;
+		bool complete = true;
+		for (int i = tree_->topLevelItemCount() - 1; i >= 0; i--) {
+			QTreeWidgetItem *row = tree_->topLevelItem(i);
+			obs_sceneitem_t *item = itemOf(row);
+			complete = complete && item;
+			if (!item)
+				continue;
+			order.push_back({nullptr, item});
+			for (int k = row->childCount() - 1; k >= 0; k--) {
+				obs_sceneitem_t *child = itemOf(row->child(k));
+				complete = complete && child;
+				if (child)
+					order.push_back({item, child});
+			}
+		}
+		const OrderList before = currentOrder(top);
+		if (complete && order.size() == before.size() && !sameOrder(order, before)) {
+			bool regrouped = false;
+			for (const obs_sceneitem_order_info &o : order) {
+				for (const obs_sceneitem_order_info &b : before)
+					regrouped = regrouped || (b.item == o.item && b.group != o.group);
+			}
+			OBSDataAutoRelease undoData = orderData(top, before);
+			OBSDataAutoRelease redoData = orderData(top, order);
+			obs_scene_reorder_items2(top, order.data(), order.size());
+			addUndo(T(regrouped ? "Undo.Group" : "Undo.Order"), applyOrder, applyOrder, undoData, redoData);
 		}
 	}
 	signature_.clear();
