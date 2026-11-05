@@ -25,6 +25,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QListWidget>
 #include <QStringList>
 
+class QToolButton;
+
 #include <string>
 
 namespace layouts::ui {
@@ -41,8 +43,31 @@ public:
 	QString currentLabel() const;
 	void fitRows();
 
+	/* Mirrored layouts (persisted in the store): thumbnails and every apply / new
+	 * scene use the mirrored slots. */
+	bool mirrorH() const;
+	bool mirrorV() const;
+	/* The two mirror toggles, to place next to the gallery (created on first call,
+	 * shown and hidden with the gallery). */
+	QWidget *mirrorBar();
+
+	void setVisible(bool visible) override;
+
+signals:
+	/* The user toggled a mirror button. */
+	void mirrorChanged();
+
 protected:
 	void resizeEvent(QResizeEvent *e) override;
+
+private:
+	void renderThumbs();
+	void syncMirrorButtons();
+
+	QWidget *mirrorBar_ = nullptr;
+	QToolButton *mirrorH_ = nullptr;
+	QToolButton *mirrorV_ = nullptr;
+	int renderedMirror_ = 0; /* bit 0 = h, bit 1 = v, of the drawn thumbnails */
 };
 
 } // namespace layouts::ui

@@ -65,6 +65,8 @@ target_sources(
     src/core/broadcast.hpp
     src/core/broadcast-inventive.cpp
     src/core/broadcast-inventive.hpp
+    src/core/mirror.cpp
+    src/core/mirror.hpp
     src/core/roles.cpp
     src/core/roles.hpp
     src/core/style.cpp

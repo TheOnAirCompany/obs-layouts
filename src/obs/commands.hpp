@@ -106,6 +106,10 @@ core::ItemTransform slotTransform(const core::ItemModel &m, const core::Slot &sl
 /* Writes the shape and frame of the slot in the item style override (private setting
  * "layouts_style"); an item moving to a plain slot loses what a slot had added. */
 void applySlotStyle(obs_sceneitem_t *item, const core::Slot &slot);
+/* Slots of a template on the canvas, mirrored as set in the gallery (store settings
+ * broadcastMirrorH / broadcastMirrorV). Every place that applies a template uses it. */
+std::vector<core::Slot> broadcastSlots(const std::string &key, const core::Rect &canvas,
+				       const core::BroadcastSpec &spec);
 /* Stacks the items of a template in slot order (back to front), keeping them in the
  * places they already take among the other items (background below, graphics above). */
 void stackInSlotOrder(const std::vector<obs_sceneitem_t *> &backToFront);

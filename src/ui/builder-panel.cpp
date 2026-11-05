@@ -266,6 +266,7 @@ BuilderPanel::BuilderPanel(BuilderSources *sources, QWidget *parent) : QWidget(p
 	v->addWidget(summary_);
 
 	gallery_ = new BroadcastGallery(content);
+	v->addWidget(gallery_->mirrorBar());
 	v->addWidget(gallery_);
 	empty_ = new QLabel(content);
 	empty_->setWordWrap(true);

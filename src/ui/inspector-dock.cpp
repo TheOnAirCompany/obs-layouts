@@ -798,7 +798,9 @@ QWidget *InspectorDock::buildBroadcastSection()
 	bl->addWidget(broadcastSummary_);
 	bl->addWidget(top);
 
-	broadcastGallery_ = new BroadcastGallery(body);
+	auto *gallery = new BroadcastGallery(body);
+	broadcastGallery_ = gallery;
+	tl->addWidget(gallery->mirrorBar());
 	bl->addWidget(broadcastGallery_);
 
 	broadcastEmpty_ = new QLabel(body);
@@ -850,6 +852,7 @@ QWidget *InspectorDock::buildBroadcastSection()
 		if (!updating_)
 			previewBroadcast(true);
 	});
+	connect(gallery, &BroadcastGallery::mirrorChanged, this, [this] { previewBroadcast(true); });
 	auto number = [this](double ViewSettings::*field) {
 		return [this, field](const core::Expression &e) {
 			ViewSettings &s = Store::instance().settings();

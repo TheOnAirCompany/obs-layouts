@@ -28,6 +28,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "core/slot-apply.hpp"
 #include "core/style.hpp"
 
+#include "core/mirror.hpp"
+
 #include <obs-frontend-api.h>
 #include <obs-module.h>
 
@@ -557,7 +559,7 @@ std::vector<ItemEntry> topLevelSelection()
 std::vector<Placed> assignSlotsFor(const std::string &key, const core::BroadcastSpec &spec,
 				   const std::vector<ItemEntry> &items, const std::vector<core::SlotKind> &kinds)
 {
-	const std::vector<core::Slot> targets = core::buildBroadcast(key, EditContext::instance().canvasRect(), spec);
+	const std::vector<core::Slot> targets = broadcastSlots(key, EditContext::instance().canvasRect(), spec);
 	std::vector<bool> hosts;
 	for (const ItemEntry &e : items)
 		hosts.push_back(roles::role(obs_sceneitem_get_source(e.item)) == core::Role::Host);
@@ -574,6 +576,14 @@ std::vector<Placed> assignSlotsFor(const std::string &key, const core::Broadcast
 std::vector<Placed> assignSlots(const std::string &key, const core::BroadcastSpec &spec, KindMode mode);
 
 } // namespace
+
+std::vector<core::Slot> broadcastSlots(const std::string &key, const core::Rect &canvas,
+				       const core::BroadcastSpec &spec)
+{
+	const ViewSettings &s = Store::instance().settings();
+	return core::mirrorSlots(core::buildBroadcast(key, canvas, spec), canvas, s.broadcastMirrorH,
+				 s.broadcastMirrorV);
+}
 
 /* Transform that places a source in a slot: cameras fill it (cropped), screens fit,
  * chats fit inside bounds (their size often changes, a browser source may not be

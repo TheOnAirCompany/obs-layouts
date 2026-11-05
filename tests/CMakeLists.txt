@@ -24,6 +24,7 @@ add_executable(
   test-broadcast-inventive.cpp
   test-roles.cpp
   test-slot-apply.cpp
+  test-mirror.cpp
   ${CORE_DIR}/geometry.cpp
   ${CORE_DIR}/item-model.cpp
   ${CORE_DIR}/arrange.cpp
@@ -36,6 +37,7 @@ add_executable(
   ${CORE_DIR}/broadcast.cpp
   ${CORE_DIR}/broadcast-inventive.cpp
   ${CORE_DIR}/broadcast-screens.cpp
+  ${CORE_DIR}/mirror.cpp
   ${CORE_DIR}/roles.cpp
   ${CORE_DIR}/style.cpp
   ${CORE_DIR}/slot-apply.cpp

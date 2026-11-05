@@ -191,7 +191,7 @@ std::vector<QString> create(const Plan &plan, const Options &options)
 		}
 
 		/* Tiles: host slots get the hosts, then cameras in reading order and screens. */
-		const std::vector<core::Slot> tiles = core::buildBroadcast(spec.key, canvas, options.spec);
+		const std::vector<core::Slot> tiles = commands::broadcastSlots(spec.key, canvas, options.spec);
 		std::vector<obs_source_t *> sources;
 		std::vector<core::SlotKind> kinds;
 		std::vector<bool> hosts;
