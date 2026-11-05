@@ -147,7 +147,7 @@ scenes, so renaming or changing its settings applies to both outputs automatical
 | Step | State |
 | --- | --- |
 | Portrait map (pure, tests) | done: `src/core/portrait-map.*`, `tests/test-portrait-map.cpp` |
-| OBS prototype: find/create canvas, build/refresh the twin of a scene, behind `dual.enabled` | prototype: `src/obs/dual.*` |
+| OBS prototype: find/create canvas, build/refresh the twin of a scene, behind `dual.enabled` | prototype: `src/obs/dual.*`, called by the Builder when enabled; twins found by name (" ▯" suffix), the uuid `dual.twins` record is still to do |
 | Régie CUT both, Layouts 16:9/9:16 switch, Builder checkbox | to do (UI) |
-| Selftest: enable dual, build twin of a Duo, check stacked cells and shared sources | to do |
+| Selftest: build twin of a Duo, check stacked cells, canvas and CUT | written (`testDualTwin`), not run yet |
 | Record vertical (own canvas) | 0.7 |
