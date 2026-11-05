@@ -1076,13 +1076,21 @@ bool renderRadius(obs_source_t *source, float &r, float &ratio)
 				rad = it->second;
 		}
 	}
+	const uint32_t w = obs_source_get_width(source), h = obs_source_get_height(source);
+	if (!w || !h)
+		return false;
+	/* Same resolution as the corners filter for this frame (modes, crop, Move). */
+	float l, t, rr, b;
+	core::Vec2 scale;
+	visibleRect((float)w, (float)h, l, t, rr, b, scale);
+	Resolved shape = resolve(rad, l, t, rr, b, scale);
 	if (t_scenes.empty()) {
-		Radius during;
-		if (transitionRadius(f, source, during))
-			rad = during;
+		Resolved during;
+		if (transitionRadius(f, source, l, t, rr, b, scale, during))
+			shape = std::move(during);
 	}
-	r = rad.r;
-	ratio = rad.ratio;
+	r = shape.rx;
+	ratio = shape.rx > 0 ? shape.ry / shape.rx : 1.0f;
 	return true;
 }
 
