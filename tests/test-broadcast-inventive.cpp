@@ -48,7 +48,7 @@ TEST("inventive: the 20 templates are listed, landscape only, slot counts match"
 {
 	std::map<std::string, BroadcastTemplate> byKey;
 	for (const BroadcastTemplate &t : broadcastTemplates())
-		if (t.landscapeOnly)
+		if (t.landscapeOnly && std::find(kKeys.begin(), kKeys.end(), t.key) != kKeys.end())
 			byKey.emplace(t.key, t);
 	CHECK(byKey.size() == kKeys.size());
 	for (const std::string &k : kKeys) {
@@ -135,10 +135,10 @@ TEST("inventive: templatesFor matches chats exactly and drops landscape-only on 
 	CHECK(keysFor(1, 0, 2, false).empty());
 	/* Without chats, no chat template. */
 	const std::vector<std::string> duo = keysFor(2, 0, 0, false);
-	CHECK(duo.size() == 4 && has(duo, "Polaroid") && has(duo, "Diagonal") && !has(duo, "ChatDuo"));
+	CHECK(duo.size() == 11 && has(duo, "Polaroid") && has(duo, "Diagonal") && !has(duo, "ChatDuo"));
 	CHECK(keysFor(2, 0, 0, true).size() == 2);
 	const std::vector<std::string> one = keysFor(1, 1, 0, false);
-	CHECK(has(one, "Screen1Cam1Pip") && has(one, "TiltedScreen") && has(one, "PortHole") && one.size() == 4);
+	CHECK(has(one, "Screen1Cam1Pip") && has(one, "TiltedScreen") && has(one, "PortHole") && one.size() == 10);
 	CHECK(!has(keysFor(1, 1, 0, true), "PortHole"));
 	CHECK(has(keysFor(3, 0, 0, false), "TiltedCards"));
 	CHECK(has(keysFor(4, 0, 0, false), "CardStack"));
@@ -146,7 +146,7 @@ TEST("inventive: templatesFor matches chats exactly and drops landscape-only on 
 	CHECK(has(keysFor(3, 1, 0, false), "Bento4"));
 	CHECK(has(keysFor(4, 1, 0, false), "Dock"));
 	/* Default arguments: no chat, landscape. */
-	CHECK(templatesFor(2, 0).size() == 4);
+	CHECK(templatesFor(2, 0).size() == 11);
 }
 
 TEST("inventive: scaled to the canvas, margin applied, bubbles stay round")

@@ -227,6 +227,8 @@ TEST("broadcast: camera templates follow the review geometry")
 	s = buildBroadcast("Cam1Cinema", kCanvas, spec);
 	CHECK_NEAR(s[0].cell.w / s[0].cell.h, 2.39, 1e-9);
 	CHECK_NEAR(s[0].cell.x, 60, 1e-9);
+}
+
 TEST("broadcast: 0.5 screen templates, counts per key")
 {
 	struct Want {
