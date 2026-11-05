@@ -61,6 +61,8 @@ target_sources(
     src/core/broadcast.hpp
     src/core/roles.cpp
     src/core/roles.hpp
+    src/core/swap.cpp
+    src/core/swap.hpp
     src/obs/obs-convert.hpp
     src/obs/store.cpp
     src/obs/store.hpp
