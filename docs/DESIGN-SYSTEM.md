@@ -44,6 +44,7 @@ is used for state (selection, snapping, live).
 | `kCrop` (0.2) | `#FF9F0A` | crop mode frame and handles |
 | `kThumbCamera` (0.2) | `#5FB4F5` | broadcast layouts gallery: camera tiles |
 | `kThumbScreen` (0.2) | `#C9A24A` | broadcast layouts gallery: screen tiles |
+| `kLayersWidth` (0.3) | 240 px | Layers panel width on first launch |
 | `kOutside` | `#1B1C1F` | around the canvas |
 | `kCanvasBackdrop` | black | canvas behind the scene |
 | `kLiveFrame` | `#E5484D`, 2 px | frame around the canvas when on air |
@@ -72,4 +73,4 @@ is used for state (selection, snapping, live).
 
 ## Review
 All values above were reviewed on screenshots of the Inspector and the Canvas in OBS 33.0.1 and
-approved as is (2026-11-04), including the 0.2 tokens `kPreview`, `kPreviewFill` and `kCrop`, and the broadcast gallery colors `kThumbCamera` and `kThumbScreen`. Changing a value means editing `src/ui/theme.hpp` only.
+approved as is (2026-11-04), including the 0.2 tokens `kPreview`, `kPreviewFill` and `kCrop`, and the broadcast gallery colors `kThumbCamera` and `kThumbScreen`, and the 0.3 `kLayersWidth`. Changing a value means editing `src/ui/theme.hpp` only.

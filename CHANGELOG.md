@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.0 — not released yet
+
+- **Layers panel** on the left of the Layouts window, like a design tool: the sources of the edited
+  scene as a tree (front on top, groups unfold), selection in sync with the Canvas and OBS, eye and
+  lock on each row, double-click to rename, drag to reorder or to move a source into or out of a
+  group (the image stays in place). Hiding, locking, renaming, reordering and grouping are all in
+  Edit > Undo.
+- **Rounded corners**: a corner radius field in the Inspector (Dimensions), in canvas pixels. The
+  corners are a clean anti-aliased mask that follows the crop, so a cropped camera in a broadcast
+  layout keeps its four round corners. No shader plugin needed: Layouts adds its own "Rounded
+  corners" filter to the source (also available in the OBS Filters window). The radius belongs to
+  the source, so the same camera placed at another size in another scene gets proportional
+  corners. Undoable.
+- Broadcast layouts and show scenes keep a source's **flip**: a mirrored webcam or a camera
+  mounted upside down stays that way in its tile instead of being flipped back.
+
 ## 0.2.0 — 2026-11-04
 
 - **Layouts window**: the Canvas and the Inspector now live together in one regular window

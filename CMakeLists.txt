@@ -69,6 +69,8 @@ target_sources(
     src/obs/commands.cpp
     src/obs/constraints.cpp
     src/obs/constraints.hpp
+    src/obs/corners.cpp
+    src/obs/corners.hpp
     src/obs/hotkeys.cpp
     src/obs/hotkeys.hpp
     src/obs/commands.hpp
@@ -78,6 +80,8 @@ target_sources(
     src/ui/widgets.hpp
     src/ui/inspector-dock.cpp
     src/ui/inspector-dock.hpp
+    src/ui/layers-panel.cpp
+    src/ui/layers-panel.hpp
     src/ui/canvas-view.cpp
     src/ui/canvas-view.hpp
     src/ui/ruler.cpp

@@ -22,6 +22,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "widgets.hpp"
 
 #include "obs/constraints.hpp"
+#include "obs/corners.hpp"
 #include "obs/edit-context.hpp"
 #include "obs/store.hpp"
 
@@ -369,6 +370,14 @@ void InspectorDock::build()
 		}
 		fr->addStretch();
 		g->addWidget(fitRow, 1, 0, 1, 3);
+
+		radius_ = new NumericField(QString::fromUtf8("\xE2\x95\xAD"), T("Field.Radius"), body);
+		radius_->setDecimals(0);
+		connect(radius_, &NumericField::committed, this,
+			[](const core::Expression &e) { corners::setRadius(e); });
+		connect(radius_, &NumericField::scrubbed, this,
+			[](double delta, bool finished) { corners::scrub(delta, finished); });
+		g->addWidget(radius_, 2, 0);
 		g->setColumnStretch(0, 1);
 		g->setColumnStretch(1, 1);
 		v->addWidget(section(T("Section.Size"), body));
@@ -632,6 +641,21 @@ void InspectorDock::refresh()
 			widget->setValue(values.front());
 		else
 			widget->setMixed();
+	}
+
+	/* Corner radius: groups have none. */
+	{
+		std::vector<double> radii;
+		for (const ItemEntry *e : sel) {
+			if (!e->isGroup)
+				radii.push_back(corners::radius(*e));
+		}
+		radius_->setEnabled(!radii.empty());
+		radius_->setPercentBase(0);
+		if (radii.empty() || allEqual(radii))
+			radius_->setValue(radii.empty() ? 0.0 : radii.front());
+		else
+			radius_->setMixed();
 	}
 
 	if (multi) {

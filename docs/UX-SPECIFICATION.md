@@ -25,6 +25,20 @@ The Canvas toolbar has a scene picker:
 
 The Inspector always shows the selection of the edited scene.
 
+## Layers (0.3)
+Left panel of the Layouts window (default width 240 px, resizable down to 160 px). The sources of the
+edited scene as a tree, front on top like a design tool's layers; groups unfold and remember being
+folded while the scene stays the same. Each row: type icon (camera, screen, window, image, text,
+browser, media, color, group, scene, audio), name, lock, eye. Hidden sources are dimmed.
+- Click selects, Shift / Cmd extends; the selection is the OBS selection, so the Canvas, the Inspector
+  and the OBS Sources dock follow, and the other way round.
+- The eye and the lock act on one source; both respect the block-on-air policy. Undoable.
+- Double-click (or Return) renames the source; a name already taken is refused. Undoable.
+- Drag and drop reorders, and moves a source into or out of a group (drop on the group or among its
+  items); the image stays in place, as with OBS's own list (`obs_scene_reorder_items2`). A group
+  can't go into a group (OBS has no nested groups). One row at a time. One undo entry, holding the
+  whole order of the scene: libobs transform states do not carry the order or the grouping.
+
 ## Inspector
 
 ### Empty state
@@ -36,9 +50,20 @@ Scene name, canvas size and a hint on how to select.
 | Header | name, source type · scene › group, Lock, Copy properties, Paste properties ▾ |
 | Align | 6 buttons: left, horizontal center, right, top, vertical center, bottom, relative to the canvas |
 | Position | reference point picker (3×3), X, Y, rotation, rotate ±90°, flip H/V |
-| Dimensions | W, H, ratio lock, Fit, Fill, Stretch, Original size, Reset transform |
+| Dimensions | W, H, ratio lock, Fit, Fill, Stretch, Original size, Reset transform, corner radius (0.3) |
 | Crop | left, right, top, bottom (source pixels) |
 | Bounding box | type, content alignment, crop to bounds |
+
+#### Corner radius (0.3)
+- One field (label ╭), in canvas pixels, 0 = square corners. Typing, math and scrubbing work as
+  in every numeric field; with several items selected it shows Mixed when the radii differ. Groups
+  have no radius.
+- Applied with a "Rounded corners" filter that Layouts registers and adds last in the source's
+  filter list (removed again at 0). The mask is anti-aliased and drawn on the visible part of the
+  item: the crop of the scene item being drawn is read at render time, so each scene keeps clean
+  corners even with a different crop.
+- The radius is stored on the source in source pixels: the same source at another size in another
+  scene has proportional corners. One Edit > Undo entry per change (a whole scrub included).
 
 ### Multiple selection
 Header shows "N elements selected" and the number of locked items. Adds:
@@ -76,7 +101,8 @@ nothing that fits, a short sentence says what to select.
 
 Screens alone: one full, two side by side. Sources fill the slots in selection order. A camera fills
 its tile edge to edge: the crop is centered horizontally and keeps 30 % of the removed height at the
-top, so faces stay in frame. A screen is fitted whole, never cropped. On a portrait canvas guests
+top, so faces stay in frame. A screen is fitted whole, never cropped. A flipped source (mirrored
+webcam, camera upside down) keeps its flip in the tile (0.3). On a portrait canvas guests
 stack and screens span the width at the top; names that would be wrong change (three rows, stacked).
 
 Settings: gap between tiles and margin around the layout (0 = full bleed, like TV). *Lock the layout

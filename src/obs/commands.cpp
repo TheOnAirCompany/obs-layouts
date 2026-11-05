@@ -595,6 +595,13 @@ core::ItemTransform slotTransform(const core::ItemModel &m, core::SlotKind kind,
 		const core::Rect r = f.rect();
 		t.pos = {r.x, r.y};
 	}
+	/* A source flipped by the user (a mirrored webcam, a camera mounted upside down) stays
+	 * flipped in its slot: same place, same crop of the content, only the mirror kept. */
+	const core::ItemModel placed{t, m.sourceWidth, m.sourceHeight};
+	if (m.t.scale.x < 0)
+		t = core::flip(placed, core::Affine::identity(), core::Axis::X);
+	if (m.t.scale.y < 0)
+		t = core::flip({t, m.sourceWidth, m.sourceHeight}, core::Affine::identity(), core::Axis::Y);
 	return t;
 }
 

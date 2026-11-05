@@ -19,8 +19,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #pragma once
 
 /* The Layouts window: a regular top-level window (resizable, maximizable, native
- * full screen), never a dock. The Canvas takes the center, the Inspector sits in a
- * resizable panel on the right. Opened from Tools > Layouts or a hotkey; closing it
+ * full screen), never a dock. Layers on the left, the Canvas in the center, the
+ * Inspector on the right, in resizable panels. Opened from Tools > Layouts or a hotkey; closing it
  * only hides it. Its geometry is remembered. */
 
 #include <QWidget>
@@ -31,6 +31,7 @@ namespace layouts::ui {
 
 class CanvasDock;
 class InspectorDock;
+class LayersPanel;
 
 class LayoutsWindow : public QWidget {
 	Q_OBJECT
@@ -40,6 +41,7 @@ public:
 
 	CanvasDock *canvas() const { return canvas_; }
 	InspectorDock *inspector() const { return inspector_; }
+	LayersPanel *layers() const { return layers_; }
 
 public slots:
 	/* Shows the window (first time: a comfortable size centered on OBS), brings it
@@ -57,6 +59,7 @@ private:
 	QSplitter *split_ = nullptr;
 	CanvasDock *canvas_ = nullptr;
 	InspectorDock *inspector_ = nullptr;
+	LayersPanel *layers_ = nullptr;
 	bool placed_ = false;
 };
 

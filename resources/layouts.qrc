@@ -46,5 +46,15 @@
   <file>icons/unlink.svg</file>
   <file>icons/zoom-in.svg</file>
   <file>icons/zoom-out.svg</file>
+  <file>icons/video.svg</file>
+  <file>icons/monitor.svg</file>
+  <file>icons/app-window.svg</file>
+  <file>icons/image.svg</file>
+  <file>icons/type.svg</file>
+  <file>icons/film.svg</file>
+  <file>icons/square.svg</file>
+  <file>icons/folder.svg</file>
+  <file>icons/clapperboard.svg</file>
+  <file>icons/audio-lines.svg</file>
 </qresource>
 </RCC>
