@@ -117,10 +117,10 @@ TEST("user layouts: registry feeds templatesFor and buildBroadcast")
 {
 	RegistryReset reset;
 	UserLayoutRegistry &reg = UserLayoutRegistry::instance();
-	const size_t builtIn = templatesFor(3, 1).size();
+	const size_t builtIn = templatesFor(3, 1, 1).size();
 	const std::string key = reg.add(sample());
 	CHECK(isUserKey(key));
-	const std::vector<BroadcastTemplate> list = templatesFor(3, 1);
+	const std::vector<BroadcastTemplate> list = templatesFor(3, 1, 1);
 	CHECK(list.size() == builtIn + 1);
 	CHECK(list.back().key == key && list.back().chats == 1);
 	CHECK(std::none_of(broadcastTemplates().begin(), broadcastTemplates().end(),

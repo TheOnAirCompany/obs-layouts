@@ -188,7 +188,6 @@ int mirrorBits()
 
 } // namespace
 
-
 /* Exported for the Switcher dock: the gallery colors, the stored mirror. */
 QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor &screen, const QColor &bg,
 		     double aspect)

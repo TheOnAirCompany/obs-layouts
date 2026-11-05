@@ -1009,7 +1009,6 @@ bool setRatio(double ratio)
 
 namespace {
 
-
 /* An item with its parent transform: from the edited scene when it is there (groups
  * included), otherwise a top-level item of any scene. */
 bool swapEntry(obs_sceneitem_t *item, ItemEntry &out)

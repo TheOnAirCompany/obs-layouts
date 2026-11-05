@@ -63,6 +63,6 @@ TEST("failover: nothing left or unknown key")
 {
 	CHECK(!chooseFallback("Cam1Full", {"H"}, {"H"}).ok);
 	CHECK(!chooseFallback("NoSuchLayout", {"H"}, {"H"}).ok);
-	/* One camera and two screens: no template, the layout stays as it is. */
-	CHECK(!chooseFallback("Screen2Cam2Grid", {"H", "A", "S1", "S2"}, {"A"}).ok);
+	/* One camera and two screens: the 0.5 templates cover it now. */
+	CHECK(chooseFallback("Screen2Cam2Grid", {"H", "A", "S1", "S2"}, {"A"}).ok);
 }
