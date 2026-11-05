@@ -731,6 +731,30 @@ void testRoles()
 	obs_source_remove(bg);
 }
 
+/* 0.5: chat sources, suggested from their name and fitted whole in chat slots. */
+void testChatRole()
+{
+	OBSSourceAutoRelease chat = colorSource("TCHAT _ TWITCH", 400, 900, 0xFFFFFFFF);
+	R->check(roles::role(chat) == core::Role::Chat && roles::explicitRole(chat) == core::Role::None,
+		 "chat-suggested-from-name", core::roleKey(roles::role(chat)));
+	obs_source_remove(chat);
+
+	core::ItemModel m;
+	m.sourceWidth = 400;
+	m.sourceHeight = 900;
+	const core::Rect cell{1400, 0, 520, 1080};
+	const core::ItemTransform column = commands::slotTransform(m, core::SlotKind::Chat, cell, false);
+	const core::ItemTransform ticker = commands::slotTransform(m, core::SlotKind::Chat, cell, true);
+	R->check(column.boundsType == core::BoundsType::ScaleInner && column.bounds.x == cell.w &&
+			 column.bounds.y == cell.h && column.pos.x == cell.x && column.pos.y == cell.y &&
+			 column.boundsAlign == (uint32_t)core::kAlignTop && column.crop.left == 0 &&
+			 column.crop.top == 0 && !column.cropToBounds,
+		 "chat-fits-top-of-column");
+	R->check(ticker.boundsType == core::BoundsType::ScaleInner &&
+			 ticker.boundsAlign == (uint32_t)core::kAlignCenter,
+		 "chat-centered-in-ticker");
+}
+
 /* 0.4: types in Layers (filter), in broadcast layouts (BG / CG never in a tile) and the
  * Builder (scenes made from typed sources, background at the back, graphics on top). */
 obs_source_t *sourceOf(const char *name)
@@ -2073,6 +2097,7 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(300, [] { testLayers(); });
 		R->add(300, [] { testLayoutsV02(); });
 		R->add(300, [] { testRoles(); });
+		R->add(300, [] { testChatRole(); });
 		R->add(300, [] { testBroadcast(); });
 		R->add(300, [] { testBroadcastScene(); });
 		R->add(300, [] { testShowScenes(); });

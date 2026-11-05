@@ -130,10 +130,11 @@ Plan plan(const std::vector<OBSSource> &sources, const Options &options, const T
 
 	if (options.solo) {
 		for (const OBSSource &s : p.cameras)
-			p.scenes.push_back({"Cam1Full", soloName(QString::fromUtf8(obs_source_get_name(s))), {s}, {}});
+			p.scenes.push_back(
+				{"Cam1Full", soloName(QString::fromUtf8(obs_source_get_name(s))), {s}, {}, {}});
 		for (const OBSSource &s : p.screens)
 			p.scenes.push_back(
-				{"Screen1Full", soloName(QString::fromUtf8(obs_source_get_name(s))), {}, {s}});
+				{"Screen1Full", soloName(QString::fromUtf8(obs_source_get_name(s))), {}, {s}, {}});
 	}
 	if (options.layouts) {
 		const core::Rect canvas = EditContext::instance().canvasRect();
