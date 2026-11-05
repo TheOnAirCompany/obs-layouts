@@ -1,0 +1,83 @@
+// Layouts for OBS - border and drop shadow of an item, following its rounded corners.
+// Pure geometry: nothing is sampled, both passes draw a signed distance to the rounded
+// visible rectangle. Distances are measured in canvas pixels (source pixels times
+// `aspect`), so a stretched item keeps round corners and even strokes.
+
+uniform float4x4 ViewProj;
+uniform texture2d image; // unused, kept for the libobs effect conventions
+
+uniform float4 quad;    // area drawn by the sprite, source pixels: left, top, right, bottom
+uniform float2 aspect;  // canvas pixels per source pixel (x, y)
+uniform float4 rect;    // visible rectangle, source pixels
+uniform float radius;   // corner radius, canvas pixels
+uniform float4 color;   // premultiplied
+uniform float width;    // border: stroke width, canvas pixels
+uniform float2 offset;  // shadow: offset, canvas pixels (item axes)
+uniform float blur;     // shadow: blur, canvas pixels
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
+
+// Signed distance to the rounded visible rectangle, canvas pixels, negative inside.
+float roundedDistance(float2 p, float2 shift, float grow)
+{
+	float2 lt = rect.xy * aspect + shift;
+	float2 rb = rect.zw * aspect + shift;
+	float2 extent = (rb - lt) * 0.5 + grow;
+	float r = clamp(radius + grow, 0.0, min(extent.x, extent.y));
+	float2 q = abs(p - (lt + rb) * 0.5) - extent + r;
+	return length(max(q, float2(0.0, 0.0))) + min(max(q.x, q.y), 0.0) - r;
+}
+
+float2 canvasPoint(float2 uv)
+{
+	return (quad.xy + uv * (quad.zw - quad.xy)) * aspect;
+}
+
+// Inner stroke: from the edge inwards, anti-aliased on both sides.
+float4 PSBorder(VertData v_in) : TARGET
+{
+	float d = roundedDistance(canvasPoint(v_in.uv), float2(0.0, 0.0), 0.0);
+	float ring = saturate(0.5 - d) - saturate(0.5 - (d + width));
+	return color * saturate(ring);
+}
+
+// Soft shadow: smoothstep over the distance to the shifted shape, only outside the item
+// (a translucent item does not darken itself).
+float4 PSShadow(VertData v_in) : TARGET
+{
+	float2 p = canvasPoint(v_in.uv);
+	float b = max(blur, 1.0);
+	float d = roundedDistance(p, offset, 0.0);
+	float a = 1.0 - smoothstep(-0.5 * b, 0.5 * b, d);
+	float outside = saturate(0.5 + roundedDistance(p, float2(0.0, 0.0), 0.0));
+	return color * (a * outside);
+}
+
+technique Border
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSBorder(v_in);
+	}
+}
+
+technique Shadow
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSShadow(v_in);
+	}
+}

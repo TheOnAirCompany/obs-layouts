@@ -763,4 +763,58 @@ void scrub(double delta, bool finished)
 	ctx.markDirty();
 }
 
+/* ---- shared with the border and shadow filter (style-render.cpp) ---------------- */
+
+std::string renderingScene()
+{
+	return t_scenes.empty() ? std::string() : t_scenes.back();
+}
+
+std::string sceneToken(obs_source_t *scene)
+{
+	return scene ? ensureToken(scene) : std::string();
+}
+
+std::string sceneTokenAtRender(obs_source_t *scene)
+{
+	return scene ? tokenOf(scene) : std::string();
+}
+
+OBSSource programTransition()
+{
+	obs_source_t *raw = nullptr;
+	{
+		std::lock_guard<std::mutex> g(g_programLock);
+		raw = g_program ? obs_weak_source_get_source(g_program) : nullptr;
+	}
+	OBSSourceAutoRelease tr = raw;
+	return tr.Get();
+}
+
+bool renderRadius(obs_source_t *source, float &r, float &ratio)
+{
+	obs_source_t *filter = source ? findFilter(source) : nullptr;
+	auto *f = filter && obs_source_enabled(filter) ? static_cast<Filter *>(obs_obj_get_data(filter)) : nullptr;
+	if (!f)
+		return false;
+	Radius rad;
+	{
+		std::lock_guard<std::mutex> g(f->lock);
+		rad = f->any;
+		if (!t_scenes.empty()) {
+			const auto it = f->scenes.find(t_scenes.back());
+			if (it != f->scenes.end())
+				rad = it->second;
+		}
+	}
+	if (t_scenes.empty()) {
+		Radius during;
+		if (transitionRadius(f, source, during))
+			rad = during;
+	}
+	r = rad.r;
+	ratio = rad.ratio;
+	return true;
+}
+
 } // namespace layouts::corners
