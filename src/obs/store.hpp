@@ -28,7 +28,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "core/grid.hpp"
 #include "core/guides.hpp"
 #include "core/layout.hpp"
+#include "core/roles.hpp"
 #include "core/snapping.hpp"
+#include "core/style.hpp"
 
 #include <obs.h>
 
@@ -37,6 +39,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QObject>
 #include <QString>
 
+#include <map>
 #include <string>
 
 namespace layouts {
@@ -102,9 +105,17 @@ public:
 	void notifyGuidesChanged();
 	void notifySettingsChanged(bool persist = true);
 
+	/* Style of each source type (0.5), saved with the scene collection under
+	 * "styles.<role>". A type never set uses the approved default: radius Auto
+	 * (4 % of the short side, 6..48 px), no border, no shadow. */
+	core::Style typeStyle(core::Role role) const;
+	/* Stores the default and emits typeStylesChanged; the caller re-applies it. */
+	void setTypeStyle(core::Role role, const core::Style &style);
+
 signals:
 	void guidesChanged();
 	void settingsChanged();
+	void typeStylesChanged();
 
 private:
 	Store() = default;
@@ -112,6 +123,7 @@ private:
 	ViewSettings settings_;
 	std::string guideBefore_;
 	bool guideEditing_ = false;
+	std::map<core::Role, core::Style> typeStyles_;
 };
 
 } // namespace layouts
