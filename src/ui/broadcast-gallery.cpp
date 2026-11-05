@@ -30,8 +30,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace layouts::ui {
 
-namespace {
-
 QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor &screen, const QColor &bg,
 		     double aspect)
 {
@@ -71,8 +69,6 @@ QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor 
 	}
 	return icon;
 }
-
-} // namespace
 
 BroadcastGallery::BroadcastGallery(QWidget *parent) : QListWidget(parent)
 {

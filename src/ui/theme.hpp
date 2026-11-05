@@ -73,6 +73,14 @@ constexpr QRgb kCrop = 0xFFFF9F0A;           /* crop mode handles and frame */
 constexpr QRgb kCanvasBackdrop = 0xFF000000; /* behind the scene, inside the canvas */
 constexpr QRgb kOutside = 0xFF1B1C1F;        /* around the canvas (dark themes) */
 constexpr QRgb kLiveFrame = 0xFFE5484D;      /* frame around the canvas when on air */
+/* Switcher dock (0.5): tally of the source and layout buttons. */
+constexpr QRgb kTallyProgram = 0xFFE5484D; /* provisional: on program (red) */
+constexpr QRgb kTallyPreview = 0xFF30A46C; /* provisional: on preview (green) */
+constexpr QRgb kTallyText = 0xFFFFFFFF;    /* provisional: text on a lit button */
+constexpr int kRegieButton = 30;           /* provisional: height of a bus button */
+constexpr int kRegieThumbW = 72;           /* provisional: layout button thumbnail */
+constexpr int kRegieThumbH = 40;           /* provisional */
+constexpr int kRegieCutHeight = 44;        /* provisional: CUT / AUTO buttons */
 
 constexpr int kHandleSize = 8;      /* logical px */
 constexpr int kHandleHit = 7;       /* hit radius around a handle */

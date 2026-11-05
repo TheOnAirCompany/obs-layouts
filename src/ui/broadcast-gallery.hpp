@@ -22,12 +22,18 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * fit a number of cameras and screens, drawn in the canvas shape. Shared by the Inspector
  * (Scene mode) and the Builder. The template key is in Qt::UserRole of each item. */
 
+#include <QColor>
+#include <QIcon>
 #include <QListWidget>
 #include <QStringList>
 
 #include <string>
 
 namespace layouts::ui {
+
+/* Thumbnail of a template in the canvas shape (also used by the Switcher dock). */
+QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor &screen, const QColor &bg,
+		     double aspect);
 
 class BroadcastGallery : public QListWidget {
 	Q_OBJECT
