@@ -47,7 +47,7 @@ struct UserLayout {
 	std::string key;  /* "user:<id>" */
 	std::string name; /* shown in the gallery */
 	double aspect = 16.0 / 9.0;
-	std::vector<Slot> slots; /* cells normalized to 0..1 of the canvas */
+	std::vector<Slot> tiles; /* cells normalized to 0..1 of the canvas */
 
 	int cameras() const;
 	int screens() const;

@@ -156,8 +156,8 @@ std::string saveFromScene(const QString &name)
 {
 	const core::Rect canvas = EditContext::instance().canvasRect();
 	core::UserLayout l;
-	l.slots = core::normalizeSlots(captureSlots(), canvas);
-	if (l.slots.empty() || !(canvas.w > 0) || !(canvas.h > 0))
+	l.tiles = core::normalizeSlots(captureSlots(), canvas);
+	if (l.tiles.empty() || !(canvas.w > 0) || !(canvas.h > 0))
 		return {};
 	l.aspect = canvas.w / canvas.h;
 	core::UserLayoutRegistry &reg = core::UserLayoutRegistry::instance();

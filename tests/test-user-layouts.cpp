@@ -26,7 +26,7 @@ UserLayout sample()
 	cut.polygon = {{0.2, 0}, {1, 0}, {0.8, 1}, {0, 1}};
 	Slot chat{SlotKind::Chat, {0, 1000, 1920, 80}};
 	chat.ticker = true;
-	l.slots = normalizeSlots({chat, screen, guest, cut, host}, kCanvas);
+	l.tiles = normalizeSlots({chat, screen, guest, cut, host}, kCanvas);
 	return l;
 }
 
@@ -40,14 +40,14 @@ struct RegistryReset {
 TEST("user layouts: slots are normalized in reading order, hosts first")
 {
 	const UserLayout l = sample();
-	CHECK(l.slots.size() == 5);
-	CHECK(l.slots[0].host);
-	CHECK(l.slots[1].kind == SlotKind::Camera && l.slots[1].rotation == -4); /* row 2, left */
-	CHECK(l.slots[2].kind == SlotKind::Camera && l.slots[2].shape == SlotShape::Polygon);
-	CHECK(l.slots[3].kind == SlotKind::Screen);
-	CHECK(l.slots[4].kind == SlotKind::Chat);
-	CHECK_NEAR(l.slots[3].cell.x, 0.5, 1e-9);
-	CHECK_NEAR(l.slots[4].cell.h, 80.0 / 1080, 1e-9);
+	CHECK(l.tiles.size() == 5);
+	CHECK(l.tiles[0].host);
+	CHECK(l.tiles[1].kind == SlotKind::Camera && l.tiles[1].rotation == -4); /* row 2, left */
+	CHECK(l.tiles[2].kind == SlotKind::Camera && l.tiles[2].shape == SlotShape::Polygon);
+	CHECK(l.tiles[3].kind == SlotKind::Screen);
+	CHECK(l.tiles[4].kind == SlotKind::Chat);
+	CHECK_NEAR(l.tiles[3].cell.x, 0.5, 1e-9);
+	CHECK_NEAR(l.tiles[4].cell.h, 80.0 / 1080, 1e-9);
 	CHECK(l.cameras() == 3 && l.screens() == 1 && l.chats() == 1);
 }
 
@@ -73,17 +73,17 @@ TEST("user layouts: JSON round trip keeps every field")
 	const UserLayout &b = back[0];
 	CHECK(b.key == l.key && b.name == l.name);
 	CHECK_NEAR(b.aspect, 16.0 / 9.0, 1e-5);
-	CHECK(b.slots.size() == l.slots.size());
-	for (size_t i = 0; i < b.slots.size() && i < l.slots.size(); i++) {
-		CHECK(b.slots[i].kind == l.slots[i].kind);
-		CHECK(b.slots[i].shape == l.slots[i].shape);
-		CHECK(b.slots[i].host == l.slots[i].host);
-		CHECK(b.slots[i].frame == l.slots[i].frame);
-		CHECK(b.slots[i].ticker == l.slots[i].ticker);
-		CHECK(b.slots[i].polygon.size() == l.slots[i].polygon.size());
-		CHECK_NEAR(b.slots[i].rotation, l.slots[i].rotation, 1e-6);
-		CHECK_NEAR(b.slots[i].cell.x, l.slots[i].cell.x, 1e-5);
-		CHECK_NEAR(b.slots[i].cell.w, l.slots[i].cell.w, 1e-5);
+	CHECK(b.tiles.size() == l.tiles.size());
+	for (size_t i = 0; i < b.tiles.size() && i < l.tiles.size(); i++) {
+		CHECK(b.tiles[i].kind == l.tiles[i].kind);
+		CHECK(b.tiles[i].shape == l.tiles[i].shape);
+		CHECK(b.tiles[i].host == l.tiles[i].host);
+		CHECK(b.tiles[i].frame == l.tiles[i].frame);
+		CHECK(b.tiles[i].ticker == l.tiles[i].ticker);
+		CHECK(b.tiles[i].polygon.size() == l.tiles[i].polygon.size());
+		CHECK_NEAR(b.tiles[i].rotation, l.tiles[i].rotation, 1e-6);
+		CHECK_NEAR(b.tiles[i].cell.x, l.tiles[i].cell.x, 1e-5);
+		CHECK_NEAR(b.tiles[i].cell.w, l.tiles[i].cell.w, 1e-5);
 	}
 	CHECK(userLayoutsToJson(back) == json);
 }
@@ -99,7 +99,7 @@ TEST("user layouts: reader ignores unknown fields and rejects bad input")
 	std::vector<UserLayout> out;
 	CHECK(userLayoutsFromJson(json, out));
 	CHECK(out.size() == 1);
-	CHECK(out[0].slots.size() == 1);
+	CHECK(out[0].tiles.size() == 1);
 	CHECK(out[0].name == "\xC3\x89"
 			     "cran \xF0\x9F\x98\x80");
 
@@ -148,7 +148,7 @@ TEST("user layouts: merge skips duplicates and renames conflicts")
 	CHECK(reg.all().size() == 1);
 
 	UserLayout changed = a;
-	changed.slots.pop_back();
+	changed.tiles.pop_back();
 	CHECK(reg.merge({changed}) == 1); /* same key, other content: new key, new name */
 	CHECK(reg.all().size() == 2);
 	CHECK(reg.all()[1].key != key);

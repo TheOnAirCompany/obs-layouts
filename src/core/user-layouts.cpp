@@ -33,7 +33,7 @@ namespace {
 
 int countKind(const UserLayout &l, SlotKind k)
 {
-	return (int)std::count_if(l.slots.begin(), l.slots.end(), [k](const Slot &s) { return s.kind == k; });
+	return (int)std::count_if(l.tiles.begin(), l.tiles.end(), [k](const Slot &s) { return s.kind == k; });
 }
 
 int kindOrder(const Slot &s)
@@ -87,7 +87,7 @@ std::vector<Slot> buildUserLayout(const UserLayout &layout, const Rect &canvas)
 	std::vector<Slot> out;
 	if (!(canvas.w > 0) || !(canvas.h > 0))
 		return out;
-	for (Slot s : layout.slots) {
+	for (Slot s : layout.tiles) {
 		s.cell = {canvas.x + s.cell.x * canvas.w, canvas.y + s.cell.y * canvas.h, s.cell.w * canvas.w,
 			  s.cell.h * canvas.h};
 		out.push_back(s);
@@ -170,8 +170,8 @@ std::string layoutJson(const UserLayout &l, const std::string &indent)
 	std::ostringstream o;
 	o << indent << "{\"key\": " << quote(l.key) << ", \"name\": " << quote(l.name)
 	  << ", \"aspect\": " << num(l.aspect) << ", \"slots\": [";
-	for (size_t i = 0; i < l.slots.size(); i++) {
-		const Slot &s = l.slots[i];
+	for (size_t i = 0; i < l.tiles.size(); i++) {
+		const Slot &s = l.tiles[i];
 		o << (i ? "," : "") << "\n"
 		  << indent << "  {\"kind\": \"" << kindKey(s.kind) << "\", \"x\": " << num(s.cell.x)
 		  << ", \"y\": " << num(s.cell.y) << ", \"w\": " << num(s.cell.w) << ", \"h\": " << num(s.cell.h)
@@ -526,10 +526,10 @@ bool userLayoutsFromJson(const std::string &json, std::vector<UserLayout> &out, 
 			for (const Value &sv : slots->items) {
 				Slot s{SlotKind::Camera, {}};
 				if (readSlot(sv, s))
-					l.slots.push_back(s);
+					l.tiles.push_back(s);
 			}
 		}
-		if (!l.slots.empty())
+		if (!l.tiles.empty())
 			out.push_back(std::move(l));
 	}
 	return true;
@@ -607,7 +607,7 @@ int UserLayoutRegistry::merge(const std::vector<UserLayout> &incoming)
 {
 	int added = 0;
 	for (UserLayout l : incoming) {
-		if (l.slots.empty())
+		if (l.tiles.empty())
 			continue;
 		if (const UserLayout *same = l.key.empty() ? nullptr : find(l.key)) {
 			if (layoutJson(*same, "") == layoutJson(l, ""))
