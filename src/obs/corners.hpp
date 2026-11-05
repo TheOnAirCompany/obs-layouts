@@ -35,6 +35,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <vector>
 
+#include <obs.hpp>
+
+#include <string>
+
 namespace layouts {
 
 struct ItemEntry;
@@ -80,6 +84,19 @@ bool applyItemStyle(obs_sceneitem_t *item, const core::Style &style, const std::
 
 /* The "polygon" of an item's "layouts_style", made convex (empty: none). */
 std::vector<core::Vec2> itemPolygon(obs_sceneitem_t *item);
+/* ---- shared with the border and shadow filter (style-render.cpp) ---- */
+
+/* Token of the scene rendering on this thread (scene marker), empty outside a scene. */
+std::string renderingScene();
+/* Token of a scene, created when missing (UI thread). */
+std::string sceneToken(obs_source_t *scene);
+/* Token of a scene read from its marker, render thread safe; empty when it has none. */
+std::string sceneTokenAtRender(obs_source_t *scene);
+/* The transition on the program, as last seen from the UI thread (render thread safe). */
+OBSSource programTransition();
+/* Corner radius of a source for the render in progress (source pixels, horizontal, and
+ * vertical/horizontal ratio); false when the source has no corners filter. */
+bool renderRadius(obs_source_t *source, float &r, float &ratio);
 
 } // namespace corners
 } // namespace layouts

@@ -87,6 +87,8 @@ target_sources(
     src/obs/constraints.hpp
     src/obs/corners.cpp
     src/obs/corners.hpp
+    src/obs/style-render.cpp
+    src/obs/style-render.hpp
     src/obs/builder.cpp
     src/obs/builder.hpp
     src/obs/roles.cpp
