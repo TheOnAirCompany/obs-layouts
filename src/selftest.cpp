@@ -1320,6 +1320,7 @@ void checkCleanOutput()
 /* Rounded corners: a cropped item keeps round corners on the program output. */
 OBSSourceAutoRelease g_cornerScene;
 OBSSourceAutoRelease g_beforeCorners;
+OBSSourceAutoRelease g_cornerSceneB;
 
 void prepareCorners()
 {
@@ -1336,8 +1337,6 @@ void prepareCorners()
 	vec2 halfScale;
 	vec2_set(&halfScale, 0.5f, 0.5f);
 	obs_sceneitem_set_scale(half, &halfScale);
-	/* Both items exist before the scene goes on the program (Studio Mode copies it). */
-	obs_frontend_set_current_scene(s);
 	ctx.pin(s);
 	ctx.markDirty();
 
@@ -1356,9 +1355,14 @@ void prepareCorners()
 	OBSSourceAutoRelease filter =
 		obs_source_get_filter_by_name(obs_sceneitem_get_source(half), obs_module_text("Corners.FilterName"));
 	OBSDataAutoRelease fs = filter ? obs_source_get_settings(filter) : nullptr;
-	R->check(h && std::fabs(corners::radius(*h) - 20) < 0.01 && fs &&
-			 std::fabs(obs_data_get_double(fs, "radius") - 40) < 0.01,
-		 "corners-canvas-pixels", fs ? QString::number(obs_data_get_double(fs, "radius")) : "no filter");
+	OBSDataArrayAutoRelease perScene = fs ? obs_data_get_array(fs, "scenes") : nullptr;
+	OBSDataAutoRelease entry0 = perScene ? obs_data_array_item(perScene, 0) : nullptr;
+	const double stored = entry0 ? obs_data_get_double(entry0, "radius") : -1;
+	R->check(h && std::fabs(corners::radius(*h) - 20) < 0.01 && std::fabs(stored - 40) < 0.01 &&
+			 obs_data_get_double(fs, "radius") == 0.0,
+		 "corners-canvas-pixels", QString::number(stored));
+	/* On air once set, as in a show: Studio Mode puts a copy of the scene on the program. */
+	obs_frontend_set_current_scene(s);
 }
 
 void checkCorners()
@@ -1386,14 +1390,48 @@ void checkCorners()
 	if (!getenv("LAYOUTS_SELFTEST_KEEP_SHOTS"))
 		QFile::remove(p);
 
-	/* Undo puts the square corners back (the filter goes away). */
+	/* The same source in another scene keeps square corners: the radius belongs to the scene. */
 	EditContext &ctx = EditContext::instance();
+	obs_source_t *other = obs_scene_get_source(obs_scene_create("Layouts Corners B"));
+	g_cornerSceneB = other;
+	OBSSourceAutoRelease halfSource = obs_get_source_by_name("Rounded half");
+	obs_sceneitem_t *again = obs_scene_add(obs_scene_from_source(other), halfSource);
+	vec2 pos, halfScale;
+	vec2_set(&pos, 1300, 100);
+	vec2_set(&halfScale, 0.5f, 0.5f);
+	obs_sceneitem_set_pos(again, &pos);
+	obs_sceneitem_set_scale(again, &halfScale);
+	obs_frontend_set_current_scene(other);
+	ctx.pin(other);
+	ctx.markDirty();
+	const ItemEntry *h = entry("Rounded half");
+	R->check(h && corners::radius(*h) == 0.0, "corners-per-scene-value",
+		 h ? QString::number(corners::radius(*h)) : "no item");
+}
+
+void checkCornersOtherScene()
+{
+	char *path = obs_frontend_get_last_screenshot();
+	const QString p = QString::fromUtf8(path ? path : "");
+	bfree(path);
+	QImage img(p);
+	const int corner = img.isNull() ? -1 : qGray(img.pixel(1300, 100));
+	R->check(corner > 215, "corners-square-in-other-scene", QString("corner %1").arg(corner));
+	if (!getenv("LAYOUTS_SELFTEST_KEEP_SHOTS"))
+		QFile::remove(p);
+
+	/* Undo puts the square corners back in the first scene (the filter goes away). */
+	EditContext &ctx = EditContext::instance();
+	ctx.pin(g_cornerScene);
+	ctx.markDirty();
 	QAction *undo = findAction(QKeySequence(QKeySequence::Undo));
 	if (undo)
 		undo->trigger();
 	ctx.markDirty();
 	const ItemEntry *h = entry("Rounded half");
-	R->check(undo && h && corners::radius(*h) == 0.0, "corners-undo",
+	OBSSourceAutoRelease halfSource = obs_get_source_by_name("Rounded half");
+	OBSSourceAutoRelease filter = obs_source_get_filter_by_name(halfSource, obs_module_text("Corners.FilterName"));
+	R->check(undo && h && corners::radius(*h) == 0.0 && !filter, "corners-undo",
 		 h ? QString::number(corners::radius(*h)) : "no item");
 
 	/* The next groups expect the scene that was on the program. */
@@ -1402,6 +1440,40 @@ void checkCorners()
 		ctx.pin(g_beforeCorners);
 	}
 	g_beforeCorners = nullptr;
+}
+
+/* Corners from Layouts 0.3 were for every scene: editing one scene keeps the others. */
+void testCornersMigration()
+{
+	EditContext &ctx = EditContext::instance();
+	OBSSourceAutoRelease legacy = colorSource("Legacy", 400, 200, 0xFFFFFFFF);
+	obs_scene_add(obs_scene_from_source(g_cornerScene), legacy);
+	obs_scene_add(obs_scene_from_source(g_cornerSceneB), legacy);
+	OBSDataAutoRelease fs = obs_data_create();
+	obs_data_set_double(fs, "radius", 30);
+	OBSSourceAutoRelease filter = obs_source_create_private(corners::kFilterId, "Legacy corners", fs);
+	obs_source_filter_add(legacy, filter);
+	ctx.pin(g_cornerScene);
+	ctx.markDirty();
+	selectNames({"Legacy"});
+	corners::setRadius(core::parseExpression("10", 0));
+	OBSDataAutoRelease after = obs_source_get_settings(filter);
+	OBSDataArrayAutoRelease list = obs_data_get_array(after, "scenes");
+	double inA = -1, inB = -1;
+	for (size_t i = 0; i < obs_data_array_count(list); i++) {
+		OBSDataAutoRelease it = obs_data_array_item(list, i);
+		const std::string token = obs_data_get_string(it, "scene");
+		if (token == obs_source_get_uuid(g_cornerScene))
+			inA = obs_data_get_double(it, "radius");
+		if (token == obs_source_get_uuid(g_cornerSceneB))
+			inB = obs_data_get_double(it, "radius");
+	}
+	R->check(obs_data_get_double(after, "radius") == 0.0 && std::fabs(inA - 10) < 0.01 &&
+			 std::fabs(inB - 30) < 0.01,
+		 "corners-legacy-split-per-scene", QString("A %1, B %2").arg(inA).arg(inB));
+	obs_source_remove(legacy);
+	ctx.follow();
+	ctx.markDirty();
 }
 
 void liveProgramCheck()
@@ -1858,6 +1930,9 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(500, [] { prepareCorners(); });
 		R->add(1000, [] { takeShot(); });
 		R->add(1500, [] { checkCorners(); });
+		R->add(1000, [] { takeShot(); });
+		R->add(1500, [] { checkCornersOtherScene(); });
+		R->add(300, [] { testCornersMigration(); });
 	}
 	if (enabled("live")) {
 		R->add(300, [] {

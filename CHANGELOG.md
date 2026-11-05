@@ -18,6 +18,9 @@
   top at the place they already have, hosts take the large tile, and the layout can be locked.
 - Broadcast layouts in Scene mode: hosts take the large tile; backgrounds and graphics in the
   selection are never put in a tile.
+- **Rounded corners belong to the scene**: the same camera can be round in one scene and square
+  in another. Corners set with 0.3 (for every scene) are split per scene the first time you edit
+  one, so the other scenes keep what they had.
 
 ## 0.3.0 — not released yet
 

@@ -92,8 +92,13 @@ Scene name, canvas size and a hint on how to select.
   filter list (removed again at 0). The mask is anti-aliased and drawn on the visible part of the
   item: the crop of the scene item being drawn is read at render time, so each scene keeps clean
   corners even with a different crop.
-- The radius is stored on the source in source pixels: the same source at another size in another
-  scene has proportional corners. One Edit > Undo entry per change (a whole scrub included).
+- The radius belongs to the edited scene (0.4): the filter keeps one value per scene, in source
+  pixels, and a "Rounded corners: scene" filter on that scene tells it which scene is rendering
+  (it draws nothing). The same source keeps its own corners, or none, in other scenes. A scene
+  duplicated by OBS (Studio Mode) keeps its original's corners; a scene duplicated by the user
+  gets its own value the first time it is edited. A radius set for every scene (0.3, or the
+  filter's own property) is split into per-scene values the first time one scene is edited.
+  One Edit > Undo entry per change (a whole scrub included).
 
 ### Multiple selection
 Header shows "N elements selected" and the number of locked items. Adds:

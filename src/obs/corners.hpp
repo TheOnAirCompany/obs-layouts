@@ -20,8 +20,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 /* Rounded corners: a filter registered by Layouts ("Rounded corners") that masks the
  * source with anti-aliased rounded corners. The mask follows the crop of the scene item
- * being drawn, so a cropped camera keeps its corners. The radius is stored on the source
- * in source pixels; the Inspector shows and edits it in canvas pixels. */
+ * being drawn, so a cropped camera keeps its corners.
+ *
+ * The radius belongs to the scene: the filter keeps one value per scene (in source
+ * pixels), and a small filter on each such scene ("Rounded corners: scene") tells it which
+ * scene is rendering. The same camera can be round in one scene and square in another.
+ * The Inspector shows and edits the radius in canvas pixels. */
 
 #include "core/expression.hpp"
 
@@ -32,14 +36,15 @@ struct ItemEntry;
 namespace corners {
 
 constexpr const char *kFilterId = "layouts_rounded_corners";
+constexpr const char *kSceneFilterId = "layouts_scene_corners";
 
 void registerFilter();
 
 /* Radius of an item in canvas pixels, 0 when its corners are square. */
 double radius(const ItemEntry &e);
 
-/* Sets the radius (canvas pixels) of the selected items as one undo step. 0 removes the
- * filter. Groups are skipped. */
+/* Sets the radius (canvas pixels) of the selected items in the edited scene only, as one
+ * undo step. The filter goes away when no scene has corners left. Groups are skipped. */
 bool setRadius(const core::Expression &expr);
 
 /* Field label drag: applied live, one undo step once finished. */
