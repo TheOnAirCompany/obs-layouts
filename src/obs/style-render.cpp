@@ -265,8 +265,7 @@ bool resolve(Filter *f, obs_source_t *source, Look &out, float &fade)
 	fade = 1.0f;
 	const std::string token = corners::renderingScene();
 	OBSSource tr = corners::programTransition();
-	const bool active = tr && obs_source_get_type(tr) == OBS_SOURCE_TYPE_TRANSITION &&
-			    obs_transition_is_active(tr);
+	const bool active = tr && obs_source_get_type(tr) == OBS_SOURCE_TYPE_TRANSITION && obs_transition_is_active(tr);
 	OBSSourceAutoRelease a = active ? obs_transition_get_source(tr, OBS_TRANSITION_SOURCE_A) : nullptr;
 	OBSSourceAutoRelease b = active ? obs_transition_get_source(tr, OBS_TRANSITION_SOURCE_B) : nullptr;
 	const bool inA = active && shows(a, source), inB = active && shows(b, source);
@@ -579,9 +578,8 @@ bool setBorderShadow(obs_sceneitem_t *item, const core::Style &style)
 	OBSDataAutoRelease after = snapshot(source);
 
 	if (strcmp(obs_data_get_json(before), obs_data_get_json(after)) != 0) {
-		const QString name = tr("Undo.Format")
-					     .arg(tr("Undo.BorderShadow"),
-						  QString::fromUtf8(obs_source_get_name(scene)));
+		const QString name =
+			tr("Undo.Format").arg(tr("Undo.BorderShadow"), QString::fromUtf8(obs_source_get_name(scene)));
 		obs_frontend_add_undo_redo_action(name.toUtf8().constData(), applyData, applyData,
 						  obs_data_get_json(before), obs_data_get_json(after), false);
 	}
