@@ -28,6 +28,7 @@ add_executable(
   test-shape.cpp
   test-swap.cpp
   test-user-layouts.cpp
+  test-failover.cpp
   ${CORE_DIR}/geometry.cpp
   ${CORE_DIR}/item-model.cpp
   ${CORE_DIR}/arrange.cpp
@@ -47,6 +48,7 @@ add_executable(
   ${CORE_DIR}/shape.cpp
   ${CORE_DIR}/swap.cpp
   ${CORE_DIR}/user-layouts.cpp
+  ${CORE_DIR}/failover.cpp
 )
 target_include_directories(layouts-core-tests PRIVATE "${CORE_DIR}")
 

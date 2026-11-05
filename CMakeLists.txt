@@ -67,6 +67,12 @@ target_sources(
     src/core/broadcast-inventive.hpp
     src/core/mirror.cpp
     src/core/mirror.hpp
+    src/core/failover.cpp
+    src/core/failover.hpp
+    src/obs/source-health.cpp
+    src/obs/source-health.hpp
+    src/obs/failover.cpp
+    src/obs/failover.hpp
     src/core/roles.cpp
     src/core/user-layouts.hpp
     src/core/user-layouts.cpp

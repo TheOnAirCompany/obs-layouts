@@ -30,6 +30,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/corners.hpp"
 #include "obs/style-render.hpp"
 #include "obs/edit-context.hpp"
+#include "obs/failover.hpp"
 #include "obs/hotkeys.hpp"
 #include "obs/store.hpp"
 #include "obs/user-layouts.hpp"
@@ -73,6 +74,7 @@ void openWindow(layouts::ui::LayoutsWindow::Mode mode)
 void onFrontendEvent(enum obs_frontend_event event, void *)
 {
 	layouts::EditContext::instance().handleFrontendEvent(event);
+	layouts::Failover::instance().handleFrontendEvent(event);
 	if (event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP) {
 		/* The old collection was saved just before. A new, empty collection does not
 		 * call the load callback, so start from an empty document. */
