@@ -25,6 +25,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs-convert.hpp"
 #include "store.hpp"
 
+#include "core/swap.hpp"
+
 #include <obs-frontend-api.h>
 #include <obs-module.h>
 
@@ -892,6 +894,185 @@ bool setRatio(double ratio)
 			return core::setFrameRatio(e.model, e.parent, ratio, frameMode(e.item), ref());
 		},
 		true);
+}
+
+/* ---- swap ---- */
+
+namespace {
+
+constexpr const char *kStyleKey = "layouts_style";
+
+/* An item with its parent transform: from the edited scene when it is there (groups
+ * included), otherwise a top-level item of any scene. */
+bool swapEntry(obs_sceneitem_t *item, ItemEntry &out)
+{
+	for (const ItemEntry &e : EditContext::instance().items()) {
+		if (e.item == item) {
+			out = e;
+			return true;
+		}
+	}
+	obs_scene_t *s = obs_sceneitem_get_scene(item);
+	if (!s || obs_scene_is_group(s))
+		return false;
+	out = ItemEntry();
+	out.item = item;
+	out.id = obs_sceneitem_get_id(item);
+	obs_transform_info info = {};
+	obs_sceneitem_crop crop = {};
+	obs_sceneitem_get_info2(item, &info);
+	obs_sceneitem_get_crop(item, &crop);
+	out.model.t = fromObs(info, crop);
+	obs_source_t *src = obs_sceneitem_get_source(item);
+	out.model.sourceWidth = obs_source_get_width(src);
+	out.model.sourceHeight = obs_source_get_height(src);
+	out.frame = core::visualFrame(out.model, out.parent);
+	out.locked = obs_sceneitem_locked(item);
+	out.isGroup = obs_sceneitem_is_group(item);
+	return true;
+}
+
+/* The scene that owns the transform states of an item (the edited scene for a group child). */
+obs_scene_t *rootSceneOf(obs_sceneitem_t *item)
+{
+	obs_scene_t *s = obs_sceneitem_get_scene(item);
+	if (s && obs_scene_is_group(s))
+		return EditContext::instance().scene();
+	return s;
+}
+
+/* What stays with a slot besides the transform. */
+obs_data_t *slotProps(obs_sceneitem_t *item)
+{
+	obs_data_t *d = obs_data_create();
+	OBSDataAutoRelease priv = obs_sceneitem_get_private_settings(item);
+	obs_data_set_string(d, "style", obs_data_get_string(priv, kStyleKey));
+	obs_data_set_bool(d, "locked", obs_sceneitem_locked(item));
+	core::HConstraint h;
+	core::VConstraint v;
+	getConstraints(item, h, v);
+	obs_data_set_int(d, "h", (int)h);
+	obs_data_set_int(d, "v", (int)v);
+	obs_data_set_int(d, "order", obs_sceneitem_get_order_position(item));
+	return d;
+}
+
+void applySlotProps(obs_sceneitem_t *item, obs_data_t *d)
+{
+	OBSDataAutoRelease priv = obs_sceneitem_get_private_settings(item);
+	const char *style = obs_data_get_string(d, "style");
+	if (style && *style)
+		obs_data_set_string(priv, kStyleKey, style);
+	else
+		obs_data_erase(priv, kStyleKey);
+	obs_sceneitem_set_locked(item, obs_data_get_bool(d, "locked"));
+	setConstraints(item, (core::HConstraint)obs_data_get_int(d, "h"), (core::VConstraint)obs_data_get_int(d, "v"));
+	obs_sceneitem_set_order_position(item, (int)obs_data_get_int(d, "order"));
+}
+
+/* Gives a the properties pa and b the properties pb. The lower position is set first so
+ * that the second move lands on its exact index. */
+void applyBoth(obs_sceneitem_t *a, obs_data_t *pa, obs_sceneitem_t *b, obs_data_t *pb)
+{
+	if (obs_data_get_int(pa, "order") <= obs_data_get_int(pb, "order")) {
+		applySlotProps(a, pa);
+		applySlotProps(b, pb);
+	} else {
+		applySlotProps(b, pb);
+		applySlotProps(a, pa);
+	}
+}
+
+/* Undo / redo data: transform states, then the slot properties each item must get. */
+void swapUndoRedo(const char *json)
+{
+	OBSDataAutoRelease d = obs_data_create_from_json(json);
+	if (!d)
+		return;
+	obs_scene_load_transform_states(obs_data_get_string(d, "states"));
+	OBSSourceAutoRelease parent = obs_get_source_by_uuid(obs_data_get_string(d, "parent"));
+	obs_scene_t *scene = obs_group_or_scene_from_source(parent);
+	if (!scene)
+		return;
+	obs_sceneitem_t *a = obs_scene_find_sceneitem_by_id(scene, obs_data_get_int(d, "a"));
+	obs_sceneitem_t *b = obs_scene_find_sceneitem_by_id(scene, obs_data_get_int(d, "b"));
+	if (!a || !b)
+		return;
+	OBSDataAutoRelease pa = obs_data_get_obj(d, "propsA");
+	OBSDataAutoRelease pb = obs_data_get_obj(d, "propsB");
+	applyBoth(a, pa, b, pb);
+	EditContext::instance().markDirty();
+}
+
+std::string statesOf(obs_scene_t *scene)
+{
+	OBSDataAutoRelease d = obs_scene_save_transform_states(scene, true);
+	const char *json = d ? obs_data_get_json(d) : nullptr;
+	return json ? std::string(json) : std::string();
+}
+
+} // namespace
+
+bool canSwapItems(obs_sceneitem_t *a, obs_sceneitem_t *b)
+{
+	if (!a || !b || a == b || obs_sceneitem_get_scene(a) != obs_sceneitem_get_scene(b))
+		return false;
+	if (obs_sceneitem_is_group(a) || obs_sceneitem_is_group(b))
+		return false;
+	return core::canSwap(roles::role(obs_sceneitem_get_source(a)), roles::role(obs_sceneitem_get_source(b)));
+}
+
+bool swapItems(obs_sceneitem_t *a, obs_sceneitem_t *b)
+{
+	if (!canSwapItems(a, b))
+		return false;
+	ItemEntry ea, eb;
+	obs_scene_t *root = rootSceneOf(a);
+	if (!root || !swapEntry(a, ea) || !swapEntry(b, eb))
+		return false;
+
+	/* Screens (and chats) show the whole picture: Fit unless the user chose Stretch. */
+	auto modeOf = [](const ItemEntry &e) {
+		const core::FrameMode m = frameMode(e.item);
+		const auto kind = core::swapKind(roles::role(obs_sceneitem_get_source(e.item)));
+		if (kind && *kind != core::SlotKind::Camera && m == core::FrameMode::Fill)
+			return core::FrameMode::Fit;
+		return m;
+	};
+	const core::SwapResult r = core::swapSlots(ea.model, ea.parent, modeOf(ea), eb.model, eb.parent, modeOf(eb));
+
+	obs_scene_t *parent = obs_sceneitem_get_scene(a);
+	const std::string before = statesOf(root);
+	OBSDataAutoRelease propsA = slotProps(a);
+	OBSDataAutoRelease propsB = slotProps(b);
+
+	applyChangesAtomically(root, {{OBSSceneItem(a), r.a}, {OBSSceneItem(b), r.b}});
+	/* Each item takes the properties of the other's slot. */
+	applyBoth(a, propsB, b, propsA);
+
+	OBSDataAutoRelease undo = obs_data_create();
+	OBSDataAutoRelease redo = obs_data_create();
+	const char *parentUuid = obs_source_get_uuid(obs_scene_get_source(parent));
+	for (obs_data_t *d : {(obs_data_t *)undo, (obs_data_t *)redo}) {
+		obs_data_set_string(d, "parent", parentUuid);
+		obs_data_set_int(d, "a", obs_sceneitem_get_id(a));
+		obs_data_set_int(d, "b", obs_sceneitem_get_id(b));
+	}
+	obs_data_set_string(undo, "states", before.c_str());
+	obs_data_set_obj(undo, "propsA", propsA);
+	obs_data_set_obj(undo, "propsB", propsB);
+	obs_data_set_string(redo, "states", statesOf(root).c_str());
+	obs_data_set_obj(redo, "propsA", propsB);
+	obs_data_set_obj(redo, "propsB", propsA);
+
+	const QString label =
+		tr("Undo.Format")
+			.arg(tr("Undo.Swap"), QString::fromUtf8(obs_source_get_name(obs_scene_get_source(root))));
+	obs_frontend_add_undo_redo_action(label.toUtf8().constData(), swapUndoRedo, swapUndoRedo,
+					  obs_data_get_json(undo), obs_data_get_json(redo), false);
+	obs_frontend_save();
+	EditContext::instance().markDirty();
+	return true;
 }
 
 } // namespace layouts::commands

@@ -115,6 +115,16 @@ int createShowScenes(const core::BroadcastSpec &spec, KindMode mode, bool lock,
 		     const std::function<QString(const std::string &key)> &templateName,
 		     const std::function<QString(const QString &sourceName)> &soloName);
 
+/* ---- swap (0.5) ---- */
+/* True when both items can exchange their slots: different items of the same scene
+ * with compatible roles (camera/host with camera/host, screen with screen). */
+bool canSwapItems(obs_sceneitem_t *a, obs_sceneitem_t *b);
+/* The two items exchange their slots (one undo entry): visible cell, rotation, z-order,
+ * style, lock and constraints stay with the slot; each item keeps its flips and frame
+ * mode, its crop is recomputed for the new cell. Works on locked items (a locked
+ * broadcast layout can still be recast) and on any scene, not only the edited one. */
+bool swapItems(obs_sceneitem_t *a, obs_sceneitem_t *b);
+
 /* Shows the frames as a ghost preview on the Canvas (empty clears it). */
 void showPreview(const std::vector<core::Frame> &frames);
 

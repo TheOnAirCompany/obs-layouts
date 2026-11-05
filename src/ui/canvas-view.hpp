@@ -206,6 +206,12 @@ private:
 	bool rubberAdditive_ = false;
 	std::vector<std::pair<int64_t, int64_t>> rubberBase_;
 	core::SnapResult snap_;
+	/* Swap (0.5): the item pressed, and the item it would swap with on release. A locked
+	 * item does not move but can still be dropped on another slot. */
+	OBSSceneItem swapSource_;
+	OBSSceneItem swapTarget_;
+	bool swapOnly_ = false;
+	void updateSwapTarget(const core::Vec2 &world, Qt::KeyboardModifiers mods);
 	std::optional<core::SnapLine> valueSnap_;
 	std::pair<int64_t, int64_t> hover_{-1, -1};
 	bool spaceHeld_ = false;

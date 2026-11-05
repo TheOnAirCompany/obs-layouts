@@ -73,6 +73,9 @@ constexpr QRgb kCrop = 0xFFFF9F0A;           /* crop mode handles and frame */
 constexpr QRgb kCanvasBackdrop = 0xFF000000; /* behind the scene, inside the canvas */
 constexpr QRgb kOutside = 0xFF1B1C1F;        /* around the canvas (dark themes) */
 constexpr QRgb kLiveFrame = 0xFFE5484D;      /* frame around the canvas when on air */
+constexpr QRgb kSwap = 0xFF18A0FB;           /* provisional: outline of the slot a dragged item swaps with */
+constexpr QRgb kSwapFill = 0x2618A0FB;       /* provisional: soft fill of that slot */
+constexpr int kSwapOutline = 2;              /* provisional: outline width, device px at 1x */
 
 constexpr int kHandleSize = 8;      /* logical px */
 constexpr int kHandleHit = 7;       /* hit radius around a handle */
