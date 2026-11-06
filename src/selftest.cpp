@@ -28,6 +28,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/constraints.hpp"
 #include "obs/edit-session.hpp"
 #include "obs/corners.hpp"
+#include "obs/item-style.hpp"
 #include "obs/builder.hpp"
 #include "obs/roles.hpp"
 #include "obs/edit-context.hpp"
@@ -82,9 +83,12 @@ struct Runner {
 			detail.toUtf8().constData());
 	}
 	void add(int delayMs, std::function<void()> fn) { steps.emplace_back(delayMs, std::move(fn)); }
+	std::function<void()> onDone; /* drops the references the tests keep, while OBS runs */
 	void run()
 	{
 		if (next >= steps.size()) {
+			if (onDone)
+				onDone();
 			obs_log(LOG_INFO, "[selftest] DONE pass=%d fail=%d", pass, fail);
 			if (getenv("LAYOUTS_SELFTEST_QUIT"))
 				QTimer::singleShot(500, [] {
@@ -1505,7 +1509,6 @@ void prepareCleanOutput()
 {
 	obs_scene_t *sScene = obs_scene_create("Layouts Clean");
 	obs_source_t *s = obs_scene_get_source(sScene);
-	obs_scene_release(sScene); /* the frontend keeps its own reference */
 	g_cleanScene = s;
 	addColor(obs_scene_from_source(s), "Clean BG", 1920, 1080, 0xFF303030, 0, 0);
 	obs_frontend_set_current_scene(s);
@@ -1563,7 +1566,6 @@ void prepareCorners()
 	g_beforeCorners = obs_frontend_get_current_scene();
 	obs_scene_t *sScene = obs_scene_create("Layouts Corners");
 	obs_source_t *s = obs_scene_get_source(sScene);
-	obs_scene_release(sScene); /* the frontend keeps its own reference */
 	g_cornerScene = s;
 	/* 800x600 white, cropped 100 left / 50 top: visible 700x550 at (200, 265). */
 	obs_sceneitem_t *item = addColor(obs_scene_from_source(s), "Rounded", 800, 600, 0xFFFFFFFF, 200, 265);
@@ -1631,7 +1633,6 @@ void checkCorners()
 	EditContext &ctx = EditContext::instance();
 	obs_scene_t *otherScene = obs_scene_create("Layouts Corners B");
 	obs_source_t *other = obs_scene_get_source(otherScene);
-	obs_scene_release(otherScene); /* the frontend keeps its own reference */
 	g_cornerSceneB = other;
 	OBSSourceAutoRelease halfSource = obs_get_source_by_name("Rounded half");
 	obs_sceneitem_t *again = obs_scene_add(obs_scene_from_source(other), halfSource);
@@ -1717,6 +1718,69 @@ void testCornersMigration()
 
 /* Move Transition (exeldro) draws each source itself during the transition: the corners
  * must stay. Runs only when the Move Transition plugin is loaded. */
+
+/* ---- 0.5 styles: round, diagonal mask, border, shadow (program pixels) ---- */
+OBSSourceAutoRelease g_shapeScene;
+
+void prepareShapes()
+{
+	EditContext &ctx = EditContext::instance();
+	obs_scene_t *scene = obs_scene_create("Layouts Shapes");
+	g_shapeScene = obs_scene_get_source(scene);
+	addColor(scene, "Shapes BG", 1920, 1080, 0xFF808080, 0, 0);
+	obs_sceneitem_t *round = addColor(scene, "Shape round", 400, 400, 0xFFFFFFFF, 100, 100);
+	obs_sceneitem_t *diag = addColor(scene, "Shape diagonal", 400, 400, 0xFFFFFFFF, 700, 100);
+	obs_sceneitem_t *shadow = addColor(scene, "Shape shadow", 400, 400, 0xFFFFFFFF, 1300, 100);
+	obs_sceneitem_t *border = addColor(scene, "Shape border", 400, 200, 0xFFFFFFFF, 100, 700);
+	ctx.pin(g_shapeScene);
+	ctx.markDirty();
+	itemstyle::edit({round}, [](core::Style &st) { st.radiusMode = core::RadiusMode::Round; });
+	itemstyle::edit({diag}, [](core::Style &st) {
+		st.radiusMode = core::RadiusMode::None;
+		st.polygon = {{0, 0}, {0.6, 0}, {0.4, 1}, {0, 1}};
+	});
+	itemstyle::edit({shadow}, [](core::Style &st) {
+		st.radiusMode = core::RadiusMode::None;
+		st.shadow = core::ShadowPreset::Hard;
+	});
+	itemstyle::edit({border}, [](core::Style &st) {
+		st.radiusMode = core::RadiusMode::None;
+		st.border = true;
+		st.borderWidth = 8;
+		st.borderColor = 0xFFFF0000;
+	});
+	obs_frontend_set_current_scene(g_shapeScene);
+}
+
+void checkShapes()
+{
+	char *path = obs_frontend_get_last_screenshot();
+	const QString p = QString::fromUtf8(path ? path : "");
+	bfree(path);
+	QImage img(p);
+	R->check(!img.isNull(), "shapes-screenshot", p);
+	if (img.isNull())
+		return;
+	auto lum = [&](int x, int y) {
+		return qGray(img.pixel(x, y));
+	};
+	/* Round: outside the circle (near the corner) the grey background shows. */
+	R->check(lum(140, 140) < 160 && lum(300, 300) > 230, "style-round-mask",
+		 QString("corner %1 center %2").arg(lum(140, 140)).arg(lum(300, 300)));
+	/* Diagonal: right of the slanted edge is cut, left of it is kept. */
+	R->check(lum(1060, 300) < 160 && lum(740, 300) > 230, "style-diagonal-mask",
+		 QString("cut %1 kept %2").arg(lum(1060, 300)).arg(lum(740, 300)));
+	/* Hard shadow: darker than the background just below the item. */
+	R->check(lum(1500, 504) < 110 && lum(1500, 300) > 230, "style-shadow-under-item",
+		 QString("below %1 item %2").arg(lum(1500, 504)).arg(lum(1500, 300)));
+	/* Border: red inside the edge, white in the middle. */
+	const QRgb edge = img.pixel(103, 800);
+	R->check(qRed(edge) > 200 && qGreen(edge) < 80 && lum(300, 800) > 230, "style-border-inside",
+		 QString("edge %1,%2,%3").arg(qRed(edge)).arg(qGreen(edge)).arg(qBlue(edge)));
+	if (!getenv("LAYOUTS_SELFTEST_KEEP_SHOTS"))
+		QFile::remove(p);
+}
+
 OBSSourceAutoRelease g_move, g_savedTransition, g_moveA, g_moveB;
 
 bool moveAvailable()
@@ -2043,6 +2107,20 @@ void runSelfTest(ui::LayoutsWindow *window)
 {
 	static Runner runner;
 	R = &runner;
+	runner.onDone = [] {
+		/* Released here, not by static destructors after libobs is gone. */
+		g_cleanScene = nullptr;
+		g_cornerScene = nullptr;
+		g_beforeCorners = nullptr;
+		g_cornerSceneB = nullptr;
+		g_move = nullptr;
+		g_savedTransition = nullptr;
+		g_moveA = nullptr;
+		g_moveB = nullptr;
+		g_ccScene = nullptr;
+		g_perfScene = nullptr;
+		g_shapeScene = nullptr;
+	};
 	g_window = window;
 	g_dock = window->canvas();
 	obs_log(LOG_INFO, "[selftest] START");
@@ -2238,6 +2316,9 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(1000, [] { takeShot(); });
 		R->add(1500, [] { checkCornersOtherScene(); });
 		R->add(300, [] { testCornersMigration(); });
+		R->add(300, [] { prepareShapes(); });
+		R->add(1200, [] { takeShot(); });
+		R->add(1500, [] { checkShapes(); });
 		if (moveAvailable()) {
 			R->add(300, [] { prepareMoveCorners(); });
 			R->add(1800, [] { takeShot(); });

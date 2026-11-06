@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "regie.hpp"
+#include "failover.hpp"
 
 #include "commands.hpp"
 #include "obs-convert.hpp"
@@ -215,6 +216,16 @@ Regie &Regie::instance()
 
 OBSSource Regie::plateauSource() const
 {
+	if (!plateauUuid_.empty()) {
+		OBSSourceAutoRelease byId = obs_get_source_by_uuid(plateauUuid_.c_str());
+		if (byId && obs_scene_from_source(byId)) {
+			/* Renamed since: follow the scene. */
+			const QString now = QString::fromUtf8(obs_source_get_name(byId));
+			if (now != plateau_)
+				plateau_ = now;
+			return OBSSource(byId.Get());
+		}
+	}
 	if (plateau_.isEmpty())
 		return nullptr;
 	OBSSourceAutoRelease s = obs_get_source_by_name(plateau_.toUtf8().constData());
@@ -228,9 +239,14 @@ void Regie::setPlateau(const QString &sceneName)
 	if (sceneName == plateau_)
 		return;
 	plateau_ = sceneName;
+	{
+		OBSSourceAutoRelease src = obs_get_source_by_name(sceneName.toUtf8().constData());
+		plateauUuid_ = src ? obs_source_get_uuid(src) : "";
+	}
 	preview_ = {};
 	program_ = {};
 	preparedOn_ = nullptr;
+	Failover::instance().disarm();
 	refresh();
 	obs_frontend_save();
 }
@@ -273,7 +289,7 @@ void Regie::scan()
 	obs_scene_t *scene = obs_scene_from_source(plateau);
 	if (!scene)
 		return;
-	int cams = 0, screens = 0;
+	int cams = 0, screens = 0, chats = 0;
 	for (const ItemRef &r : topItems(scene)) {
 		obs_source_t *src = obs_sceneitem_get_source(r.item);
 		if (obs_source_is_group(src) || obs_source_is_scene(src))
@@ -285,6 +301,9 @@ void Regie::scan()
 		} else if (role == core::Role::Screen) {
 			sources_.push_back({r.name, core::SlotKind::Screen});
 			screens++;
+		} else if (role == core::Role::Chat) {
+			sources_.push_back({r.name, core::SlotKind::Chat});
+			chats++;
 		}
 	}
 	/* Every layout the Plateau can fill (a mixer also wants the shots with fewer
@@ -292,9 +311,9 @@ void Regie::scan()
 	const core::Rect c = canvasRect(plateau);
 	const bool portrait = c.h > c.w;
 	for (const core::BroadcastTemplate &t : core::broadcastTemplates()) {
-		if (t.chats > 0 || (portrait && t.landscapeOnly))
+		if (portrait && t.landscapeOnly)
 			continue;
-		if (t.cameras + t.screens > 0 && t.cameras <= cams && t.screens <= screens)
+		if (t.cameras + t.screens > 0 && t.cameras <= cams && t.screens <= screens && t.chats <= chats)
 			layouts_.push_back(t);
 	}
 }
@@ -464,6 +483,7 @@ bool Regie::prepare()
 			obs_frontend_set_current_preview_scene(target);
 	} else {
 		program_ = preview_; /* no preview: on air at once */
+		armFailover();
 	}
 	emitChanged();
 	return true;
@@ -551,8 +571,25 @@ bool Regie::take()
 		obs_frontend_set_current_preview_scene(prepared);
 	obs_frontend_preview_program_trigger_transition();
 	program_ = preview_;
+	armFailover();
 	emitChanged();
 	return true;
+}
+
+/* The lost-camera failover watches what is on air: the scene that just went to program
+ * (the Plateau or its twin) with its layout and who sits in which slot. */
+void Regie::armFailover()
+{
+	if (program_.key.empty()) {
+		Failover::instance().disarm();
+		return;
+	}
+	OBSSource scene = OBSGetStrongRef(preparedOn_);
+	if (!scene)
+		scene = plateauSource();
+	if (!scene)
+		return;
+	Failover::instance().arm(QString::fromUtf8(obs_source_get_name(scene)), program_.key, program_.tiles);
 }
 
 void Regie::stateTo(obs_data_t *out) const
@@ -568,8 +605,10 @@ void Regie::stateTo(obs_data_t *out) const
 			OBSDataAutoRelease s = obs_data_create();
 			obs_data_set_int(s, "slot", (long long)i + 1);
 			obs_data_set_string(s, "kind",
-					    i < tiles.size() && tiles[i].kind == core::SlotKind::Screen ? "screen"
-													: "camera");
+					    i >= tiles.size()                           ? "camera"
+					    : tiles[i].kind == core::SlotKind::Screen ? "screen"
+					    : tiles[i].kind == core::SlotKind::Chat   ? "chat"
+										      : "camera");
 			obs_data_set_string(s, "source", c.tiles[i].c_str());
 			obs_data_array_push_back(arr, s);
 		}
@@ -606,6 +645,7 @@ void Regie::save(obs_data_t *data)
 {
 	OBSDataAutoRelease d = obs_data_create();
 	obs_data_set_string(d, "plateau", plateau_.toUtf8().constData());
+	obs_data_set_string(d, "plateau_uuid", plateauUuid_.c_str());
 	obs_data_set_string(d, "layout", preview_.key.c_str());
 	OBSDataArrayAutoRelease arr = obs_data_array_create();
 	for (const std::string &s : preview_.tiles) {
@@ -621,6 +661,7 @@ void Regie::load(obs_data_t *data)
 {
 	OBSDataAutoRelease d = obs_data_get_obj(data, kSaveKey);
 	plateau_ = d ? QString::fromUtf8(obs_data_get_string(d, "plateau")) : QString();
+	plateauUuid_ = d ? obs_data_get_string(d, "plateau_uuid") : "";
 	preview_ = {};
 	program_ = {};
 	preparedOn_ = nullptr;

@@ -44,6 +44,7 @@ private:
 
 	QComboBox *plateau_ = nullptr;
 	QWidget *studioBanner_ = nullptr;
+	QLabel *alert_ = nullptr; /* lost camera / back (failover) */
 	QWidget *rows_ = nullptr;
 	QVBoxLayout *rowsLayout_ = nullptr;
 	QLabel *summary_ = nullptr;

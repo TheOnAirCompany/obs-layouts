@@ -21,17 +21,21 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "broadcast-gallery.hpp"
 #include "theme.hpp"
 
+#include "obs/failover.hpp"
 #include "obs/regie.hpp"
+#include "obs/store.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -99,6 +103,22 @@ RegieDock::RegieDock(QWidget *parent) : QWidget(parent)
 	root->addWidget(studioBanner_);
 	connect(enable, &QPushButton::clicked, this, [] { obs_frontend_set_preview_program_mode(true); });
 
+	/* Lost camera: red banner while the program runs one tile short, green once back. */
+	alert_ = new QLabel;
+	alert_->setWordWrap(true);
+	alert_->setVisible(false);
+	alert_->setContentsMargins(8, 5, 8, 5);
+	root->addWidget(alert_);
+	connect(&Failover::instance(), &Failover::alert, this, [this](const QString &message, bool active) {
+		const QColor c = QColor::fromRgba(active ? tokens::kTallyProgram : tokens::kTallyPreview);
+		alert_->setStyleSheet(QString("QLabel { background: %1; color: #FFFFFF; border-radius: 5px; }")
+					      .arg(c.name(QColor::HexRgb)));
+		alert_->setText(message);
+		alert_->setVisible(true);
+		if (!active)
+			QTimer::singleShot(6000, alert_, [this] { alert_->setVisible(false); });
+	});
+
 	auto *scroll = new QScrollArea;
 	scroll->setWidgetResizable(true);
 	scroll->setFrameShape(QFrame::NoFrame);
@@ -123,7 +143,14 @@ RegieDock::RegieDock(QWidget *parent) : QWidget(parent)
 	auto_->setToolTip("0.6");
 	buttons->addWidget(cut_, 1);
 	buttons->addWidget(auto_, 1);
+	auto *failover = new QCheckBox(loc("Failover.Enabled"));
+	failover->setChecked(Store::instance().settings().failoverEnabled);
+	connect(failover, &QCheckBox::toggled, this, [](bool on) {
+		Store::instance().settings().failoverEnabled = on;
+		Store::instance().notifySettingsChanged();
+	});
 	root->addLayout(buttons);
+	root->addWidget(failover);
 	connect(cut_, &QPushButton::clicked, this, [] { Regie::instance().take(); });
 
 	connect(plateau_, &QComboBox::currentIndexChanged, this, [this](int i) {

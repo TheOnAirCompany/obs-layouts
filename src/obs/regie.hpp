@@ -126,7 +126,9 @@ private:
 	OBSSource twin(bool create);
 	void emitChanged();
 
-	QString plateau_;
+	mutable QString plateau_; /* follows a rename (plateauSource) */
+	std::string plateauUuid_; /* survives a rename of the Plateau scene */
+	void armFailover();
 	std::vector<RegieSource> sources_;
 	std::vector<core::BroadcastTemplate> layouts_;
 	RegieComposition preview_;
