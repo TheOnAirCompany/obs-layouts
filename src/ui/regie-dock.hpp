@@ -24,6 +24,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <QWidget>
 
+#include <functional>
+#include <vector>
+
 class QComboBox;
 class QLabel;
 class QPushButton;
@@ -40,6 +43,7 @@ public:
 
 private:
 	void rebuild();
+	void updateSummary();
 	void fillPlateaus();
 
 	QComboBox *plateau_ = nullptr;
@@ -48,6 +52,9 @@ private:
 	QWidget *rows_ = nullptr;
 	QVBoxLayout *rowsLayout_ = nullptr;
 	QLabel *summary_ = nullptr;
+	/* What the rows were built for; an unchanged structure only re-lights the tally. */
+	QString structure_;
+	std::vector<std::function<void()>> relight_;
 	QPushButton *cut_ = nullptr;
 	QPushButton *auto_ = nullptr;
 	bool filling_ = false;
