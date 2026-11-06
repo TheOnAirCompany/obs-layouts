@@ -605,7 +605,7 @@ void Regie::stateTo(obs_data_t *out) const
 			OBSDataAutoRelease s = obs_data_create();
 			obs_data_set_int(s, "slot", (long long)i + 1);
 			obs_data_set_string(s, "kind",
-					    i >= tiles.size()                           ? "camera"
+					    i >= tiles.size()                         ? "camera"
 					    : tiles[i].kind == core::SlotKind::Screen ? "screen"
 					    : tiles[i].kind == core::SlotKind::Chat   ? "chat"
 										      : "camera");

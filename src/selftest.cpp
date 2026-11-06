@@ -28,6 +28,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/constraints.hpp"
 #include "obs/edit-session.hpp"
 #include "obs/corners.hpp"
+#include "obs/regie.hpp"
 #include "obs/item-style.hpp"
 #include "obs/builder.hpp"
 #include "obs/roles.hpp"
@@ -52,6 +53,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <QAction>
 #include <QApplication>
+#include <QDir>
 #include <QFile>
 #include <QImage>
 #include <QMainWindow>
@@ -1721,10 +1723,12 @@ void testCornersMigration()
 
 /* ---- 0.5 styles: round, diagonal mask, border, shadow (program pixels) ---- */
 OBSSourceAutoRelease g_shapeScene;
+OBSSourceAutoRelease g_beforeShapes;
 
 void prepareShapes()
 {
 	EditContext &ctx = EditContext::instance();
+	g_beforeShapes = obs_frontend_get_current_scene();
 	obs_scene_t *scene = obs_scene_create("Layouts Shapes");
 	g_shapeScene = obs_scene_get_source(scene);
 	addColor(scene, "Shapes BG", 1920, 1080, 0xFF808080, 0, 0);
@@ -1779,6 +1783,108 @@ void checkShapes()
 		 QString("edge %1,%2,%3").arg(qRed(edge)).arg(qGreen(edge)).arg(qBlue(edge)));
 	if (!getenv("LAYOUTS_SELFTEST_KEEP_SHOTS"))
 		QFile::remove(p);
+	if (g_beforeShapes)
+		obs_frontend_set_current_scene(g_beforeShapes);
+}
+
+/* ---- 0.5 Switcher + lost camera failover, end to end on the program ---- */
+OBSSourceAutoRelease g_plateau;
+OBSSourceAutoRelease g_beforeRegie;
+
+obs_sceneitem_t *programItem(const char *name)
+{
+	OBSSourceAutoRelease scene = obs_frontend_get_current_scene();
+	obs_scene_t *sc = scene ? obs_scene_from_source(scene) : nullptr;
+	return sc ? obs_scene_find_source(sc, name) : nullptr;
+}
+
+double programItemWidth(const char *name)
+{
+	obs_sceneitem_t *item = programItem(name);
+	if (!item)
+		return -1;
+	vec2 scale;
+	obs_sceneitem_get_scale(item, &scale);
+	obs_bounds_type bt = obs_sceneitem_get_bounds_type(item);
+	if (bt != OBS_BOUNDS_NONE) {
+		vec2 b;
+		obs_sceneitem_get_bounds(item, &b);
+		return b.x;
+	}
+	obs_sceneitem_crop c;
+	obs_sceneitem_get_crop(item, &c);
+	return (obs_source_get_width(obs_sceneitem_get_source(item)) - c.left - c.right) * scale.x;
+}
+
+void prepareRegie()
+{
+	g_beforeRegie = obs_frontend_get_current_scene();
+	obs_scene_t *scene = obs_scene_create("Layouts Plateau");
+	g_plateau = obs_scene_get_source(scene);
+	/* Image sources: removing the file drops the picture like an unplugged capture. */
+	const QString file = QDir::temp().filePath("layouts-selftest-cam.png");
+	QImage pic(640, 360, QImage::Format_RGB32);
+	pic.fill(Qt::red);
+	pic.save(file);
+	auto image = [&](const char *name) {
+		OBSDataAutoRelease st = obs_data_create();
+		obs_data_set_string(st, "file", file.toUtf8().constData());
+		OBSSourceAutoRelease src = obs_source_create("image_source", name, st, nullptr);
+		return obs_scene_add(scene, src);
+	};
+	obs_sceneitem_t *a = image("REGIE CAM 1");
+	obs_sceneitem_t *b = image("REGIE CAM 2");
+	roles::setRole({obs_sceneitem_get_source(a), obs_sceneitem_get_source(b)}, core::Role::Camera);
+	Regie &r = Regie::instance();
+	r.setPlateau("Layouts Plateau");
+	r.refresh();
+	bool hasDuo = false;
+	for (const core::BroadcastTemplate &t : r.layouts())
+		hasDuo = hasDuo || t.key == "Cam2Split";
+	R->check(r.sources().size() == 2 && hasDuo, "regie-reads-plateau",
+		 QString("%1 sources, %2 layouts").arg(r.sources().size()).arg(r.layouts().size()));
+	const bool set = r.setLayout("Cam2Split");
+	R->check(set && r.preview().key == "Cam2Split" && r.preview().tiles.size() == 2, "regie-layout-in-preview",
+		 QString::fromStdString(r.preview().key));
+	R->check(r.studioMode() && r.take(), "regie-cut", r.studioMode() ? "" : "studio mode off");
+}
+
+void checkRegieProgram()
+{
+	const double w1 = programItemWidth("REGIE CAM 1"), w2 = programItemWidth("REGIE CAM 2");
+	R->check(Regie::instance().program().key == "Cam2Split" && w1 > 900 && w1 < 980 && w2 > 900 && w2 < 980,
+		 "regie-program-duo", QString("%1 / %2").arg(w1).arg(w2));
+	/* CAM 2 stops sending video (a capture unplugged): width 0. */
+	OBSSourceAutoRelease src = obs_get_source_by_name("REGIE CAM 2");
+	OBSDataAutoRelease st = obs_data_create();
+	obs_data_set_string(st, "file", "/nonexistent/layouts-selftest-cam.png");
+	obs_source_update(src, st);
+}
+
+void checkFailoverLost()
+{
+	obs_sceneitem_t *lost = programItem("REGIE CAM 2");
+	const double w1 = programItemWidth("REGIE CAM 1");
+	R->check(lost && !obs_sceneitem_visible(lost) && w1 > 1900, "failover-drops-to-solo",
+		 QString("cam2 %1, cam1 width %2")
+			 .arg(lost && obs_sceneitem_visible(lost) ? "visible" : "hidden")
+			 .arg(w1));
+	OBSSourceAutoRelease src = obs_get_source_by_name("REGIE CAM 2");
+	OBSDataAutoRelease st = obs_data_create();
+	obs_data_set_string(st, "file", QDir::temp().filePath("layouts-selftest-cam.png").toUtf8().constData());
+	obs_source_update(src, st);
+}
+
+void checkFailoverBack()
+{
+	obs_sceneitem_t *back = programItem("REGIE CAM 2");
+	const double w1 = programItemWidth("REGIE CAM 1");
+	R->check(back && obs_sceneitem_visible(back) && w1 > 900 && w1 < 980, "failover-restores-layout",
+		 QString("cam1 width %1").arg(w1));
+	Regie::instance().setPlateau(QString());
+	/* Leave the program as the next tests expect it. */
+	if (g_beforeRegie)
+		obs_frontend_set_current_scene(g_beforeRegie);
 }
 
 OBSSourceAutoRelease g_move, g_savedTransition, g_moveA, g_moveB;
@@ -2120,6 +2226,9 @@ void runSelfTest(ui::LayoutsWindow *window)
 		g_ccScene = nullptr;
 		g_perfScene = nullptr;
 		g_shapeScene = nullptr;
+		g_beforeShapes = nullptr;
+		g_plateau = nullptr;
+		g_beforeRegie = nullptr;
 	};
 	g_window = window;
 	g_dock = window->canvas();
@@ -2308,6 +2417,12 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(500, [] { prepareCleanOutput(); });
 		R->add(1000, [] { takeShot(); });
 		R->add(1500, [] { checkCleanOutput(); });
+	}
+	if (enabled("regie")) {
+		R->add(500, [] { prepareRegie(); });
+		R->add(1500, [] { checkRegieProgram(); });
+		R->add(3000, [] { checkFailoverLost(); });
+		R->add(3500, [] { checkFailoverBack(); });
 	}
 	if (enabled("corners")) {
 		R->add(500, [] { prepareCorners(); });

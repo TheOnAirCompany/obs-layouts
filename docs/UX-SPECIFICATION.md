@@ -1,7 +1,8 @@
 # UX specification
 
 Layouts brings design-tool composition to OBS while keeping OBS conventions where they already
-exist. This document describes the behavior of version 0.1.0.
+exist. This document describes the behavior of version 0.5.0; sections added after 0.1.0 give the
+version that brought them.
 
 ## The Layouts window (0.2)
 
@@ -47,17 +48,19 @@ program has a red dot (in Studio Mode, the scene whose private copy is on the pr
 choice as the scene menu of the Canvas toolbar, which stays.
 
 ### Types and filter (0.4)
-- A pill after the name shows the source's type: HOST, CAM, SCREEN, BG, CG, or a dashed "?" when
-  not set. Clicking it opens the type menu; when the row is selected, the type applies to every
+- A pill after the name shows the source's type: HOST, CAM, SCREEN, CHAT (0.5), BG, CG, or a
+  dashed "?" when not set. Clicking it opens the type menu; when the row is selected, the type applies to every
   selected source. One undo entry. Groups have no type.
 - The type is saved in the source's private settings (scene collection), so renaming keeps it.
   Until set, it is suggested from the name prefix (Host: HOST, PRÉSENTATEUR, PRESENTER, ANIMATEUR;
   Cam: CAM, CAMERA, CAMÉRA, GUEST, INVITÉ; Screen: SCREEN, ÉCRAN, SCR, DISPLAY, CAPTURE; BG: BG,
-  BACKGROUND, FOND; CG: CG, GFX, OVERLAY, LOGO, LT, HABILLAGE), case and accents ignored, the
+  BACKGROUND, FOND; CG: CG, GFX, OVERLAY, LOGO, LT, HABILLAGE; Chat (0.5): CHAT, TCHAT, CHATBOX),
+  case and accents ignored, the
   prefix followed by the end of the name, a space, `_`, `-` or `.`; the longest prefix wins. Then
   from the kind of source (video capture, NDI, DeckLink, AJA = Cam; display, window, game capture
-  = Screen).
-- Filter row above the list: All, then one chip per type present, with counts. Groups stay while
+  = Screen). A chat is only suggested from its name, never from the kind of source.
+- Filter row above the list: All, then one chip per type present, with counts, in the order Host,
+  Cam, Screen, Chat, BG, CG, Not set. Groups stay while
   one of their sources matches. Drag and drop is off while a filter is active.
 
 ## Layouts Builder (0.4)
@@ -67,7 +70,8 @@ Layouts opens Scene mode; the hotkey keeps the current mode). The Canvas stays i
   icon, name, number of scenes that use it, type pill (same menu as Layers). Same filter row.
   Select the sources of the scene to make (Cmd / Shift for several, Cmd+A for all).
 - Right: "Broadcast layouts", the same gallery as in Scene mode for the selection (hosts and cams
-  are cameras, screens are screens; sources without a type are ignored and counted), gap and
+  are cameras, screens are screens, chats are chats; sources without a type are ignored and
+  counted), gap and
   margin (shared), "Background at the back" and "Graphics on top" (enabled when one is selected),
   lock. "New scene" (or a double-click on a layout) makes the chosen layout; "Create show scenes"
   makes a full-screen scene per host, cam and screen, then one per layout that fits. The new
@@ -76,6 +80,9 @@ Layouts opens Scene mode; the hotkey keeps the current mode). The Canvas stays i
   centered, cropped to bounds); screens, then hosts and cams in their tiles (hosts first, so they
   get the large tile), flips kept; CG on top with the transform and crop they have in the first
   scene that uses them. Locked when "Lock" is checked. Names made unique ("Duo 2").
+- 0.5: host slots get a Host source first; items are added back to front in the layout's stacking
+  order (see Broadcast layouts), chats after cameras, graphics last; slot rotation, shape and frame
+  are written as the item's style. Create show scenes makes no full-screen scene for a chat.
 
 ## Inspector
 
@@ -88,7 +95,8 @@ Scene name, canvas size and a hint on how to select.
 | Header | name, source type · scene › group, Lock, Copy properties, Paste properties ▾ |
 | Align | 6 buttons: left, horizontal center, right, top, vertical center, bottom, relative to the canvas |
 | Position | reference point picker (3×3), X, Y, rotation, rotate ±90°, flip H/V |
-| Dimensions | W, H, ratio lock, Fit, Fill, Stretch, Original size, Reset transform, corner radius (0.3), frame mode Fill / Fit / Stretch and ratio buttons 16:9, 1:1, 4:5, 9:16 (0.4) |
+| Dimensions | W, H, ratio lock, Fit, Fill, Stretch, Original size, Reset transform, frame mode Fill / Fit / Stretch and ratio buttons 16:9, 1:1, 4:5, 9:16 (0.4) |
+| Style (0.5) | corners Auto / px / Round / None + px field, border + width + color, shadow None / Soft / Hard / Custom (+ blur, opacity, color, X, Y), fade during transitions; "modified" dot, Reset to type, Styles by type… |
 | Crop | left, right, top, bottom (source pixels) |
 | Bounding box | type, content alignment, crop to bounds |
 
@@ -105,9 +113,11 @@ Scene name, canvas size and a hint on how to select.
   of the image kept (top-left keeps the top-left of the picture; mirrored axes are handled).
 - Ratio buttons 16:9, 1:1, 4:5, 9:16: the largest frame of that shape inside the current frame,
   anchored on the reference point, filled with the item's mode. Locked items are skipped.
-- The Canvas handles keep scaling as before.
+- The Canvas handles use the frame mode when they resize freely (0.5, see Handles).
 
 #### Corner radius (0.3)
+Replaced in 0.5 by the Corners row of the Style section (below); what follows still describes how
+the corners filter renders.
 - One field (label ╭), in canvas pixels, 0 = square corners. Typing, math and scrubbing work as
   in every numeric field; with several items selected it shows Mixed when the radii differ. Groups
   have no radius.
@@ -127,6 +137,41 @@ Scene name, canvas size and a hint on how to select.
   in its scene B, and blends them with the transition time eased cubic in and out (Move's
   default); a source in only one of the two scenes keeps that scene's radius.
   One Edit > Undo entry per change (a whole scrub included).
+
+#### Style (0.5)
+A section right after Dimensions. Everything it sets belongs to the scene item (so the same source
+can look different in two scenes) and is drawn by Layouts' filters: the "Rounded corners" filter
+(corners and diagonal masks) and a "Border and shadow" filter kept last in the source's filters.
+Groups have no style.
+- **Corners**: segmented Auto | px | Round | None, and a px field. Auto = 4 % of the short side of
+  the visible frame, between 6 and 48 px; px = a fixed radius in canvas pixels (typing a value
+  switches to px; `+4` applies to each item's own radius); Round = half the short side (a circle or
+  a pill); None = square. A radius is never more than half the short side. Auto and Round follow
+  the size of the item when it is resized or cropped, rotated items included.
+- **Border**: checkbox, width (canvas px) and color swatch (color picker with alpha). Turning it on
+  gives 4 px white. The border is drawn inside the frame and follows the corners.
+- **Shadow**: segmented None | Soft | Hard | Custom. Soft = blur 16, offset 0 / 6, 25 %; Hard =
+  blur 6, offset 0 / 6, 60 %; Custom shows blur, opacity, color, X and Y. The shadow is drawn behind
+  the item only (a translucent item does not darken itself), above the items below it, and keeps
+  falling down the canvas when the item is rotated.
+- **Fade during transitions** (enabled when there is a shadow): while a transition that draws the
+  sources itself (Move Transition) runs on the program, the shadow fades out and comes back
+  (1 → 0 at mid-transition → 1, eased). Corners blend from scene A to scene B as in 0.4.
+- **Styles by type…** (settings icon in the section title) opens a dialog: the list of types (pills)
+  and the same editor. Each type has a default style, saved with the scene collection; a type
+  never set uses corners Auto, no border, no shadow. Changing a type default re-renders every item
+  of that type, in every scene and group of the collection, that has no style of its own.
+- **Inheritance**: an item follows its type until a field is edited in the Inspector; it then has
+  its own style and the title shows the "modified" dot (accent color). **Reset to type** (undo
+  icon) drops the item's own style and it follows its type again. Re-applying a type default never
+  turns an item into an overridden one.
+- Slots of a broadcast layout write their shape into the item's style: a round slot sets corners
+  Round, a diagonal slot sets a mask polygon (corners None), a framed slot turns the border on
+  (Polaroid). Moving the item to a plain slot removes only what a slot added.
+- Multiple selection: a change applies only the edited field to each item, so each keeps the rest
+  of its style. Controls show a mixed state (nothing checked, tri-state checkbox, "Mixed", dashed
+  swatch).
+- Every edit, and Reset to type, is one Edit > Undo step ("Style in '<scene>'").
 
 ### Multiple selection
 Header shows "N elements selected" and the number of locked items. Adds:
@@ -162,7 +207,31 @@ nothing that fits, a short sentence says what to select.
 | 5 | 2 + 3, host + 4 | screen + 5 below |
 | 6 | 3 × 2 | screen + 6 below |
 
-Screens alone: one full, two side by side. Sources fill the slots in selection order. A camera fills
+Screens alone: one full, two side by side. Sources fill the slots in selection order.
+
+0.5 brings the 16:9 catalog to 118 layouts: 33 more with cameras only (strips, cinema, host in L,
+guest PiP...), 42 more with screens (screens alone, screens + cameras: float, column, bubble,
+screen over a full camera, screen PiP...) and 20 inventive ones (tilted cards, Polaroid, bento 4 and
+6, dock of bubbles, diagonal duo, card stack, tilted screen, masonry wall, porthole, and 10 with a
+chat: chat + camera, chat + screen + camera, chat duo, chat card, ticker, chat + guests, questions,
+visio, podcast, gameplay). These 95 are drawn for landscape canvases only and are hidden from the
+gallery on a portrait canvas.
+- **Chats**: the gallery counts cameras, screens and chats and shows only the layouts with that
+  exact number of chats. A chat is fitted whole in its slot (never cropped, never flipped, sized
+  even before a browser source has loaded): at the top of a column, centered in a ticker.
+- **Slot shapes**: a slot can be rotated (the item turns around the center of its cell and still
+  covers it), round (radius 50 %), cut on a diagonal (convex mask polygon, anti-aliased like the
+  corners), or framed (Polaroid border). Thumbnails draw all of them, with chats in the chat color.
+- **Host**: a slot can be made for the host; Host sources fill host slots first, the others take
+  the remaining slots in order.
+- **Stacking**: slots are stacked back to front in the order of the layout, except that a slot
+  strictly inside a later, larger slot goes in front of it (picture in picture). The items of the
+  layout reuse the stack positions they already had, so a background stays below them and graphics
+  stay above.
+- **Mirror**: two toggles ↔ and ↕ above the gallery (Inspector and Builder) mirror every layout left
+  / right and top / bottom: thumbnails, Canvas preview, Apply, New scene and Create show scenes.
+  Only the slots move: the image of a source is never flipped; a rotation is reversed when one axis
+  is mirrored. The state is remembered. A camera fills
 its tile edge to edge: the crop is centered horizontally and keeps 30 % of the removed height at the
 top, so faces stay in frame. A screen is fitted whole, never cropped. A flipped source (mirrored
 webcam, camera upside down) keeps its flip in the tile (0.3). On a portrait canvas guests
@@ -176,6 +245,20 @@ scene with the same sources in the layout and leaves the current one untouched. 
 makes all the scenes of a show at once: a full-screen scene per selected source (named after it), then
 one scene per layout that fits the selection; the button briefly says how many were created. Hovering the section
 previews the chosen layout on the Canvas. The Constraints section moves under a collapsed *Advanced*.
+
+#### Save as layout (0.5)
+*Save as layout…* (Inspector broadcast section, gallery and Canvas context menus, Scene mode) asks
+for a name and saves the scene as a layout of the gallery: the selected sources, or every visible
+top-level camera, screen and chat when nothing is selected. Each tile is the visual frame of the
+item (crop, bounding box, rotation and groups included), relative to the canvas. Host and Cam give
+camera tiles (host tiles for Host), Screen gives screens, Chat gives chats (a chat wider than 4:1 is
+a ticker); BG and CG are skipped. User layouts are saved in the plugin configuration, so every scene
+collection sees them, and are listed after the built-in ones when the selection has the same counts;
+they are stretched to the canvas. In the gallery they carry an accent dot at the top right and the
+tooltip "(your layout)". Right-click a user layout: Rename…, Export…, Delete (asks first; scenes
+made with it do not change); anywhere in the gallery: Save as layout…, Import layouts…, Export all my
+layouts…. Import reads a `layouts-user-layout/1` JSON file: a layout already there is skipped, a
+name already taken gets a suffix ("Duo (2)").
 
 ### Auto layout (0.2, multiple selection)
 Direction Horizontal | Vertical | Grid; area *In the selection* or *In the canvas*; *Keep sizes* or
@@ -248,7 +331,8 @@ and refused actions show the reason.
 | Shift while dragging | constrain to the main axis |
 | Ctrl/Cmd while dragging | bypass snapping (OBS convention) |
 | Drag on empty canvas | rubber band selection (Shift adds) |
-| Drag a handle | resize; corners keep the ratio, Shift frees it (OBS convention); Alt resizes from the center. With several elements selected, the handles are on the selection box and scale every element (0.2) |
+| Drag a handle | resize, following the ratio lock (0.5, see Handles); Shift inverts the lock, Alt resizes from the center. With several elements selected, the handles are on the selection box and scale every element (0.2) |
+| Drag an element onto another of the same kind | swap their slots (0.5, see Swap); Alt = plain move |
 | Drag just outside a corner | rotate around the center; Shift = 15° steps; snaps to 0/90/180/270 within 2° (Ctrl/Cmd disables) |
 | Drag a guide | move it; drop it on a ruler to delete it |
 | Double-click a guide | type its exact position (math accepted) |
@@ -258,6 +342,34 @@ and refused actions show the reason.
 | Ctrl/Cmd + wheel, pinch | zoom at the cursor |
 | Alt (hold) | measure the selection to the hovered element, or to the canvas |
 | Right-click | context menu: copy / paste properties, zoom to selection, guides |
+
+### Handles (0.5)
+- The ratio lock of the Inspector decides, for corner and edge handles alike. Locked: a corner
+  scales along the diagonal (the pointer is projected on it, so there is no dead zone); an edge
+  keeps the ratio and the other axis grows around its middle. Unlocked: corners and edges are free.
+- Shift inverts the lock for the drag; Alt resizes from the center. Pressing or releasing either
+  applies at once, without moving the mouse.
+- A locked resize only scales, so a manual crop is kept. A free resize refills the new frame with
+  the item's frame mode: Fill crops (the crop is recomputed from the whole source, replacing a manual
+  crop), Fit letterboxes, only Stretch distorts. Groups always scale.
+- With several elements selected, the same rules apply to the selection box, each element filled
+  with its own frame mode when free.
+- A badge next to the cursor shows the ratio while a locked resize runs ("16:9", "1:1", "1.85:1").
+- The frame never turns inside out: dragging past the opposite side stops at 1 px.
+
+### Swap (0.5)
+- While one element is dragged, the topmost compatible element under the cursor is the target:
+  Host and Cam swap with each other, Screen with Screen, Chat with Chat; BG, CG and untyped sources
+  never swap. The target shows a 2 px accent outline, a 12 % accent fill and the ⇄ icon.
+- On release the dragged element goes back and the two exchange their slots. What stays with the
+  slot: the cell and its rotation, the stacking position, the style, the lock and the constraints.
+  What stays with the source: flips and frame mode. Each source is refitted to its new cell (cover
+  crop keeping the top for cameras, whole for screens and chats).
+- A locked element does not move but can still be swapped: the drag only looks for a target. So a
+  locked broadcast layout can be rearranged without unlocking it.
+- Holding Alt, or snapping to a guide, turns swapping off: the drag is a plain move.
+- One Edit > Undo step ("Swap"), stacking and style included. Edits on air follow the
+  block-on-air policy.
 
 ### Keyboard (Canvas focused)
 | Keys | Action |
@@ -276,7 +388,8 @@ and refused actions show the reason.
 In OBS *Settings > Hotkeys*, under names starting with "Layouts:": show or hide rulers, guides, grid
 and safe areas, turn snapping on or off, the six alignments, distribute horizontal and vertical
 spacing, zoom the Canvas to fit. No key is bound by default; bindings are saved in the plugin
-configuration. They work even when the Canvas does not have the focus.
+configuration. They work even when the Canvas does not have the focus. The Switcher adds its own
+entries (0.5, see below).
 
 ### Rulers
 Horizontal and vertical, in canvas pixels, adaptive 1-2-5 graduation (labeled ticks at least 64 px
@@ -306,6 +419,53 @@ for equal spacing. Resizing snaps the moving edges of unrotated elements.
 ### Safe areas
 Action safe 3.5 %, title safe 5 %, 4:3 center-cut lines (OBS values), optional canvas center lines
 and custom margins in pixels.
+
+## Layouts Switcher (0.5)
+A dock, **Docks > Layouts Switcher** (French: *Régie Layouts*), to recompose one scene live like a
+vision mixer.
+- **Plateau**: a combo picks the scene that holds every camera, screen and chat of the show (saved
+  with the collection). The Switcher reads its top-level items by type; graphics, background and
+  untyped items are never touched. Sources a layout does not use are hidden, never removed.
+- **LAYOUTS**: one button per layout that fits the Plateau's sources (thumbnail, numbered 1 to 9
+  for the hotkeys); layouts drawn for landscape are left out on a portrait canvas.
+- **BUS rows**: one per slot of the layout in preview ("BUS 1 · camera"), one button per source.
+  Clicking a source puts it in the slot; if it already is in another slot, the two swap.
+- **PREVIEW** line: what will go on air. **CUT** sends the preview to program with the current
+  Studio Mode transition. **AUTO** is greyed (tooltip "0.6") until animated layout changes land.
+- **Tally**: red = on air, green = in preview, red with a green underline = both, on layout and
+  source buttons. Compact density: 28 px buttons.
+- **Studio Mode**: with OBS's "duplicate scene" (the default), the Plateau is prepared as the
+  preview and CUT takes it. Without duplication the next composition is prepared on a twin scene
+  "<Plateau> B" (same sources, kept in sync), alternating with the Plateau. With Studio Mode off,
+  every change goes on air at once and the dock shows a banner with an "Enable Studio Mode" button.
+- Layouts are applied as in the Inspector: flips kept, cameras cover their cell, screens and chats
+  whole, style and stacking from the slots.
+- **Hotkeys** (Settings > Hotkeys, "Switcher: ..."): cut (take), next layout, previous layout,
+  layout 1 to 9, slot N = source M (slots 1 to 4, sources 1 to 8 in the Plateau order from the
+  top). No key bound by default.
+- **obs-websocket**: vendor `layouts`, requests `GetState`, `ListLayouts`, `SetLayout {key}`,
+  `AssignSlot {slot, source}` (slot from 1), `Swap {a, b}` (slots from 1) and `Take`; event
+  `StateChanged` with the full state after every change. Requests run on the UI thread. Meant for
+  Stream Deck, Bitfocus Companion and scripts.
+
+### Lost source failover (0.5)
+- While a layout from the Switcher is on program, its cameras and screens are watched (every
+  250 ms): a source is lost when it has no picture any more (size 0, as when a capture device is
+  unplugged or an NDI sender stops), when its media ends or fails, or when it is deleted.
+- After 1.5 s lost, the program drops to the layout with one tile less: the same family when
+  there is one (same chats), otherwise the first one that fits, the remaining sources keeping
+  their order (the host stays in the host slot). The lost item is hidden and the others move, in
+  one atomic change on the program, without a transition. A drop seen while the scene is not on
+  program is applied when it goes on air.
+- The Switcher shows a red banner under its title ("CAM 2 lost: layout reorganized on program",
+  or "hidden on program" when no layout with one tile less exists).
+- When every lost source is back and stable for 2 s, the exact original layout returns by itself,
+  also without a transition, and the banner turns green ("Source back: original layout
+  restored") for a few seconds.
+- Changing the scene collection or quitting OBS restores the original layout first.
+- Checkbox "Reorganize the program when a camera or a screen drops" under CUT, on by default;
+  turning it off during a failover restores the original layout.
+- A frozen last frame (a sender that keeps showing its last picture) is not detected.
 
 ## States
 Every control has default, hover, focus, pressed, disabled and (fields) mixed and invalid states,
