@@ -66,6 +66,8 @@ The editing surface in the middle of the Layouts window, next to the OBS preview
 
 If a camera or a screen on air stops sending video, the program drops at once to the same layout with one tile less and the Switcher shows a red banner; the original layout comes back by itself when the source returns.
 
+**AUTO** (0.6) glides the program to the prepared layout inside the same scene: tiles move and resize, crops and rotations follow, tiles that leave fade out. The duration sits next to the button (300 ms by default). With Vertical for OBS installed, tick **Also switch the vertical 9:16 output**: the Plateau gets a 9:16 twin built from the same sources, and every CUT or AUTO switches both outputs.
+
 ### Made for live shows
 
 - An amber **PROGRAM** banner when you edit the scene on the program output, a red **ON AIR** banner and frame while streaming, recording, replay buffer or virtual camera run. Optionally **block edits on air**.

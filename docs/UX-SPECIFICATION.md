@@ -448,7 +448,26 @@ vision mixer.
   `StateChanged` with the full state after every change. Requests run on the UI thread. Meant for
   Stream Deck, Bitfocus Companion and scripts.
 
+### AUTO (0.6)
+- **AUTO** animates the scene really on air (the private copy in Studio Mode with "duplicate
+  scene") to the composition in preview: no scene transition. Tiles that stay move and resize;
+  their crop and rotation are interpolated (ease in-out cubic); flips that change pass through
+  zero width. Tiles that leave fade out, tiles that enter fade in (per-item show / hide fade).
+- Duration: the field next to AUTO (0 to 5000 ms, 300 by default, 0 = cut), saved in the
+  settings. A new AUTO during a running one starts from where the tiles are.
+- One Edit > Undo step. Also: hotkey "Switcher: Auto", obs-websocket request `Auto`.
+- The lost-source failover is armed on the new layout, as after CUT.
+
+### Vertical twin (0.6)
+- Option **Also switch the vertical 9:16 output** (off by default). The 9:16 canvas is the one
+  exposed by Vertical for OBS (proc handler `vertical_get_canvas`); without it, an existing
+  portrait canvas (preferably named "vertical"). Layouts never creates a canvas.
+- On CUT and AUTO the twin scene "<Plateau> ▯" is rebuilt from the same sources (screens on top at
+  full width, cameras stacked or in a grid below, the host on its own row from three cameras, chat
+  at the bottom) and put on the vertical program.
+
 ### Lost source failover (0.5)
+(0.6: it acts on the scene really on air, the Studio Mode copy included.)
 - While a layout from the Switcher is on program, its cameras and screens are watched (every
   250 ms): a source is lost when it has no picture any more (size 0, as when a capture device is
   unplugged or an NDI sender stops), when its media ends or fails, or when it is deleted.
