@@ -794,6 +794,7 @@ void Regie::registerHotkeys()
 		g_actions.push_back(std::move(a));
 	};
 	add("layouts.regie.take", obs_module_text("Regie.Hotkey.Take"), [] { Regie::instance().take(); });
+	add("layouts.regie.auto", obs_module_text("Regie.Hotkey.Auto"), [] { Regie::instance().autoTake(); });
 	add("layouts.regie.next", obs_module_text("Regie.Hotkey.Next"), [] { Regie::instance().nextLayout(1); });
 	add("layouts.regie.previous", obs_module_text("Regie.Hotkey.Previous"),
 	    [] { Regie::instance().nextLayout(-1); });
