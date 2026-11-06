@@ -35,10 +35,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *     scale, rotation, bounds and groups, and Move Transition (which draws the sources
  *     with its own matrix) for free. Cost: one quad, no texture, no blur pass (signed
  *     distance to the rounded rectangle, smoothstep over the blur width).
- *     Limit: an item that OBS renders through its own texture (crop, bounds crop, a
- *     non-default scale filter, sRGB-off blending) is clipped to its visible part, so the
- *     shadow is not drawn there (detected the same way as the corners' visible rect).
- *     Those items need option 3 (or Layouts doing the crop in the corners shader) later.
+ *     An item that OBS renders through its own texture (crop, bounds crop, a non-default
+ *     scale filter, sRGB-off blending) is clipped to its visible part: its shadow is drawn
+ *     in the scene instead, just before the item (drawShadowInScene). Items inside a group
+ *     keep no shadow in that case.
  *
  * The border is an inner stroke drawn over the item as a second quad (no texture either),
  * so the chain never goes through an extra texture: the corners filter keeps seeing the
