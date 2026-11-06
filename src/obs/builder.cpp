@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "commands.hpp"
 #include "core/broadcast-screens.hpp"
+#include "dual.hpp"
 #include "edit-context.hpp"
 #include "obs-convert.hpp"
 #include "roles.hpp"
@@ -243,6 +244,9 @@ std::vector<QString> create(const Plan &plan, const Options &options)
 			}
 		}
 		names.push_back(name);
+		/* Dual output (off by default): its 9:16 twin in the vertical canvas. */
+		if (dual::enabled())
+			dual::refreshTwin(obs_scene_get_source(scene), spec.key);
 		obs_scene_release(scene);
 	}
 	if (!names.empty())

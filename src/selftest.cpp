@@ -27,6 +27,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/commands.hpp"
 #include "obs/constraints.hpp"
 #include "obs/edit-session.hpp"
+#include "obs/dual.hpp"
 #include "obs/corners.hpp"
 #include "obs/regie.hpp"
 #include "obs/item-style.hpp"
@@ -1801,6 +1802,7 @@ void checkShapes()
 
 /* ---- 0.5 Switcher + lost camera failover, end to end on the program ---- */
 OBSSourceAutoRelease g_plateau;
+int g_morphBefore = 300;
 OBSSourceAutoRelease g_beforeRegie;
 
 obs_sceneitem_t *programItem(const char *name)
@@ -1941,6 +1943,32 @@ void checkFailoverBack()
 	const double w1 = programItemWidth("REGIE CAM 1");
 	R->check(back && obs_sceneitem_visible(back) && w1 > 900 && w1 < 980, "failover-restores-layout",
 		 QString("cam1 width %1").arg(w1));
+	/* AUTO (0.6): from the duo to the solo, gliding in the program scene. */
+	Regie &r = Regie::instance();
+	const bool set = r.setLayout("Cam1Full");
+	/* 1 s so that the middle of the glide can be sampled. */
+	g_morphBefore = Store::instance().settings().morphDurationMs;
+	Store::instance().settings().morphDurationMs = 1000;
+	R->check(set && r.autoTake(), "auto-starts", QString::fromStdString(r.preview().key));
+}
+
+/* Half-way: the solo camera is between its duo size and full screen (it glides). */
+void checkAutoMidway()
+{
+	const double w1 = programItemWidth("REGIE CAM 1"), w2 = programItemWidth("REGIE CAM 2");
+	const double w = std::max(w1, w2);
+	R->check(w > 1000 && w < 1880, "auto-interpolates", QString("width %1 half-way").arg(w));
+}
+
+void checkAuto()
+{
+	/* The solo is the first source of the Plateau: one camera full frame, the other gone. */
+	obs_sceneitem_t *c1 = programItem("REGIE CAM 1"), *c2 = programItem("REGIE CAM 2");
+	const bool v1 = c1 && obs_sceneitem_visible(c1), v2 = c2 && obs_sceneitem_visible(c2);
+	const double w = v1 ? programItemWidth("REGIE CAM 1") : programItemWidth("REGIE CAM 2");
+	Store::instance().settings().morphDurationMs = g_morphBefore;
+	R->check(Regie::instance().program().key == "Cam1Full" && v1 != v2 && w > 1900, "auto-glides-to-solo",
+		 QString("visible %1/%2 width %3").arg(v1).arg(v2).arg(w));
 	Regie::instance().setPlateau(QString());
 	/* Leave the program as the next tests expect it. */
 	if (g_beforeRegie)
@@ -1958,6 +1986,7 @@ void prepareMoveCorners()
 {
 	EditContext &ctx = EditContext::instance();
 	OBSSourceAutoRelease white = colorSource("Moving", 800, 600, 0xFFFFFFFF);
+	OBSSourceAutoRelease shadowSource = colorSource("Move shadowed", 300, 300, 0xFFFFFFFF);
 	for (auto *slot : {&g_moveA, &g_moveB}) {
 		obs_scene_t *scene = obs_scene_create(slot == &g_moveA ? "Move A" : "Move B");
 		*slot = obs_source_get_ref(obs_scene_get_source(scene));
@@ -1967,17 +1996,41 @@ void prepareMoveCorners()
 		vec2 pos;
 		vec2_set(&pos, 200, 265);
 		obs_sceneitem_set_pos(item, &pos);
+		/* A grey patch and a white square with a hard shadow on it (not cropped). */
+		addColor(scene, slot == &g_moveA ? "Move patch A" : "Move patch B", 600, 500, 0xFF808080, 1150, 200);
+		obs_sceneitem_t *shadowed = obs_scene_add(scene, shadowSource);
+		vec2 sp;
+		vec2_set(&sp, 1300, 300);
+		obs_sceneitem_set_pos(shadowed, &sp);
 		obs_scene_release(scene);
 		ctx.pin(*slot);
 		ctx.markDirty();
 		selectNames({"Moving"});
 		corners::setRadius(core::parseExpression("40", 0));
+		itemstyle::edit({shadowed}, [](core::Style &st) {
+			st.radiusMode = core::RadiusMode::None;
+			st.shadow = core::ShadowPreset::Hard;
+			st.fadeShadowInTransition = true;
+		});
 	}
 	g_savedTransition = obs_get_output_source(0);
 	g_move = obs_source_create_private("move_transition", "Layouts move test", nullptr);
 	obs_set_output_source(0, g_move);
 	corners::watchProgram();
 	obs_transition_set(g_move, g_moveA);
+}
+
+/* Before the transition: scene A alone on program, the hard shadow is there. */
+void checkMoveShadowStatic()
+{
+	char *path = obs_frontend_get_last_screenshot();
+	const QString p = QString::fromUtf8(path ? path : "");
+	bfree(path);
+	QImage img(p);
+	const int below = img.isNull() ? -1 : qGray(img.pixel(1450, 603));
+	R->check(below >= 0 && below < 90, "shadow-before-move-transition", QString("below %1").arg(below));
+	if (!getenv("LAYOUTS_SELFTEST_KEEP_SHOTS"))
+		QFile::remove(p);
 	obs_transition_start(g_move, OBS_TRANSITION_MODE_AUTO, 4000, g_moveB);
 }
 
@@ -1992,6 +2045,10 @@ void checkMoveCorners()
 	const int edge = img.isNull() ? -1 : qGray(img.pixel(550, 266));
 	R->check(mid && corner >= 0 && corner < 40 && edge > 215, "corners-during-move-transition",
 		 QString("active %1, corner %2, edge %3").arg(mid).arg(corner).arg(edge));
+	/* Hard shadow (60 %) would make the grey patch ~51 just below the square: during the
+	 * transition it fades out (set to fade in transitions). */
+	const int below = img.isNull() ? -1 : qGray(img.pixel(1450, 603));
+	R->check(mid && below > 95, "shadow-fades-during-move-transition", QString("below %1").arg(below));
 	if (!getenv("LAYOUTS_SELFTEST_KEEP_SHOTS"))
 		QFile::remove(p);
 	obs_set_output_source(0, g_savedTransition);
@@ -2078,6 +2135,90 @@ void testMultiCanvas()
 			 std::fabs(b.bottom() - 1920) < 1,
 		 "broadcast-portrait-duo-stacks", rectStr(a) + rectStr(b));
 	obs_scene_release(vs);
+}
+
+/* Dual output: the 9:16 twin of a 16:9 duo lands in the vertical canvas, stacked, with
+ * the same sources, and CUT puts it on the vertical program. */
+
+/* With Vertical for OBS loaded: the twin goes to its canvas (proc handler). */
+void testVerticalPlugin()
+{
+	proc_handler_t *ph = obs_get_proc_handler();
+	calldata_t cd;
+	calldata_init(&cd);
+	const bool present = ph && proc_handler_call(ph, "vertical_get_canvas", &cd);
+	const char *uuid = present ? calldata_string(&cd, "uuid") : nullptr;
+	const std::string want = uuid ? uuid : "";
+	calldata_free(&cd);
+	if (!present) {
+		obs_log(LOG_INFO, "[selftest] INFO Vertical for OBS not loaded: skipped");
+		return;
+	}
+	obs_canvas_t *c = dual::verticalCanvas(false);
+	const std::string got = c ? obs_canvas_get_uuid(c) : "";
+	obs_canvas_release(c);
+	R->check(!want.empty() && got == want, "dual-uses-vertical-plugin-canvas", QString::fromStdString(want));
+}
+
+void testDualTwin()
+{
+	if (!g_vertical)
+		return;
+	obs_scene_t *land = obs_scene_create("Dual Duo");
+	obs_sceneitem_t *a = addColor(land, "DualA", 1920, 1080, 0xFF4040FF, 0, 0);
+	obs_sceneitem_t *b = addColor(land, "DualB", 1920, 1080, 0xFF40FF40, 960, 0);
+	roles::setRole({obs_sceneitem_get_source(a), obs_sceneitem_get_source(b)}, core::Role::Camera);
+	OBSSource twin = dual::refreshTwin(obs_scene_get_source(land), "Cam2Split", true);
+	R->check(twin != nullptr, "dual-twin-created");
+	if (twin) {
+		obs_canvas_t *c = obs_source_get_canvas(twin);
+		/* The Vertical for OBS canvas when loaded, else the portrait canvas of this test. */
+		obs_canvas_t *want = dual::verticalCanvas(false);
+		R->check(c == want, "dual-twin-in-vertical-canvas");
+		obs_canvas_release(want);
+		obs_canvas_release(c);
+		struct Boxes {
+			std::vector<std::pair<std::string, core::Rect>> list;
+		} boxes;
+		obs_scene_enum_items(
+			obs_scene_from_source(twin),
+			[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+				/* Visible part: the twin crops cameras to fill their cell. */
+				obs_transform_info info = {};
+				obs_sceneitem_crop crop = {};
+				obs_sceneitem_get_info2(item, &info);
+				obs_sceneitem_get_crop(item, &crop);
+				obs_source_t *src = obs_sceneitem_get_source(item);
+				const double w = (obs_source_get_width(src) - crop.left - crop.right) * info.scale.x;
+				const double h = (obs_source_get_height(src) - crop.top - crop.bottom) * info.scale.y;
+				static_cast<Boxes *>(p)->list.push_back(
+					{obs_source_get_name(src), core::Rect(info.pos.x, info.pos.y, w, h)});
+				return true;
+			},
+			&boxes);
+		const bool two = boxes.list.size() == 2;
+		R->check(two, "dual-twin-two-items", QString::number(boxes.list.size()));
+		if (two) {
+			const core::Rect &ra = boxes.list[0].first == "DualA" ? boxes.list[0].second
+									      : boxes.list[1].second;
+			const core::Rect &rb = boxes.list[0].first == "DualA" ? boxes.list[1].second
+									      : boxes.list[0].second;
+			R->check(std::fabs(ra.w - 1080) < 1 && ra.y < 1 && rb.y > ra.bottom() - 1 &&
+					 std::fabs(rb.bottom() - 1920) < 1,
+				 "dual-twin-stacked", rectStr(ra) + rectStr(rb));
+		}
+		R->check(dual::cutTwin(obs_scene_get_source(land)), "dual-cut-twin");
+		obs_canvas_t *vc = dual::verticalCanvas(false);
+		OBSSourceAutoRelease onAir = obs_canvas_get_channel(vc, 0);
+		R->check(onAir.Get() == twin.Get(), "dual-twin-on-vertical-program");
+		obs_canvas_set_channel(vc, 0, nullptr);
+		obs_canvas_release(vc);
+		/* Leave no test scene in the vertical canvas. */
+		obs_source_remove(twin);
+	}
+	roles::setRole({obs_sceneitem_get_source(a), obs_sceneitem_get_source(b)}, core::Role::None);
+	obs_source_remove(obs_scene_get_source(land));
+	obs_scene_release(land);
 }
 
 void cleanupCanvas()
@@ -2483,6 +2624,8 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(1500, [] { checkRegieProgram(); });
 		R->add(3000, [] { checkFailoverLost(); });
 		R->add(3500, [] { checkFailoverBack(); });
+		R->add(500, [] { checkAutoMidway(); });
+		R->add(1200, [] { checkAuto(); });
 	}
 	if (enabled("corners")) {
 		R->add(500, [] { prepareCorners(); });
@@ -2496,6 +2639,8 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(1500, [] { checkShapes(); });
 		if (moveAvailable()) {
 			R->add(300, [] { prepareMoveCorners(); });
+			R->add(800, [] { takeShot(); });
+			R->add(1000, [] { checkMoveShadowStatic(); });
 			R->add(1800, [] { takeShot(); });
 			R->add(800, [] { checkMoveCorners(); });
 		}
@@ -2530,7 +2675,9 @@ void runSelfTest(ui::LayoutsWindow *window)
 		});
 	}
 	if (enabled("canvas")) {
+		R->add(300, [] { testVerticalPlugin(); });
 		R->add(1500, [] { testMultiCanvas(); });
+		R->add(800, [] { testDualTwin(); });
 		R->add(800, [] { cleanupCanvas(); });
 		R->add(500, [] { constraintsSetup(); });
 		R->add(800, [] { constraintsReset(); });

@@ -33,8 +33,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPointer>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSpinBox>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -139,10 +141,22 @@ RegieDock::RegieDock(QWidget *parent) : QWidget(parent)
 	cut_->setToolTip(loc("Regie.CutTooltip"));
 	auto_ = new QPushButton(loc("Regie.Auto"));
 	auto_->setMinimumHeight(tokens::kRegieCutHeight);
-	auto_->setEnabled(false);
-	auto_->setToolTip("0.6");
+	auto_->setToolTip(loc("Regie.AutoTip"));
 	buttons->addWidget(cut_, 1);
 	buttons->addWidget(auto_, 1);
+	/* AUTO duration (store "morph.durationMs"). */
+	auto *duration = new QSpinBox;
+	duration->setRange(0, 5000);
+	duration->setSingleStep(50);
+	duration->setSuffix(" ms");
+	duration->setValue(Store::instance().settings().morphDurationMs);
+	duration->setToolTip(loc("Regie.AutoDuration"));
+	buttons->addWidget(duration);
+	connect(duration, &QSpinBox::valueChanged, this, [](int ms) {
+		Store::instance().settings().morphDurationMs = ms;
+		Store::instance().notifySettingsChanged();
+	});
+	connect(auto_, &QPushButton::clicked, this, [] { Regie::instance().autoTake(); });
 	auto *failover = new QCheckBox(loc("Failover.Enabled"));
 	failover->setChecked(Store::instance().settings().failoverEnabled);
 	connect(failover, &QCheckBox::toggled, this, [](bool on) {
@@ -151,6 +165,15 @@ RegieDock::RegieDock(QWidget *parent) : QWidget(parent)
 	});
 	root->addLayout(buttons);
 	root->addWidget(failover);
+	/* Dual output (0.6): CUT / AUTO also switch the 9:16 twin on the Vertical for OBS canvas. */
+	auto *vertical = new QCheckBox(loc("Regie.Vertical"));
+	vertical->setToolTip(loc("Regie.VerticalTip"));
+	vertical->setChecked(Store::instance().settings().dualEnabled);
+	connect(vertical, &QCheckBox::toggled, this, [](bool on) {
+		Store::instance().settings().dualEnabled = on;
+		Store::instance().notifySettingsChanged();
+	});
+	root->addWidget(vertical);
 	connect(cut_, &QPushButton::clicked, this, [] { Regie::instance().take(); });
 
 	connect(plateau_, &QComboBox::currentIndexChanged, this, [this](int i) {
@@ -190,8 +213,25 @@ void RegieDock::rebuild()
 	const bool studio = r.studioMode();
 	studioBanner_->setVisible(!r.plateau().isEmpty() && !studio);
 	cut_->setEnabled(studio && r.plateauSource());
+	auto_->setEnabled(r.plateauSource() && !r.preview().key.empty());
 
-	/* Rows are rebuilt on every change: they are few and the state is small. */
+	/* Same plateau, layouts, preview layout and sources: only the tally and the summary
+	 * change, so the buttons stay (no flicker during transitions). */
+	QString structure = r.plateau() + "|" + QString::fromStdString(r.preview().key) + "|" +
+			    QString::number(studio) + "|" + QString::number(r.canvasAspect());
+	for (const core::BroadcastTemplate &t : r.layouts())
+		structure += "|" + QString::fromStdString(t.key);
+	for (const RegieSource &s : r.sources())
+		structure += "|" + QString::fromStdString(s.name) + ":" + QString::number((int)s.kind);
+	if (r.plateauSource() && structure == structure_ && !relight_.empty()) {
+		for (const auto &fn : relight_)
+			fn();
+		updateSummary();
+		return;
+	}
+	structure_ = structure;
+	relight_.clear();
+
 	while (QLayoutItem *it = rowsLayout_->takeAt(0)) {
 		if (it->widget())
 			it->widget()->deleteLater();
@@ -235,8 +275,16 @@ void RegieDock::rebuild()
 		b->setText(n < 9 ? QString("%1 %2").arg(n + 1).arg(layoutName(t.key)) : layoutName(t.key));
 		b->setToolTip(layoutName(t.key));
 		b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-		b->setStyleSheet(tallyStyle(t.key == r.program().key, studio && t.key == r.preview().key));
 		const std::string key = t.key;
+		QPointer<QToolButton> lb = b;
+		auto light = [lb, key] {
+			Regie &rr = Regie::instance();
+			if (lb)
+				lb->setStyleSheet(tallyStyle(key == rr.program().key,
+							     rr.studioMode() && key == rr.preview().key));
+		};
+		light();
+		relight_.push_back(light);
 		connect(b, &QToolButton::clicked, this, [key] { Regie::instance().setLayout(key); });
 		gl->addWidget(b, n / kColumns, n % kColumns);
 		n++;
@@ -246,9 +294,10 @@ void RegieDock::rebuild()
 	/* One BUS per slot of the preview layout */
 	const std::vector<core::Slot> tiles = r.slotsOf(r.preview().key);
 	for (size_t i = 0; i < tiles.size(); i++) {
-		const bool screen = tiles[i].kind == core::SlotKind::Screen;
-		rowsLayout_->addWidget(
-			rowTitle(QString(loc(screen ? "Regie.BusScreen" : "Regie.BusCamera")).arg(i + 1)));
+		const char *title = tiles[i].kind == core::SlotKind::Screen ? "Regie.BusScreen"
+				    : tiles[i].kind == core::SlotKind::Chat ? "Regie.BusChat"
+									    : "Regie.BusCamera";
+		rowsLayout_->addWidget(rowTitle(QString(loc(title)).arg(i + 1)));
 		auto *bus = new QWidget;
 		auto *bl = new QGridLayout(bus);
 		bl->setContentsMargins(0, 0, 0, 0);
@@ -260,11 +309,22 @@ void RegieDock::rebuild()
 			auto *b = new QPushButton(QString::fromStdString(s.name));
 			b->setMinimumHeight(tokens::kRegieButton);
 			b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-			const bool inSlot = i < r.preview().tiles.size() && r.preview().tiles[i] == s.name;
-			const bool inProgramSlot = i < r.program().tiles.size() && r.program().tiles[i] == s.name;
 			/* The slot's buttons light like a mixer bus: this slot on program (red), this
 			 * slot on preview (green). */
-			b->setStyleSheet(tallyStyle(inProgramSlot && r.onProgram(s.name), studio && inSlot));
+			QPointer<QPushButton> sb = b;
+			const size_t si = i;
+			const std::string sn = s.name;
+			auto light = [sb, si, sn] {
+				Regie &rr = Regie::instance();
+				const bool inSlot = si < rr.preview().tiles.size() && rr.preview().tiles[si] == sn;
+				const bool inProgramSlot = si < rr.program().tiles.size() &&
+							   rr.program().tiles[si] == sn;
+				if (sb)
+					sb->setStyleSheet(tallyStyle(inProgramSlot && rr.onProgram(sn),
+								     rr.studioMode() && inSlot));
+			};
+			light();
+			relight_.push_back(light);
 			b->setToolTip(QString(loc("Regie.SourceTooltip")).arg(QString::fromStdString(s.name)));
 			const int slot = (int)i;
 			const std::string name = s.name;
@@ -276,7 +336,14 @@ void RegieDock::rebuild()
 	}
 	rowsLayout_->addStretch(1);
 
-	/* PREVIEW summary: "Duo — 1 Alice · 2 Bob" */
+	updateSummary();
+}
+
+/* PREVIEW summary: "Duo — 1 Alice · 2 Bob" */
+void RegieDock::updateSummary()
+{
+	Regie &r = Regie::instance();
+	const bool studio = r.studioMode();
 	QStringList parts;
 	for (size_t i = 0; i < r.preview().tiles.size(); i++)
 		parts << QString("%1 %2").arg(i + 1).arg(QString::fromStdString(r.preview().tiles[i]));

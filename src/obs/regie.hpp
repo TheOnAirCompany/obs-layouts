@@ -39,6 +39,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-frontend-api.h>
 #include <obs.hpp>
 
+#include "morph.hpp"
+
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -95,6 +97,10 @@ public:
 	bool swap(int a, int b);
 	/* Preview to program (Studio Mode transition). */
 	bool take();
+	/* AUTO (0.6): animates the program scene to the preview composition. */
+	bool autoTake();
+	/* Dual output: refresh the 9:16 twin and put it on the vertical program. */
+	void cutVertical(obs_source_t *landscape);
 
 	/* Re-reads the Plateau (sources, counts, current layout guess). */
 	void refresh();
@@ -122,6 +128,8 @@ private:
 	void fill(RegieComposition &c) const;
 	bool prepare();
 	bool apply(obs_source_t *scene, const RegieComposition &c);
+	std::vector<morph::Target> targetsFor(obs_source_t *scene, const RegieComposition &c,
+					      std::vector<std::pair<obs_sceneitem_t *, core::Slot>> &placed) const;
 	obs_source_t *targetScene();
 	OBSSource twin(bool create);
 	void emitChanged();

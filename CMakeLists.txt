@@ -85,6 +85,12 @@ target_sources(
     src/core/shape.hpp
     src/core/swap.cpp
     src/core/swap.hpp
+    src/core/morph.cpp
+    src/core/morph.hpp
+    src/obs/morph.cpp
+    src/obs/morph.hpp
+    src/core/portrait-map.cpp
+    src/core/portrait-map.hpp
     src/obs/obs-convert.hpp
     src/obs/store.cpp
     src/obs/store.hpp
@@ -100,6 +106,8 @@ target_sources(
     src/obs/style-render.cpp
     src/obs/style-render.hpp
     src/obs/builder.cpp
+    src/obs/dual.cpp
+    src/obs/dual.hpp
     src/obs/builder.hpp
     src/obs/roles.cpp
     src/obs/roles.hpp

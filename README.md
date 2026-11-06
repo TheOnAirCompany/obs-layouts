@@ -12,7 +12,7 @@ Layouts for OBS is a native OBS Studio plugin that brings the composition tools 
 
 ![The Layouts window: Canvas with rulers and guides, Inspector on the right](docs/images/layouts-window.png)
 
-> **Status: 0.5.0.** Tested in OBS Studio 33.0.1 on macOS (Apple Silicon). Windows and Linux packages are built by CI but not tested at runtime yet. The macOS package is signed and notarized; Windows and Linux packages are not signed. Keep a backup of your scene collection and report anything odd in [Issues](https://github.com/TheOnAirCompany/obs-layouts/issues).
+> **Status: 0.6.0.** Tested in OBS Studio 33.0.1 on macOS (Apple Silicon). Windows and Linux packages are built by CI but not tested at runtime yet. The macOS package is signed and notarized; Windows and Linux packages are not signed. Keep a backup of your scene collection and report anything odd in [Issues](https://github.com/TheOnAirCompany/obs-layouts/issues).
 
 ## What it adds
 
@@ -65,6 +65,8 @@ The editing surface in the middle of the Layouts window, next to the OBS preview
 **Docks > Layouts Switcher** turns a scene of your show (the *Plateau*) into a vision mixer: a row of layouts, one bus of sources per slot, a PREVIEW line and **CUT**. Red is on air, green is in preview; with Studio Mode, prepare the next shot in preview and take it. Every action has an OBS hotkey (cut, next / previous layout, layouts 1 to 9, slot N = source M) and an obs-websocket request (vendor `layouts`), for Stream Deck and Companion.
 
 If a camera or a screen on air stops sending video, the program drops at once to the same layout with one tile less and the Switcher shows a red banner; the original layout comes back by itself when the source returns.
+
+**AUTO** (0.6) glides the program to the prepared layout inside the same scene: tiles move and resize, crops and rotations follow, tiles that leave fade out. The duration sits next to the button (300 ms by default). With Vertical for OBS installed, tick **Also switch the vertical 9:16 output**: the Plateau gets a 9:16 twin built from the same sources, and every CUT or AUTO switches both outputs.
 
 ### Made for live shows
 

@@ -78,7 +78,9 @@ struct ViewSettings {
 	bool builderBackground = true;
 	bool builderGraphics = true;
 	bool failoverEnabled = true; /* a dropped camera / screen reorganizes the program ("failover.enabled") */
+	bool dualEnabled = false;    /* 0.6 dual output: keep a 9:16 twin of broadcast scenes */
 	QColor guideColor{0xFF, 0x3D, 0x71};
+	int morphDurationMs = 300; /* animated layout change (AUTO), key "morph.durationMs" */
 };
 
 class Store : public QObject {
