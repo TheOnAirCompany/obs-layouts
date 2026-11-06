@@ -25,6 +25,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "core/expression.hpp"
 #include "obs/edit-context.hpp"
+#include "obs/scene-directory.hpp"
 #include "obs/store.hpp"
 
 #include <obs-frontend-api.h>
@@ -43,6 +44,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QMenu>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -78,20 +80,45 @@ CanvasDock::CanvasDock(QWidget *parent) : QWidget(parent)
 	b->setContentsMargins(6, 4, 6, 4);
 	b->setSpacing(2);
 
-	scenes_ = new QComboBox(bar);
-	scenes_->setToolTip(T("Canvas.SceneTooltip"));
-	scenes_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-	scenes_->setMinimumContentsLength(8);
-	connect(scenes_, &QComboBox::activated, this, [this](int i) {
-		const QString uuid = scenes_->itemData(i).toString();
-		if (uuid.isEmpty()) {
-			EditContext::instance().follow();
-		} else {
-			OBSSourceAutoRelease src = obs_get_source_by_uuid(uuid.toUtf8().constData());
-			EditContext::instance().pin(src);
-		}
+	/* Follow OBS (0.7): a pin, blue while on. */
+	pin_ = iconButton("pin", T("Canvas.FollowTooltip"), bar, true);
+	pin_->setObjectName("LayoutsFollowPin");
+	pin_->setStyleSheet(QString("QToolButton:checked { background: %1; border-radius: 4px; }")
+				    .arg(QColor::fromRgba(tokens::kSelection).name()));
+	connect(pin_, &QToolButton::clicked, this, [](bool on) {
+		EditContext &ctx = EditContext::instance();
+		if (on)
+			ctx.follow();
+		else if (ctx.sceneSource())
+			ctx.pin(ctx.sceneSource()); /* stay on this scene, stop following */
 	});
-	b->addWidget(scenes_, 1);
+	b->addWidget(pin_);
+	b->addSpacing(4);
+
+	/* Breadcrumb: 16:9 › stack › scene. */
+	crumb_ = new QLabel(bar);
+	crumb_->setObjectName("LayoutsBreadcrumb");
+	crumb_->setTextFormat(Qt::RichText);
+	crumb_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+	crumb_->setMinimumWidth(60);
+	b->addWidget(crumb_, 1);
+
+	/* "● PROGRAM": only while the scene is really seen live (streamed or virtual camera). */
+	chip_ = new QLabel(QString::fromUtf8("\xE2\x97\x8F ") + T("Live.Chip"), bar);
+	chip_->setObjectName("LayoutsLiveChip");
+	QFont cf = chip_->font();
+	cf.setPointSizeF(cf.pointSizeF() * tokens::kSectionTitlePt);
+	cf.setBold(true);
+	cf.setLetterSpacing(QFont::PercentageSpacing, 105);
+	chip_->setFont(cf);
+	chip_->setStyleSheet(
+		QString("QLabel { background: %1; color: white; border-radius: %2px; padding: %3px %4px; }")
+			.arg(QColor::fromRgba(tokens::kChipLive).name())
+			.arg(tokens::kChipRadius)
+			.arg(tokens::kChipPadY)
+			.arg(tokens::kChipPadX));
+	chip_->setVisible(false);
+	b->addWidget(chip_);
 	b->addSpacing(6);
 
 	auto *zoomOut = iconButton("zoom-out", T("Canvas.ZoomOut"), bar);
@@ -116,13 +143,17 @@ CanvasDock::CanvasDock(QWidget *parent) : QWidget(parent)
 		b->addWidget(t);
 	auto *settings = iconButton("settings", T("Canvas.Settings"), bar);
 	b->addWidget(settings);
-	v->addWidget(bar);
+	b->addSpacing(6);
 
-	live_ = new QLabel(this);
-	live_->setAlignment(Qt::AlignCenter);
-	live_->setMargin(3);
-	live_->setVisible(false);
-	v->addWidget(live_);
+	/* Gateway to the Scene Builder window. */
+	auto *builder = new QToolButton(bar);
+	builder->setObjectName("LayoutsOpenBuilder");
+	builder->setText(T("Editor.OpenBuilder") + QString::fromUtf8(" \xE2\x86\x97"));
+	builder->setToolTip(T("Editor.OpenBuilderTooltip"));
+	builder->setAutoRaise(false);
+	connect(builder, &QToolButton::clicked, this, &CanvasDock::openBuilderRequested);
+	b->addWidget(builder);
+	v->addWidget(bar);
 
 	/* ---- rulers + canvas ---- */
 	auto *area = new QWidget(this);
@@ -224,9 +255,15 @@ CanvasDock::CanvasDock(QWidget *parent) : QWidget(parent)
 	connect(&ctx, &EditContext::sceneChanged, this, &CanvasDock::refreshScenes);
 	connect(&ctx, &EditContext::itemsChanged, this, &CanvasDock::refreshStatus);
 	connect(&ctx, &EditContext::liveStateChanged, this, &CanvasDock::refreshLive);
+	connect(&SceneDirectory::instance(), &SceneDirectory::changed, this, &CanvasDock::refreshScenes);
 	connect(&ctx, &EditContext::editRefused, this, [this](const QString &why) {
-		live_->setText(why);
-		live_->setVisible(true);
+		/* Shown in the status line for a moment. */
+		refused_ = why;
+		refreshStatus();
+		QTimer::singleShot(3000, this, [this] {
+			refused_.clear();
+			refreshStatus();
+		});
 	});
 	connect(&Store::instance(), &Store::settingsChanged, this, &CanvasDock::refreshToggles);
 
@@ -243,49 +280,38 @@ QToolButton *CanvasDock::toggle(const QString &iconName, const QString &tip)
 
 void CanvasDock::refreshScenes()
 {
-	updating_ = true;
 	EditContext &ctx = EditContext::instance();
-	scenes_->clear();
-	scenes_->addItem(T("Canvas.Follow"), QString());
+	pin_->setChecked(ctx.following());
+	pin_->setToolTip(ctx.following() ? T("Canvas.FollowOnTooltip") : T("Canvas.FollowTooltip"));
 
-	obs_frontend_source_list list = {};
-	obs_frontend_get_scenes(&list);
-	for (size_t i = 0; i < list.sources.num; i++) {
-		obs_source_t *s = list.sources.array[i];
-		scenes_->addItem(QString::fromUtf8(obs_source_get_name(s)), QString::fromUtf8(obs_source_get_uuid(s)));
-	}
-	obs_frontend_source_list_free(&list);
-
-	obs_frontend_canvas_list canvases = {};
-	obs_frontend_get_canvases(&canvases);
-	for (size_t i = 0; i < canvases.canvases.num; i++) {
-		obs_canvas_t *c = canvases.canvases.array[i];
-		const QString canvasName = QString::fromUtf8(obs_canvas_get_name(c));
-		struct Ctx {
-			QComboBox *combo;
-			QString prefix;
-		} p{scenes_, canvasName};
-		obs_canvas_enum_scenes(
-			c,
-			[](void *param, obs_source_t *src) {
-				auto *pc = static_cast<Ctx *>(param);
-				pc->combo->addItem(pc->prefix + QString::fromUtf8(" \xE2\x80\xBA ") +
-							   QString::fromUtf8(obs_source_get_name(src)),
-						   QString::fromUtf8(obs_source_get_uuid(src)));
-				return true;
-			},
-			&p);
-	}
-	obs_frontend_canvas_list_free(&canvases);
-
-	if (ctx.following()) {
-		scenes_->setItemText(0, T("Canvas.FollowScene").arg(ctx.sceneName()));
-		scenes_->setCurrentIndex(0);
+	/* 16:9 › stack › scene, the canvas and stacks dimmed. */
+	QColor dim = palette().color(QPalette::Disabled, QPalette::WindowText);
+	const QString sep = QString::fromUtf8(" \xE2\x80\xBA ");
+	QStringList parts;
+	QString full;
+	if (ctx.sceneSource()) {
+		const std::vector<const core::nav::Node *> path =
+			SceneDirectory::instance().locate(ctx.sceneUuid().toStdString());
+		QStringList plain;
+		for (const core::nav::Node *n : path) {
+			if (n->kind == core::nav::Node::Kind::Scene)
+				break;
+			const QString t = n->kind == core::nav::Node::Kind::Canvas ? QString::fromStdString(n->ratio)
+										   : QString::fromStdString(n->name);
+			if (t.isEmpty())
+				continue;
+			parts << QString("<span style=\"color:%1\">%2</span>").arg(dim.name(), t.toHtmlEscaped());
+			plain << t;
+		}
+		parts << QString("<b>%1</b>").arg(ctx.sceneName().toHtmlEscaped());
+		plain << ctx.sceneName();
+		full = plain.join(sep);
 	} else {
-		const int idx = scenes_->findData(ctx.sceneUuid());
-		scenes_->setCurrentIndex(idx >= 0 ? idx : 0);
+		parts << QString("<span style=\"color:%1\">%2</span>")
+				 .arg(dim.name(), T("Inspector.NoScene").toHtmlEscaped());
 	}
-	updating_ = false;
+	crumb_->setText(parts.join(QString("<span style=\"color:%1\">%2</span>").arg(dim.name(), sep)));
+	crumb_->setToolTip(full);
 	refreshStatus();
 	refreshLive();
 }
@@ -307,6 +333,10 @@ void CanvasDock::refreshStatus()
 {
 	EditContext &ctx = EditContext::instance();
 	zoomLabel_->setText(fmt(view_->zoom() * 100.0) + "%");
+	if (!refused_.isEmpty()) {
+		status_->setText(refused_);
+		return;
+	}
 	if (!ctx.sceneSource()) {
 		status_->setText(T("Inspector.NoScene"));
 		return;
@@ -325,18 +355,9 @@ void CanvasDock::refreshStatus()
 
 void CanvasDock::refreshLive()
 {
-	const LiveState s = EditContext::instance().liveState();
-	if (s == LiveState::Off) {
-		live_->setVisible(false);
-		return;
-	}
-	const bool onAir = s == LiveState::OnAir;
-	const bool blocked = onAir && vs().blockOnAir;
-	live_->setStyleSheet(
-		QString("QLabel { background: %1; color: white; font-weight: bold; }")
-			.arg(QColor::fromRgba(onAir ? tokens::kLiveBanner : tokens::kProgramBanner).name()));
-	live_->setText(onAir ? (blocked ? T("Live.OnAirBlocked") : T("Live.OnAir")) : T("Live.Program"));
-	live_->setVisible(true);
+	const bool onAir = EditContext::instance().liveState() == LiveState::OnAir;
+	chip_->setToolTip(vs().blockOnAir ? T("Live.OnAirBlocked") : T("Live.OnAir"));
+	chip_->setVisible(onAir);
 }
 
 /* =========================================================== SettingsDialog */

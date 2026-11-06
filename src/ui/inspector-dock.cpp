@@ -99,11 +99,6 @@ InspectorDock::InspectorDock(QWidget *parent) : QWidget(parent)
 	EditContext &ctx = EditContext::instance();
 	connect(&ctx, &EditContext::itemsChanged, this, &InspectorDock::refresh);
 	connect(&ctx, &EditContext::sceneChanged, this, &InspectorDock::refresh);
-	connect(&ctx, &EditContext::liveStateChanged, this, &InspectorDock::updateLive);
-	connect(&ctx, &EditContext::editRefused, this, [this](const QString &why) {
-		live_->setText(why);
-		live_->setVisible(true);
-	});
 	connect(&Store::instance(), &Store::settingsChanged, this, &InspectorDock::refresh);
 	connect(&Store::instance(), &Store::typeStylesChanged, this, &InspectorDock::refresh);
 	refresh();
@@ -198,12 +193,6 @@ void InspectorDock::build()
 		hl->addWidget(paste_);
 		v->addWidget(h);
 	}
-
-	live_ = new QLabel(content_);
-	live_->setWordWrap(true);
-	live_->setMargin(6);
-	live_->setVisible(false);
-	v->addWidget(live_);
 
 	empty_ = new QLabel(content_);
 	empty_->setWordWrap(true);
@@ -558,23 +547,6 @@ void InspectorDock::build()
 	v->addStretch();
 }
 
-void InspectorDock::updateLive()
-{
-	EditContext &ctx = EditContext::instance();
-	const LiveState s = ctx.liveState();
-	if (s == LiveState::Off) {
-		live_->setVisible(false);
-		return;
-	}
-	const bool blocked = s == LiveState::OnAir && Store::instance().settings().blockOnAir;
-	const QColor bg = QColor::fromRgba(s == LiveState::OnAir ? tokens::kLiveBanner : tokens::kProgramBanner);
-	live_->setStyleSheet(QString("QLabel { background: %1; color: white; border-radius: 4px; font-weight: bold; }")
-				     .arg(bg.name()));
-	live_->setText(s == LiveState::OnAir ? (blocked ? T("Live.OnAirBlocked") : T("Live.OnAir"))
-					     : T("Live.Program"));
-	live_->setVisible(true);
-}
-
 void InspectorDock::refresh()
 {
 	if (refreshing_)
@@ -591,7 +563,6 @@ void InspectorDock::refresh()
 	const bool single = n == 1;
 	const bool multi = n > 1;
 
-	updateLive();
 	ref_->setIndex(Store::instance().settings().refPoint);
 	ratio_->setChecked(Store::instance().settings().ratioLock);
 	ratio_->setIcon(icon(Store::instance().settings().ratioLock ? "link" : "unlink", this));
@@ -628,7 +599,7 @@ void InspectorDock::refresh()
 	/* Set each visibility once: hiding then showing a section would send synthetic
 	 * enter/leave events (and previews) on every refresh. */
 	for (QWidget *w : content_->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly)) {
-		if (w == title_->parentWidget() || w == live_ || w == empty_)
+		if (w == title_->parentWidget() || w == empty_)
 			continue;
 		bool visible = n > 0;
 		if (w == arrangeSection_ || w == layoutSection_)

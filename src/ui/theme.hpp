@@ -38,7 +38,7 @@ constexpr int kPanelMargin = 10;    /* inner margin of the dock */
 constexpr int kFieldHeight = 24;
 constexpr int kFieldMinWidth = 44;   /* numeric fields shrink down to this */
 constexpr int kInspectorWidth = 300; /* default dock width on first launch */
-constexpr int kLayersWidth = 240;    /* default Layers panel width on first launch */
+constexpr int kLayersWidth = 250;    /* default Scenes + Layers column width on first launch (0.7) */
 constexpr int kIconButton = 26;      /* square icon button */
 constexpr int kIconSize = 16;
 constexpr int kLabelWidth = 16;         /* scrub label "X", "W"... */
@@ -106,9 +106,33 @@ constexpr int kLabelPadX = 4;
 constexpr int kLabelPadY = 2;
 constexpr int kDragThreshold = 3; /* px before a press becomes a drag */
 
-/* ---- Live banner ---- */
-constexpr QRgb kLiveBanner = 0xFFE5484D;
-constexpr QRgb kProgramBanner = 0xFF8A5A00;
+/* ---- Scene Editor and Scene Builder windows (0.7, from the validated mocks) ---- */
+constexpr int kBuilderSourcesWidth = 270;     /* Builder column 1, first launch */
+constexpr int kBuilderCreateWidth = 290;      /* Builder column 3, first launch */
+constexpr int kNavRowHeight = 26;             /* Scenes navigator row */
+constexpr int kNavRowPadX = 6;                /* inner left / right padding of a row */
+constexpr int kNavRowRadius = 5;              /* edited scene highlight */
+constexpr QRgb kNavSelectedFill = 0x2E18A0FB; /* 18 % of kSelection, with a kSelection outline */
+constexpr int kNavStripWidth = 3;             /* stack color strip */
+constexpr int kNavStripHeight = 14;
+constexpr int kNavStripRadius = 2;
+constexpr int kTallyDot = 7;              /* program (kTallyProgram) / preview (kTallyPreview) dot */
+constexpr QRgb kNavFavorite = 0xFFE6C547; /* favorite star */
+constexpr int kRatioTagRadius = 4;        /* "16:9" tag of a canvas section */
+constexpr qreal kRatioTagPt = 0.8;        /* its font, relative */
+constexpr QRgb kChipLive = kLiveFrame;    /* "● PROGRAM" chip: shown only when the scene is seen live */
+constexpr int kChipRadius = 4;
+constexpr int kChipPadX = 7;
+constexpr int kChipPadY = 2;
+constexpr int kGalleryCardMin = 150; /* Builder gallery: minimum card width */
+constexpr int kGalleryGap = 12;      /* Builder gallery: space between cards */
+constexpr int kButtonRadius = 6;     /* Builder: primary "Create scene" button */
+constexpr int kButtonPadX = 10;
+constexpr int kButtonPadY = 7;
+constexpr int kPreviewRadius = 6; /* Builder: large preview of the chosen layout */
+constexpr int kPreviewTileRadius = 3;
+constexpr QRgb kPreviewBackdrop = 0xFF0E0F12; /* behind the tiles of the previews */
+constexpr int kCreatedMessageMs = 4000;       /* provisional: how long "Created: <name>" stays */
 
 } // namespace layouts::tokens
 

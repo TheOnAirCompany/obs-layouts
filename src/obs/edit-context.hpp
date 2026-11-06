@@ -57,9 +57,9 @@ struct ItemEntry {
 };
 
 enum class LiveState {
-	Off,     /* not visible in the output */
-	Program, /* shown on the program output, no output running */
-	OnAir,   /* shown on the program while streaming, recording, replay buffer or virtual camera runs */
+	Off,     /* not on the program of its canvas */
+	Program, /* on the program of its canvas, nobody watches it: no warning (0.7) */
+	OnAir,   /* on the program of a canvas that is streamed or sent to a virtual camera */
 };
 
 class EditContext : public QObject {

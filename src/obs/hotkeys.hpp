@@ -25,8 +25,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace layouts::hotkeys {
 
-/* Registers every action; the callbacks serve "zoom to fit" and "open Layouts". */
-void registerAll(std::function<void()> zoomFit, std::function<void()> openWindow);
+/* Registers every action; the callbacks serve "zoom to fit", "open the Scene Editor" and
+ * "open the Scene Builder". */
+void registerAll(std::function<void()> zoomFit, std::function<void()> openWindow, std::function<void()> openBuilder);
 void save();
 void unregisterAll();
 

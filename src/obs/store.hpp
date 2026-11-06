@@ -67,8 +67,10 @@ struct ViewSettings {
 	core::FlowSpec flow;       /* auto layout parameters */
 	bool flowInCanvas = false; /* auto layout container: canvas instead of selection */
 	core::PresetSpec preset;   /* margins of composition presets */
-	QByteArray windowGeometry; /* Layouts window */
+	QByteArray windowGeometry; /* Scene Editor window */
 	QByteArray splitterState;
+	QByteArray builderGeometry; /* Scene Builder window (0.7) */
+	QByteArray builderSplitterState;
 	double broadcastGap = 8; /* broadcast layouts */
 	double broadcastMargin = 0;
 	bool broadcastLock = true;

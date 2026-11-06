@@ -91,6 +91,16 @@ target_sources(
     src/obs/morph.hpp
     src/core/portrait-map.cpp
     src/core/portrait-map.hpp
+    src/core/json.cpp
+    src/core/json.hpp
+    src/core/scene-nav.cpp
+    src/core/scene-nav.hpp
+    src/core/live.cpp
+    src/core/live.hpp
+    src/obs/live.cpp
+    src/obs/live.hpp
+    src/obs/scene-directory.cpp
+    src/obs/scene-directory.hpp
     src/obs/obs-convert.hpp
     src/obs/store.cpp
     src/obs/store.hpp
@@ -135,8 +145,8 @@ target_sources(
     src/ui/builder-panel.cpp
     src/ui/builder-panel.hpp
     src/ui/role-ui.cpp
-    src/ui/scenes-list.cpp
-    src/ui/scenes-list.hpp
+    src/ui/scenes-navigator.cpp
+    src/ui/scenes-navigator.hpp
     src/ui/role-ui.hpp
     src/ui/style-editor.cpp
     src/ui/style-editor.hpp

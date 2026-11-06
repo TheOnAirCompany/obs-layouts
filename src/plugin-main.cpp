@@ -34,6 +34,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/hotkeys.hpp"
 #include "obs/regie.hpp"
 #include "obs/morph.hpp"
+#include "obs/scene-directory.hpp"
 #include "obs/store.hpp"
 #include "obs/user-layouts.hpp"
 #include "ui/canvas-dock.hpp"
@@ -58,25 +59,31 @@ MODULE_EXPORT const char *obs_module_name(void)
 
 #ifdef LAYOUTS_SELFTEST
 namespace layouts {
-void runSelfTest(ui::LayoutsWindow *window);
+void runSelfTest(ui::EditorWindow *editor, ui::BuilderWindow *builder);
 }
 #endif
 
 namespace {
 
-QPointer<layouts::ui::LayoutsWindow> g_window;
+QPointer<layouts::ui::EditorWindow> g_editor;
+QPointer<layouts::ui::BuilderWindow> g_builder;
 
-void openWindow(layouts::ui::LayoutsWindow::Mode mode)
+void openEditor()
 {
-	if (!g_window)
-		return;
-	g_window->setMode(mode);
-	g_window->open();
+	if (g_editor)
+		g_editor->open();
+}
+
+void openBuilder()
+{
+	if (g_builder)
+		g_builder->open();
 }
 
 void onFrontendEvent(enum obs_frontend_event event, void *)
 {
 	layouts::EditContext::instance().handleFrontendEvent(event);
+	layouts::SceneDirectory::instance().handleFrontendEvent(event);
 	layouts::Failover::instance().handleFrontendEvent(event);
 	layouts::Regie::instance().handleFrontendEvent(event);
 	if (event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP) {
@@ -98,7 +105,7 @@ void onFrontendEvent(enum obs_frontend_event event, void *)
 		layouts::ConstraintWatcher::instance().start();
 #ifdef LAYOUTS_SELFTEST
 		if (getenv("LAYOUTS_SELFTEST"))
-			QTimer::singleShot(1500, [] { layouts::runSelfTest(g_window); });
+			QTimer::singleShot(1500, [] { layouts::runSelfTest(g_editor, g_builder); });
 #endif
 	}
 }
@@ -152,26 +159,26 @@ bool obs_module_load(void)
 	}
 #endif
 
-	/* A regular window, not a dock: it can be resized, maximized and put in full
-	 * screen freely, and never docks into the OBS window. */
-	g_window = new layouts::ui::LayoutsWindow(main);
-	obs_frontend_add_tools_menu_item(
-		obs_module_text("Menu.Open"), [](void *) { openWindow(layouts::ui::LayoutsWindow::Mode::Scene); },
-		nullptr);
-	obs_frontend_add_tools_menu_item(
-		obs_module_text("Menu.Builder"), [](void *) { openWindow(layouts::ui::LayoutsWindow::Mode::Builder); },
-		nullptr);
+	/* Two regular windows, not docks: they can be resized, maximized and put in full
+	 * screen freely, never dock into the OBS window, and can be open at once (0.7). */
+	g_editor = new layouts::ui::EditorWindow(main);
+	g_builder = new layouts::ui::BuilderWindow(main);
+	QObject::connect(g_editor.data(), &layouts::ui::EditorWindow::openBuilderRequested, [] { openBuilder(); });
+	QObject::connect(g_builder.data(), &layouts::ui::BuilderWindow::openInEditor, [](const QString &uuid) {
+		OBSSourceAutoRelease scene = obs_get_source_by_uuid(uuid.toUtf8().constData());
+		if (scene)
+			layouts::EditContext::instance().pin(scene);
+		openEditor();
+	});
+	obs_frontend_add_tools_menu_item(obs_module_text("Menu.Open"), [](void *) { openEditor(); }, nullptr);
+	obs_frontend_add_tools_menu_item(obs_module_text("Menu.Builder"), [](void *) { openBuilder(); }, nullptr);
 
 	layouts::hotkeys::registerAll(
 		[] {
-			if (g_window)
-				g_window->canvas()->view()->zoomFit();
+			if (g_editor)
+				g_editor->canvas()->view()->zoomFit();
 		},
-		[] {
-			/* The hotkey keeps the current mode. */
-			if (g_window)
-				g_window->open();
-		});
+		[] { openEditor(); }, [] { openBuilder(); });
 
 	/* Switcher: a dock of the OBS window (Docks menu), for live use. */
 	obs_frontend_add_dock_by_id("layouts-regie", obs_module_text("Regie.DockTitle"),
@@ -190,6 +197,8 @@ void obs_module_post_load(void)
 {
 	/* obs-websocket is loaded by now: register the "layouts" vendor requests. */
 	layouts::Regie::instance().registerVendor();
+	/* Stacks for OBS too, when installed: follow its organization. */
+	layouts::SceneDirectory::instance().connectSisters();
 }
 
 void obs_module_unload(void)
@@ -200,5 +209,6 @@ void obs_module_unload(void)
 	layouts::morph::shutdown();
 	layouts::ConstraintWatcher::instance().stop();
 	layouts::EditContext::instance().shutdown();
+	layouts::SceneDirectory::instance().shutdown();
 	obs_log(LOG_INFO, "plugin unloaded");
 }

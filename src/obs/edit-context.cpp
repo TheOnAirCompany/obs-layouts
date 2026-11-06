@@ -18,6 +18,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "edit-context.hpp"
 
+#include "live.hpp"
 #include "obs-convert.hpp"
 #include "store.hpp"
 
@@ -98,12 +99,6 @@ bool enumTop(obs_scene_t *, obs_sceneitem_t *item, void *param)
 		obs_sceneitem_group_enum_items(item, enumChild, &p);
 	}
 	return true;
-}
-
-bool anyOutputActive()
-{
-	return obs_frontend_streaming_active() || obs_frontend_recording_active() ||
-	       obs_frontend_replay_buffer_active() || obs_frontend_virtualcam_active();
 }
 
 } // namespace
@@ -435,9 +430,11 @@ bool EditContext::isProgramOfMainCanvas() const
 
 LiveState EditContext::liveState() const
 {
-	if (!scene_ || !obs_source_active(scene_))
+	if (!scene_)
 		return LiveState::Off;
-	return anyOutputActive() ? LiveState::OnAir : LiveState::Program;
+	if (live::seenByAudience(scene_))
+		return LiveState::OnAir;
+	return live::onProgram(scene_) ? LiveState::Program : LiveState::Off;
 }
 
 bool EditContext::canEdit()

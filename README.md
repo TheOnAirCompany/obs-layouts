@@ -16,17 +16,26 @@ Layouts for OBS is a native OBS Studio plugin that brings the composition tools 
 
 ## What it adds
 
+Two windows, both in the **Tools** menu and both open at once if you like (0.7):
+
+- **Scene Editor**: a Scenes navigator above Layers on the left, the Canvas in the middle, the Inspector on the right.
+- **Scene Builder**: the sources of the collection, the layouts that fit your selection, and Create.
+
+### Scenes navigator
+
+Above Layers: your scenes by canvas (Main 16:9, Vertical 9:16...), organized in the stacks of [Stacks for OBS](https://github.com/TheOnAirCompany/obs-stacks) when it is installed. Search, filter by 16:9, 9:16 or favorites. A click edits a scene without changing what is on air; a red dot marks the program, a green dot the preview. The **Follow OBS** pin in the Canvas toolbar edits whatever OBS shows.
+
 ### Layers
 
-The left panel of the Layouts window: every source of the edited scene, front on top, groups unfolded. Click to select (Shift / Cmd for several), the eye hides, the lock locks, double-click renames, drag reorders or moves a source into or out of a group without moving it on screen. Everything is undoable. No need to go back to the OBS Sources dock.
+The left column of the Scene Editor, below the Scenes navigator: every source of the edited scene, front on top, groups unfolded. Click to select (Shift / Cmd for several), the eye hides, the lock locks, double-click renames, drag reorders or moves a source into or out of a group without moving it on screen. Everything is undoable. No need to go back to the OBS Sources dock.
 
-### Types and Layouts Builder
+### Types and Scene Builder
 
-Give each source a type (Host, Cam, Screen, Chat, BG, CG) from a colored pill, or let Layouts suggest it from the name (`CAM _ GUEST 1`, `SCREEN _ RIGHT`, `TCHAT _ TWITCH`, `BG _ DYNAMIQUE`, `LOGO`). Filter Layers by type. **Tools > Layouts Builder** lists every source of the collection: select the ones you want and pick a broadcast layout from the same gallery as in Scene mode to make the scene (background at the back, hosts in the large tile, graphics on top where they already are), or create all the scenes of the show at once.
+Give each source a type (Host, Cam, Screen, Chat, BG, CG) from a colored pill, or let Layouts suggest it from the name (`CAM _ GUEST 1`, `SCREEN _ RIGHT`, `TCHAT _ TWITCH`, `BG _ DYNAMIQUE`, `LOGO`). Filter Layers by type. **Tools > Scene Builder** lists every source of the collection: select the ones you want, pick a broadcast layout for 16:9, 9:16 or both (with [Vertical for OBS](https://github.com/TheOnAirCompany/obs-vertical), the 9:16 twin is linked to the 16:9 scene), check the large preview, name the scene, file it into a stack of Stacks, and create it (background at the back, hosts in the large tile, graphics on top where they already are), or create all the scenes of the show at once. **Open in Scene Editor ↗** takes you to the new scene.
 
 ### Inspector
 
-The right panel of the Layouts window. It always shows the selection of the edited scene.
+The right column of the Scene Editor. It always shows the selection of the edited scene.
 
 - **Position, size, rotation** in canvas pixels, from a **reference point** you pick on a 3×3 grid. W and H are the size you see, after scale, crop and bounding box.
 - **Math in every field**: `1920/2`, `100% - 120`, `+20`, `-10`, `*1.5`, `=-10` for an absolute negative value. Drag a field label to scrub (Shift ×10, Alt ×0.1).
@@ -46,7 +55,7 @@ The right panel of the Layouts window. It always shows the selection of the edit
 
 ### Layouts Canvas
 
-The editing surface in the middle of the Layouts window, next to the OBS preview.
+The editing surface in the middle of the Scene Editor, next to the OBS preview.
 
 - **Rulers** in canvas pixels that follow zoom and pan, with the selection highlighted.
 - **Guides**: drag them out of the rulers, move, lock, type an exact position, delete by dragging back. Per scene, or **global** for every scene. Saved with the scene collection.
@@ -70,7 +79,7 @@ If a camera or a screen on air stops sending video, the program drops at once to
 
 ### Made for live shows
 
-- An amber **PROGRAM** banner when you edit the scene on the program output, a red **ON AIR** banner and frame while streaming, recording, replay buffer or virtual camera run. Optionally **block edits on air**.
+- A red **● PROGRAM** chip and a red frame only when an audience really sees the scene you edit: it is on the program of its canvas and that canvas is streamed or sent to a virtual camera (recording alone does not count). Optionally **block edits on air**.
 - Every change is applied **atomically** (never half an alignment on air) and is **one entry in OBS's Edit > Undo**, a whole drag included.
 - Rulers, guides, grids and handles are drawn on Layouts' own display: they **never reach the video output** (verified pixel by pixel).
 - Public OBS APIs only. The native preview, your sources and your scene collection files are never modified behind your back.

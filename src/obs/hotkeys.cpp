@@ -74,7 +74,7 @@ std::function<void()> toggle(bool ViewSettings::*field)
 
 } // namespace
 
-void registerAll(std::function<void()> zoomFit, std::function<void()> openWindow)
+void registerAll(std::function<void()> zoomFit, std::function<void()> openWindow, std::function<void()> openBuilder)
 {
 	if (!g_actions.empty())
 		return;
@@ -85,7 +85,9 @@ void registerAll(std::function<void()> zoomFit, std::function<void()> openWindow
 		a->run = std::move(fn);
 		g_actions.push_back(std::move(a));
 	};
+	/* The 0.6 "open the Layouts window" hotkey keeps its name: it opens the Scene Editor. */
 	add("layouts.open_window", "Hotkey.OpenWindow", std::move(openWindow));
+	add("layouts.open_builder", "Hotkey.OpenBuilder", std::move(openBuilder));
 	add("layouts.toggle_rulers", "Hotkey.Rulers", toggle(&ViewSettings::rulers));
 	add("layouts.toggle_guides", "Hotkey.Guides", toggle(&ViewSettings::guides));
 	add("layouts.toggle_grid", "Hotkey.Grid", toggle(&ViewSettings::grid));

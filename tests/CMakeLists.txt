@@ -31,6 +31,7 @@ add_executable(
   test-failover.cpp
   test-morph.cpp
   test-portrait-map.cpp
+  test-scene-nav.cpp
   ${CORE_DIR}/geometry.cpp
   ${CORE_DIR}/item-model.cpp
   ${CORE_DIR}/arrange.cpp
@@ -53,6 +54,9 @@ add_executable(
   ${CORE_DIR}/failover.cpp
   ${CORE_DIR}/morph.cpp
   ${CORE_DIR}/portrait-map.cpp
+  ${CORE_DIR}/json.cpp
+  ${CORE_DIR}/scene-nav.cpp
+  ${CORE_DIR}/live.cpp
 )
 target_include_directories(layouts-core-tests PRIVATE "${CORE_DIR}")
 

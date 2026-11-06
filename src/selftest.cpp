@@ -37,6 +37,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/hotkeys.hpp"
 #include "obs/obs-convert.hpp"
 #include "obs/store.hpp"
+#include "obs/live.hpp"
+#include "obs/scene-directory.hpp"
+#include "core/scene-nav.hpp"
 #include "ui/broadcast-gallery.hpp"
 #include "ui/builder-panel.hpp"
 #include "ui/canvas-dock.hpp"
@@ -45,14 +48,22 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "ui/layers-panel.hpp"
 #include "ui/layouts-window.hpp"
 #include "ui/role-ui.hpp"
-#include "ui/scenes-list.hpp"
+#include "ui/scenes-navigator.hpp"
+#include "ui/theme.hpp"
 #include "ui/ruler.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include <QAbstractButton>
 #include <QAction>
+#include <QButtonGroup>
+#include <QComboBox>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QToolButton>
 #include <QApplication>
 #include <QDir>
 #include <QFile>
@@ -67,6 +78,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <cstring>
 #include <functional>
 #include <random>
+#include <set>
 #include <vector>
 
 namespace layouts {
@@ -109,7 +121,8 @@ struct Runner {
 
 Runner *R = nullptr;
 ui::CanvasDock *g_dock = nullptr;
-ui::LayoutsWindow *g_window = nullptr;
+ui::EditorWindow *g_window = nullptr;
+ui::BuilderWindow *g_builder = nullptr;
 
 OBSSourceAutoRelease colorSource(const char *name, uint32_t w, uint32_t h, uint32_t abgr)
 {
@@ -814,21 +827,24 @@ void testTypes()
 	R->check(commands::selectionKinds(commands::KindMode::Auto).size() == 2, "broadcast-skips-bg-and-cg",
 		 QString::number(commands::selectionKinds(commands::KindMode::Auto).size()));
 
-	/* Builder window mode lists the sources of the collection. */
-	g_window->setMode(ui::LayoutsWindow::Mode::Builder);
-	g_window->builderSources()->refresh();
-	const int rows = g_window->builderSources()->tree()->topLevelItemCount();
-	R->check(g_window->builderSources()->isVisible() && rows == (int)roles::videoSources().size(),
+	/* The Scene Builder window lists the sources of the collection. */
+	g_builder->open();
+	g_builder->builderSources()->refresh();
+	const int rows = g_builder->builderSources()->tree()->topLevelItemCount();
+	R->check(g_builder->builderSources()->isVisible() && rows == (int)roles::videoSources().size(),
 		 "builder-lists-collection-sources", QString::number(rows));
-	/* Select sources: the gallery of Scene mode shows the layouts that fit them, and
-	 * "New scene" makes the chosen one with the background and the logo. */
-	ui::BuilderSources *bs = g_window->builderSources();
+	/* Select sources: the gallery shows the layouts that fit them, and "Create scene"
+	 * makes the chosen one with the background and the logo. The Builder stays, the
+	 * Scene Editor keeps its scene. */
+	ui::BuilderSources *bs = g_builder->builderSources();
 	bs->selectNames({"A", "B", "C", "BG _ TEST", "LOGO _ TEST"});
-	ui::BuilderPanel *bp = g_window->builderPanel();
+	ui::BuilderPanel *bp = g_builder->builderPanel();
+	bp->setTarget(ui::BuilderPanel::Target::Landscape);
 	const int expected = (int)core::templatesFor(2, 1).size();
 	R->check(bs->selectedSources().size() == 5 && bp->gallery()->count() == expected,
 		 "builder-gallery-for-selection",
 		 QString("%1 templates, %2 expected").arg(bp->gallery()->count()).arg(expected));
+	const QString editedBefore = ctx.sceneUuid();
 	const QString made = bp->createScene();
 	OBSSourceAutoRelease madeScene = obs_get_source_by_name(made.toUtf8().constData());
 	int madeItems = 0;
@@ -840,8 +856,11 @@ void testTypes()
 				return true;
 			},
 			&madeItems);
-	R->check(madeScene && madeItems == 5 && ctx.sceneSource() == madeScene.Get(), "builder-new-scene-from-gallery",
-		 made + QString(" %1 items").arg(madeItems));
+	R->check(madeScene && madeItems == 5 && ctx.sceneUuid() == editedBefore && g_builder->isVisible(),
+		 "builder-new-scene-from-gallery", made + QString(" %1 items").arg(madeItems));
+	R->check(bp->message()->isVisibleTo(bp) && bp->message()->text().contains(made) &&
+			 bp->openButton()->isEnabled(),
+		 "builder-created-message-and-open", bp->message()->text());
 	if (madeScene)
 		obs_source_remove(madeScene);
 	ctx.follow();
@@ -892,17 +911,18 @@ void testTypes()
 	}
 	R->check(layered, "builder-bg-back-cg-top-locked", why);
 
-	/* Back to the scene; the test sources go away and the types are cleared. */
-	g_window->setMode(ui::LayoutsWindow::Mode::Scene);
+	/* The test sources go away and the types are cleared. */
+	g_builder->hide();
 	obs_sceneitem_remove(bgItem);
 	obs_sceneitem_remove(cgItem);
 	roles::setRole({a, b, c}, core::Role::None);
 	ctx.follow();
 	ctx.markDirty();
-	R->check(g_window->layers()->isVisible(), "builder-back-to-scene-mode");
+	R->check(g_window->layers()->isVisibleTo(g_window) && !g_builder->isVisible(), "builder-closes-editor-stays");
 }
 
-/* Scenes above Layers: a click edits another scene, nothing changes on air. */
+/* Scenes navigator above Layers: a click edits another scene, nothing changes on air;
+ * the pin follows OBS. */
 void testScenesList()
 {
 	EditContext &ctx = EditContext::instance();
@@ -910,37 +930,40 @@ void testScenesList()
 	obs_scene_t *extra = obs_scene_create("Layouts Other Scene");
 	OBSSourceAutoRelease extraSource = obs_source_get_ref(obs_scene_get_source(extra));
 	obs_scene_release(extra);
-	ui::ScenesList *list = g_window->layers()->scenes();
-	list->refresh();
+	ui::ScenesNavigator *nav = g_window->layers()->scenes();
+	nav->refresh();
 	OBSSourceAutoRelease program = obs_frontend_get_current_scene();
-	const QString programName = QString::fromUtf8(obs_source_get_name(program));
-	QListWidgetItem *other = nullptr, *onAir = nullptr;
-	for (int i = 1; i < list->count(); i++) {
-		if (list->item(i)->text() == programName)
-			onAir = list->item(i);
-		else if (!other && !list->item(i)->text().contains(QString::fromUtf8("\xE2\x80\xBA")))
-			other = list->item(i);
-	}
+	QTreeWidgetItem *other = nav->rowOf(QString::fromUtf8(obs_source_get_uuid(extraSource)));
+	QTreeWidgetItem *onAir = nullptr;
+	std::set<std::string> pgm, pvw;
+	live::tallies(pgm, pvw);
+	if (!pgm.empty())
+		onAir = nav->rowOf(QString::fromStdString(*pgm.begin()));
 	/* A fresh collection in Studio Mode can have nothing on the program yet. */
-	R->check(other && (!program || (onAir && !onAir->toolTip().isEmpty())), "scenes-list-marks-program",
-		 QString("%1 rows, program '%2'").arg(list->count()).arg(programName));
+	R->check(other && (pgm.empty() || (onAir && onAir->toolTip(0) == ui::T("Scenes.OnProgram"))),
+		 "scenes-list-marks-program", QString("program '%1'").arg(obs_source_get_name(program)));
 	if (!other) {
 		obs_source_remove(extraSource);
 		return;
 	}
-	const QString otherName = other->text();
-	emit list->itemClicked(other); /* the list is rebuilt after the click */
+	const QString otherName = other->text(0);
+	emit nav->tree()->itemClicked(other, 0); /* rows are rebuilt after the click */
 	QApplication::processEvents();
 	OBSSourceAutoRelease programAfter = obs_frontend_get_current_scene();
-	R->check(!ctx.following() && ctx.sceneName() == otherName && programAfter.Get() == program.Get(),
+	R->check(!ctx.following() && ctx.sceneName() == otherName && programAfter.Get() == program.Get() &&
+			 !g_dock->followPin()->isChecked(),
 		 "scenes-list-edits-scene", ctx.sceneName());
-	emit list->itemClicked(list->item(0));
+	R->check(g_dock->breadcrumb()->text().contains(otherName.toHtmlEscaped()) &&
+			 g_dock->breadcrumb()->text().contains("16:9"),
+		 "breadcrumb-ratio-and-scene", g_dock->breadcrumb()->toolTip());
+	g_dock->followPin()->click();
 	QApplication::processEvents();
 	/* Follow OBS edits the preview scene in Studio Mode, the program otherwise. */
 	OBSSourceAutoRelease followed = obs_frontend_preview_program_mode_active()
 						? obs_frontend_get_current_preview_scene()
 						: obs_frontend_get_current_scene();
-	R->check(ctx.following() && followed && ctx.sceneName() == QString::fromUtf8(obs_source_get_name(followed)),
+	R->check(ctx.following() && g_dock->followPin()->isChecked() && followed &&
+			 ctx.sceneName() == QString::fromUtf8(obs_source_get_name(followed)),
 		 "scenes-list-follow-obs", ctx.sceneName());
 	obs_source_remove(extraSource);
 }
@@ -2062,39 +2085,6 @@ void checkMoveCorners()
 	EditContext::instance().follow();
 }
 
-void liveProgramCheck()
-{
-	EditContext &ctx = EditContext::instance();
-	OBSSourceAutoRelease program = obs_frontend_get_current_scene();
-	ctx.pin(program);
-	obs_log(LOG_INFO, "[selftest] INFO program=%s active=%d showing=%d studio=%d edited=%s",
-		obs_source_get_name(program), obs_source_active(program), obs_source_showing(program),
-		obs_frontend_preview_program_mode_active(), ctx.sceneName().toUtf8().constData());
-	R->check(ctx.liveState() == LiveState::Program, "live-program-state", QString::number((int)ctx.liveState()));
-	obs_frontend_recording_start();
-}
-
-void liveOnAirCheck()
-{
-	EditContext &ctx = EditContext::instance();
-	obs_log(LOG_INFO, "[selftest] INFO recording=%d active=%d edited=%s", obs_frontend_recording_active(),
-		obs_source_active(ctx.sceneSource()), ctx.sceneName().toUtf8().constData());
-	R->check(ctx.liveState() == LiveState::OnAir, "live-onair-state", QString::number((int)ctx.liveState()));
-	Store::instance().settings().blockOnAir = true;
-	selectNames({"Clean BG"});
-	const core::Rect before = box("Clean BG");
-	const bool applied = commands::nudge(10, 0);
-	ctx.markDirty();
-	R->check(!applied && box("Clean BG") == before, "live-block-refuses", rectStr(box("Clean BG")));
-	Store::instance().settings().blockOnAir = false;
-	const bool applied2 = commands::nudge(10, 0);
-	ctx.markDirty();
-	R->check(applied2 && box("Clean BG").x == before.x + 10, "live-allow-edits", rectStr(box("Clean BG")));
-	commands::nudge(-10, 0);
-	obs_frontend_recording_stop();
-	obs_frontend_set_preview_program_mode(true);
-}
-
 obs_canvas_t *g_vertical = nullptr;
 
 void testMultiCanvas()
@@ -2399,6 +2389,570 @@ void addPerfSteps(int count)
 	});
 }
 
+/* ---------------------------------------------------------------- 0.7: two windows */
+
+QAction *toolsAction(const char *key)
+{
+	const QString text = ui::T(key);
+	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	for (QAction *a : main->findChildren<QAction *>()) {
+		if (a->text() == text)
+			return a;
+	}
+	return nullptr;
+}
+
+void testTwoWindows()
+{
+	g_window->hide();
+	g_builder->hide();
+	QAction *editor = toolsAction("Menu.Open");
+	QAction *builder = toolsAction("Menu.Builder");
+	if (editor)
+		editor->trigger();
+	if (builder)
+		builder->trigger();
+	QApplication::processEvents();
+	R->check(editor && builder && g_window->isVisible() && g_builder->isVisible() &&
+			 (QWidget *)g_window != (QWidget *)g_builder && g_window->isWindow() && g_builder->isWindow(),
+		 "two-windows-from-tools-menu");
+	R->check(g_window->windowTitle() == ui::T("Window.Title") &&
+			 g_builder->windowTitle() == ui::T("Window.BuilderTitle"),
+		 "window-titles", g_window->windowTitle() + " / " + g_builder->windowTitle());
+	R->check(!g_window->findChild<QWidget *>("LayoutsModeSwitch") && g_dock->findChildren<QComboBox *>().isEmpty(),
+		 "no-mode-switch-no-scene-combo");
+	/* Scenes navigator above Layers, in the left column of the editor. */
+	ui::ScenesNavigator *nav = g_window->layers()->scenes();
+	const QPoint navAt = nav->mapTo(g_window, QPoint(0, 0));
+	const QPoint layersAt = g_window->layers()->tree()->mapTo(g_window, QPoint(0, 0));
+	R->check(nav->window() == g_window && navAt.y() < layersAt.y() && std::abs(navAt.x() - layersAt.x()) < 4,
+		 "navigator-above-layers",
+		 QString("nav %1,%2 layers %3,%4").arg(navAt.x()).arg(navAt.y()).arg(layersAt.x()).arg(layersAt.y()));
+	/* Gateways: Scene Builder ↗ in the editor toolbar. */
+	g_builder->hide();
+	if (auto *b = g_dock->findChild<QToolButton *>("LayoutsOpenBuilder"))
+		b->click();
+	QApplication::processEvents();
+	R->check(g_builder->isVisible(), "gateway-editor-to-builder");
+	/* The old "open the Layouts window" hotkey opens the editor. */
+	g_window->hide();
+	hotkeys::trigger("layouts.open_window");
+	QApplication::processEvents();
+	QApplication::processEvents();
+	const bool editorByHotkey = g_window->isVisible();
+	g_builder->hide();
+	hotkeys::trigger("layouts.open_builder");
+	QApplication::processEvents();
+	QApplication::processEvents();
+	R->check(editorByHotkey && g_builder->isVisible(), "hotkeys-open-editor-and-builder");
+}
+
+/* A portrait canvas for the navigator and Builder tests: Vertical for OBS's, else ours. */
+obs_canvas_t *g_navCanvas = nullptr;
+bool g_navOwnCanvas = false;
+OBSSourceAutoRelease g_navMain, g_navVert;
+
+obs_canvas_t *portraitCanvas()
+{
+	if (g_navCanvas)
+		return g_navCanvas;
+	g_navCanvas = dual::verticalCanvas(false);
+	if (!g_navCanvas) {
+		obs_video_info ovi = {};
+		obs_get_video_info(&ovi);
+		ovi.base_width = ovi.output_width = 1080;
+		ovi.base_height = ovi.output_height = 1920;
+		g_navCanvas = obs_frontend_add_canvas("Layouts Nav Vertical", &ovi, PROGRAM);
+		g_navOwnCanvas = true;
+	}
+	return g_navCanvas;
+}
+
+void releasePortraitCanvas()
+{
+	if (!g_navCanvas)
+		return;
+	if (g_navOwnCanvas)
+		obs_frontend_remove_canvas(g_navCanvas);
+	obs_canvas_release(g_navCanvas);
+	g_navCanvas = nullptr;
+	g_navOwnCanvas = false;
+}
+
+void testNavigatorCanvases()
+{
+	EditContext &ctx = EditContext::instance();
+	ctx.follow();
+	obs_canvas_t *vc = portraitCanvas();
+	obs_scene_t *m = obs_scene_create("Nav Main A");
+	g_navMain = obs_source_get_ref(obs_scene_get_source(m));
+	obs_scene_release(m);
+	obs_scene_t *v = vc ? obs_canvas_scene_create(vc, "Nav Vertical A") : nullptr;
+	if (v) {
+		addColor(v, "NavV1", 200, 200, 0xFF8080FF, 10, 10);
+		g_navVert = obs_source_get_ref(obs_scene_get_source(v));
+		obs_scene_release(v);
+	}
+	ui::ScenesNavigator *nav = g_window->layers()->scenes();
+	nav->refresh();
+	const QString mainUuid = QString::fromUtf8(obs_source_get_uuid(g_navMain));
+	const QString vertUuid = g_navVert ? QString::fromUtf8(obs_source_get_uuid(g_navVert)) : QString();
+	QTreeWidgetItem *mainRow = nav->rowOf(mainUuid);
+	QTreeWidgetItem *vertRow = nav->rowOf(vertUuid);
+	auto sectionOf = [](QTreeWidgetItem *it) {
+		while (it && it->parent())
+			it = it->parent();
+		return it;
+	};
+	auto shown = [](QTreeWidgetItem *it) {
+		for (QTreeWidgetItem *p = it ? it->parent() : nullptr; p; p = p->parent()) {
+			if (!p->isExpanded())
+				return false;
+		}
+		return it != nullptr;
+	};
+	R->check(nav->tree()->topLevelItemCount() >= 2 && mainRow && vertRow && shown(mainRow) && shown(vertRow) &&
+			 nav->tree()->topLevelItem(0)->text(0) == ui::T("Scenes.MainCanvas") &&
+			 sectionOf(mainRow) == nav->tree()->topLevelItem(0) && sectionOf(vertRow) != sectionOf(mainRow),
+		 "navigator-lists-both-canvases",
+		 QString("%1 sections, vertical canvas '%2'")
+			 .arg(nav->tree()->topLevelItemCount())
+			 .arg(vc ? obs_canvas_get_name(vc) : "none"));
+
+	/* Search keeps the canvas of what matches; the 9:16 filter keeps portrait canvases. */
+	nav->search()->setText("nav vertical");
+	QApplication::processEvents();
+	const bool searchOk = nav->rowOf(vertUuid) && !nav->rowOf(mainUuid) && nav->tree()->topLevelItemCount() == 1;
+	nav->search()->clear();
+	nav->filter()->button(2)->click();
+	QApplication::processEvents();
+	const bool portraitOk = nav->rowOf(vertUuid) && !nav->rowOf(mainUuid);
+	nav->filter()->button(1)->click();
+	QApplication::processEvents();
+	const bool landscapeOk = !nav->rowOf(vertUuid) && nav->rowOf(mainUuid);
+	nav->filter()->button(0)->click();
+	QApplication::processEvents();
+	R->check(searchOk && portraitOk && landscapeOk, "navigator-search-and-ratio-filter",
+		 QString("search %1 9:16 %2 16:9 %3").arg(searchOk).arg(portraitOk).arg(landscapeOk));
+
+	/* A click on the vertical scene edits it; nothing changes on air. */
+	OBSSource programBefore = live::programOf(nullptr);
+	OBSSourceAutoRelease currentBefore = obs_frontend_get_current_scene();
+	vertRow = nav->rowOf(vertUuid);
+	if (vertRow)
+		emit nav->tree()->itemClicked(vertRow, 0);
+	QApplication::processEvents();
+	OBSSourceAutoRelease currentAfter = obs_frontend_get_current_scene();
+	R->check(vertRow && ctx.sceneUuid() == vertUuid && !ctx.following() && ctx.canvasHeight() == 1920 &&
+			 live::programOf(nullptr).Get() == programBefore.Get() &&
+			 currentAfter.Get() == currentBefore.Get(),
+		 "navigator-edits-vertical-scene-off-air", ctx.sceneName());
+	R->check(g_dock->breadcrumb()->toolTip().startsWith("9:16"), "breadcrumb-vertical",
+		 g_dock->breadcrumb()->toolTip());
+	R->check(!g_dock->liveChip()->isVisibleTo(g_dock), "no-chip-off-air");
+
+	/* "+": a new scene in the canvas of the edited scene. */
+	const QString made = nav->newScene();
+	obs_scene_t *madeScene = vc ? obs_canvas_get_scene_by_name(vc, made.toUtf8().constData()) : nullptr;
+	R->check(madeScene && ctx.sceneName() == made, "navigator-new-scene-in-canvas", made);
+	if (madeScene) {
+		obs_source_remove(obs_scene_get_source(madeScene));
+		obs_scene_release(madeScene);
+	}
+	/* Pin on: back to OBS's scene; a click on a scene turns it off. */
+	g_dock->followPin()->click();
+	QApplication::processEvents();
+	const bool followOn = ctx.following() && g_dock->followPin()->isChecked();
+	mainRow = nav->rowOf(mainUuid);
+	if (mainRow)
+		emit nav->tree()->itemClicked(mainRow, 0);
+	QApplication::processEvents();
+	R->check(followOn && ctx.sceneUuid() == mainUuid && !ctx.following() && !g_dock->followPin()->isChecked(),
+		 "pin-follow-and-click-turns-it-off");
+	if (const char *grab = getenv("LAYOUTS_SELFTEST_GRAB")) {
+		/* Development aid: the editor on a vertical scene, for a visual check. */
+		g_window->setGeometry(0, 60, 1400, 820);
+		if (vertRow)
+			ctx.pin(g_navVert);
+		QApplication::processEvents();
+		g_window->grab().save(QString::fromUtf8(grab) + "-editor.png");
+	}
+	ctx.follow();
+}
+
+void cleanupNavigator()
+{
+	EditContext::instance().follow();
+	if (g_navMain)
+		obs_source_remove(g_navMain);
+	if (g_navVert)
+		obs_source_remove(g_navVert);
+	g_navMain = nullptr;
+	g_navVert = nullptr;
+}
+
+int itemCount(obs_scene_t *scene)
+{
+	int n = 0;
+	if (scene)
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *, obs_sceneitem_t *, void *p) {
+				(*static_cast<int *>(p))++;
+				return true;
+			},
+			&n);
+	return n;
+}
+
+/* Scene Builder: Create in 16:9, 9:16 (Vertical for OBS) and Both; Open in Scene Editor. */
+void testBuilderTargets()
+{
+	EditContext &ctx = EditContext::instance();
+	ctx.follow();
+	OBSSourceAutoRelease a = obs_get_source_by_name("A"), b = obs_get_source_by_name("B");
+	if (!a || !b) {
+		R->check(false, "builder-targets-setup");
+		return;
+	}
+	roles::setRole({a, b}, core::Role::Camera);
+	g_builder->open();
+	ui::BuilderSources *bs = g_builder->builderSources();
+	ui::BuilderPanel *bp = g_builder->builderPanel();
+	bs->refresh();
+	bs->selectNames({"A", "B"});
+	std::vector<OBSSource> made;
+
+	bp->setTarget(ui::BuilderPanel::Target::Landscape);
+	bp->nameField()->setText("Builder Duo");
+	const QString edited = ctx.sceneUuid();
+	const QString n169 = bp->createScene();
+	OBSSourceAutoRelease s169 = obs_get_source_by_uuid(bp->lastCreated().toUtf8().constData());
+	obs_canvas_t *c169 = s169 ? obs_source_get_canvas(s169) : nullptr;
+	obs_canvas_t *mainCanvas = obs_get_main_canvas();
+	R->check(n169 == "Builder Duo" && s169 && c169 == mainCanvas && itemCount(obs_scene_from_source(s169)) == 2 &&
+			 ctx.sceneUuid() == edited,
+		 "builder-create-169", n169);
+	obs_canvas_release(c169);
+	obs_canvas_release(mainCanvas);
+	if (s169)
+		made.emplace_back(s169.Get());
+
+	/* Open in Scene Editor: the editor shows that scene. */
+	g_window->hide();
+	bp->openButton()->click();
+	QApplication::processEvents();
+	R->check(g_window->isVisible() && ctx.sceneUuid() == bp->lastCreated() && !ctx.following(),
+		 "builder-open-in-editor", ctx.sceneName());
+
+	const bool vertical = SceneDirectory::verticalReady();
+	if (!vertical) {
+		R->check(!bp->targetGroup()->button(1)->isEnabled() && !bp->targetGroup()->button(2)->isEnabled(),
+			 "builder-916-needs-vertical");
+	} else {
+		obs_canvas_t *vc = dual::verticalCanvas(false);
+		bp->setTarget(ui::BuilderPanel::Target::Portrait);
+		bp->nameField()->setText("Builder Duo V");
+		const int portraitLayouts = bp->gallery()->count();
+		const QString n916 = bp->createScene();
+		OBSSourceAutoRelease s916 = obs_get_source_by_uuid(bp->lastCreated().toUtf8().constData());
+		obs_canvas_t *c916 = s916 ? obs_source_get_canvas(s916) : nullptr;
+		R->check(s916 && c916 == vc && obs_source_get_height(s916) > obs_source_get_width(s916) &&
+				 itemCount(obs_scene_from_source(s916)) == 2 && portraitLayouts > 0,
+			 "builder-create-916", n916);
+		obs_canvas_release(c916);
+		if (s916)
+			made.emplace_back(s916.Get());
+
+		bp->setTarget(ui::BuilderPanel::Target::Both);
+		bp->nameField()->setText("Builder Both");
+		const QString nBoth = bp->createScene();
+		OBSSourceAutoRelease sBoth = obs_get_source_by_uuid(bp->lastCreated().toUtf8().constData());
+		obs_scene_t *twin = vc ? obs_canvas_get_scene_by_name(vc, dual::twinName(nBoth).toUtf8().constData())
+				       : nullptr;
+		obs_canvas_t *cBoth = sBoth ? obs_source_get_canvas(sBoth) : nullptr;
+		obs_canvas_t *mc = obs_get_main_canvas();
+		if (const char *grab = getenv("LAYOUTS_SELFTEST_GRAB")) {
+			g_builder->setGeometry(0, 60, 1400, 820);
+			QApplication::processEvents();
+			g_builder->grab().save(QString::fromUtf8(grab) + "-builder.png");
+		}
+		R->check(sBoth && cBoth == mc && twin && itemCount(twin) == 2 &&
+				 bp->message()->text().contains(dual::twinName(nBoth)),
+			 "builder-create-both-with-twin", nBoth + " / " + bp->message()->text());
+		obs_canvas_release(cBoth);
+		obs_canvas_release(mc);
+		if (sBoth)
+			made.emplace_back(sBoth.Get());
+		if (twin) {
+			made.emplace_back(obs_scene_get_source(twin));
+			obs_scene_release(twin);
+		}
+		obs_canvas_release(vc);
+		bp->setTarget(ui::BuilderPanel::Target::Landscape);
+	}
+	for (const OBSSource &s : made)
+		obs_source_remove(s);
+	roles::setRole({a, b}, core::Role::None);
+	g_builder->hide();
+	ctx.follow();
+}
+
+/* ---------------------------------------------------------------- 0.7: on air */
+
+/* Local RTMP listeners (ffmpeg) started by the test runner; skipped without them. */
+constexpr int kMainRtmpPort = 19350;
+constexpr int kVerticalRtmpPort = 19351;
+
+OBSService localService(int port)
+{
+	OBSDataAutoRelease ss = obs_data_create();
+	obs_data_set_string(ss, "server", QString("rtmp://127.0.0.1:%1/live").arg(port).toUtf8().constData());
+	obs_data_set_string(ss, "key", "test");
+	OBSServiceAutoRelease svc = obs_service_create("rtmp_custom", "Layouts Test Service", ss, nullptr);
+	return OBSService(svc.Get());
+}
+
+OBSSource g_liveScene;
+
+void liveProgramCheck()
+{
+	EditContext &ctx = EditContext::instance();
+	OBSSource program = live::programOf(nullptr);
+	g_liveScene = program;
+	ctx.pin(program);
+	obs_log(LOG_INFO, "[selftest] INFO program=%s studio=%d edited=%s", obs_source_get_name(program),
+		obs_frontend_preview_program_mode_active(), ctx.sceneName().toUtf8().constData());
+	R->check(ctx.liveState() == LiveState::Program && !g_dock->liveChip()->isVisibleTo(g_dock),
+		 "live-program-no-chip", QString::number((int)ctx.liveState()));
+	obs_frontend_recording_start();
+}
+
+void liveRecordingCheck()
+{
+	EditContext &ctx = EditContext::instance();
+	obs_log(LOG_INFO, "[selftest] INFO recording=%d", obs_frontend_recording_active());
+	Store::instance().settings().blockOnAir = true;
+	selectNames({"Clean BG"});
+	const core::Rect before = box("Clean BG");
+	const bool applied = commands::nudge(10, 0);
+	ctx.markDirty();
+	R->check(applied && box("Clean BG").x == before.x + 10 && obs_frontend_recording_active() &&
+			 ctx.liveState() == LiveState::Program && !g_dock->liveChip()->isVisibleTo(g_dock) && applied,
+		 "live-recording-is-not-on-air", QString::number((int)ctx.liveState()));
+	if (applied)
+		commands::nudge(-10, 0);
+	Store::instance().settings().blockOnAir = false;
+	obs_frontend_recording_stop();
+	OBSService svc = localService(kMainRtmpPort);
+	obs_frontend_set_streaming_service(svc);
+	obs_frontend_streaming_start();
+}
+
+void liveStreamCheck()
+{
+	EditContext &ctx = EditContext::instance();
+	if (!obs_frontend_streaming_active()) {
+		obs_log(LOG_INFO, "[selftest] INFO no local RTMP listener: streaming checks skipped");
+		return;
+	}
+	QApplication::processEvents();
+	R->check(ctx.liveState() == LiveState::OnAir && g_dock->liveChip()->isVisibleTo(g_dock),
+		 "live-stream-shows-chip", QString::number((int)ctx.liveState()));
+	Store::instance().settings().blockOnAir = true;
+	selectNames({"Clean BG"});
+	const core::Rect before = box("Clean BG");
+	const bool applied = commands::nudge(10, 0);
+	ctx.markDirty();
+	R->check(!applied && box("Clean BG") == before, "live-block-refuses", rectStr(box("Clean BG")));
+	Store::instance().settings().blockOnAir = false;
+	const bool applied2 = commands::nudge(10, 0);
+	ctx.markDirty();
+	R->check(applied2 && box("Clean BG").x == before.x + 10, "live-allow-edits", rectStr(box("Clean BG")));
+	commands::nudge(-10, 0);
+	/* Another scene than the program is not on air, even while streaming. */
+	obs_scene_t *other = obs_scene_create("Live Other");
+	ctx.pin(obs_scene_get_source(other));
+	R->check(ctx.liveState() == LiveState::Off, "live-other-scene-not-on-air");
+	obs_source_remove(obs_scene_get_source(other));
+	obs_scene_release(other);
+	ctx.pin(g_liveScene);
+	obs_frontend_streaming_stop();
+}
+
+void liveStreamStoppedCheck()
+{
+	EditContext &ctx = EditContext::instance();
+	QApplication::processEvents();
+	R->check(!obs_frontend_streaming_active() && ctx.liveState() != LiveState::OnAir &&
+			 !g_dock->liveChip()->isVisibleTo(g_dock),
+		 "live-chip-gone-after-stream");
+}
+
+/* Vertical canvas: on air only while a stream of that canvas runs. */
+OBSOutputAutoRelease g_vOut;
+OBSEncoderAutoRelease g_vVenc, g_vAenc;
+OBSService g_vService;
+OBSSource g_vScene;
+
+void liveVerticalStart()
+{
+	EditContext &ctx = EditContext::instance();
+	obs_canvas_t *vc = portraitCanvas();
+	video_t *video = vc ? obs_canvas_get_video(vc) : nullptr;
+	if (!vc || !video) {
+		obs_log(LOG_INFO, "[selftest] INFO no vertical canvas video: vertical live checks skipped");
+		return;
+	}
+	obs_scene_t *s = obs_canvas_scene_create(vc, "Live Vertical");
+	addColor(s, "LV1", 300, 300, 0xFF80FF80, 0, 0);
+	g_vScene = obs_scene_get_source(s);
+	obs_scene_release(s);
+	obs_canvas_set_channel(vc, 0, g_vScene);
+	ctx.pin(g_vScene);
+	R->check(ctx.liveState() == LiveState::Program && !g_dock->liveChip()->isVisibleTo(g_dock),
+		 "live-vertical-program-no-chip", QString::number((int)ctx.liveState()));
+
+	OBSDataAutoRelease vs = obs_data_create();
+	obs_data_set_int(vs, "bitrate", 1000);
+	g_vVenc = obs_video_encoder_create("obs_x264", "Layouts Test V", vs, nullptr);
+	g_vAenc = obs_audio_encoder_create("ffmpeg_aac", "Layouts Test A", nullptr, 0, nullptr);
+	g_vOut = obs_output_create("rtmp_output", "Layouts Test Vertical Stream", nullptr, nullptr);
+	g_vService = localService(kVerticalRtmpPort);
+	if (!g_vVenc || !g_vAenc || !g_vOut) {
+		obs_log(LOG_INFO, "[selftest] INFO encoders or rtmp output missing: skipped");
+		return;
+	}
+	obs_encoder_set_video(g_vVenc, video);
+	obs_encoder_set_audio(g_vAenc, obs_get_audio());
+	obs_output_set_video_encoder(g_vOut, g_vVenc);
+	obs_output_set_audio_encoder(g_vOut, g_vAenc, 0);
+	obs_output_set_service(g_vOut, g_vService);
+	obs_output_start(g_vOut);
+}
+
+void liveVerticalCheck()
+{
+	EditContext &ctx = EditContext::instance();
+	if (!g_vOut || !obs_output_active(g_vOut)) {
+		obs_log(LOG_INFO, "[selftest] INFO vertical stream not active: skipped");
+		return;
+	}
+	QApplication::processEvents();
+	R->check(ctx.liveState() == LiveState::OnAir && g_dock->liveChip()->isVisibleTo(g_dock),
+		 "live-vertical-stream-shows-chip", QString::number((int)ctx.liveState()));
+	/* The main program is not seen: only the vertical canvas is streamed. */
+	ctx.pin(live::programOf(nullptr));
+	R->check(ctx.liveState() == LiveState::Program, "live-main-not-on-air-with-vertical-stream",
+		 QString::number((int)ctx.liveState()));
+	ctx.pin(g_vScene);
+	obs_output_stop(g_vOut);
+}
+
+void liveVerticalCleanup()
+{
+	EditContext &ctx = EditContext::instance();
+	if (g_vOut)
+		R->check(!obs_output_active(g_vOut) && ctx.liveState() != LiveState::OnAir &&
+				 !g_dock->liveChip()->isVisibleTo(g_dock),
+			 "live-vertical-chip-gone-after-stream");
+	if (g_navCanvas)
+		obs_canvas_set_channel(g_navCanvas, 0, nullptr);
+	ctx.follow();
+	g_vOut = nullptr;
+	g_vVenc = nullptr;
+	g_vAenc = nullptr;
+	g_vService = nullptr;
+	if (g_vScene)
+		obs_source_remove(g_vScene);
+	g_vScene = nullptr;
+	g_liveScene = nullptr;
+}
+
+/* ---------------------------------------------------------------- 0.7: Stacks */
+
+/* With Stacks for OBS loaded and the collection "Layouts Stacks Test" (a stack "Plateau"
+ * holding the favorite scene "Duo"): the navigator shows the stack, the favorites
+ * filter, and the Builder files a new scene into the stack. */
+void stacksSwitch()
+{
+	std::string json;
+	if (!SceneDirectory::stacksOrganization(json)) {
+		obs_log(LOG_INFO, "[selftest] INFO Stacks for OBS not loaded: skipped");
+		return;
+	}
+	/* Earlier groups keep scenes alive for their checks: drop them before switching. */
+	if (R->onDone)
+		R->onDone();
+	releasePortraitCanvas();
+	EditContext::instance().follow();
+	obs_frontend_set_current_scene_collection("Layouts Stacks Test");
+}
+
+void stacksCheck()
+{
+	std::string json;
+	if (!SceneDirectory::stacksOrganization(json))
+		return;
+	SceneDirectory &dir = SceneDirectory::instance();
+	ui::ScenesNavigator *nav = g_window->layers()->scenes();
+	nav->refresh();
+	OBSSourceAutoRelease duo = obs_get_source_by_name("Duo");
+	const QString duoUuid = duo ? QString::fromUtf8(obs_source_get_uuid(duo)) : QString();
+	QTreeWidgetItem *row = nav->rowOf(duoUuid);
+	R->check(dir.stacksPresent() && row && row->parent() && row->parent()->text(0) == "Plateau",
+		 "navigator-shows-stacks", QString::fromStdString(json.substr(0, 160)));
+	nav->filter()->button(3)->click();
+	QApplication::processEvents();
+	OBSSourceAutoRelease opening = obs_get_source_by_name("Opening");
+	const bool favOk = nav->rowOf(duoUuid) &&
+			   (!opening || !nav->rowOf(QString::fromUtf8(obs_source_get_uuid(opening))));
+	nav->filter()->button(0)->click();
+	R->check(favOk, "navigator-favorites-from-stacks");
+
+	/* Builder: Put in stack. */
+	EditContext::instance().follow();
+	obs_scene_t *src = EditContext::instance().scene();
+	if (!src) {
+		R->check(false, "stacks-builder-setup");
+		return;
+	}
+	obs_sceneitem_t *ca = addColor(src, "Stacks Cam A", 1280, 720, 0xFF4040FF, 0, 0);
+	obs_sceneitem_t *cb = addColor(src, "Stacks Cam B", 1280, 720, 0xFF40FF40, 0, 0);
+	roles::setRole({obs_sceneitem_get_source(ca), obs_sceneitem_get_source(cb)}, core::Role::Camera);
+	g_builder->open();
+	ui::BuilderPanel *bp = g_builder->builderPanel();
+	g_builder->builderSources()->refresh();
+	g_builder->builderSources()->selectNames({"Stacks Cam A", "Stacks Cam B"});
+	bp->setTarget(ui::BuilderPanel::Target::Landscape);
+	const int idx = bp->stackField()->findData("Plateau");
+	R->check(bp->stackRow()->isVisibleTo(bp) && idx > 0, "builder-stack-field-lists-stacks",
+		 QString::number(bp->stackField()->count()));
+	bp->stackField()->setCurrentIndex(std::max(0, idx));
+	bp->nameField()->setText("Stacks Duo");
+	bp->createScene();
+	const std::string uuid = bp->lastCreated().toStdString();
+	dir.refreshNow();
+	bool inStack = false;
+	for (const core::nav::Node *n : dir.locate(uuid))
+		inStack = inStack || (n->kind == core::nav::Node::Kind::Stack && n->name == "Plateau");
+	R->check(!uuid.empty() && inStack, "builder-put-in-stack");
+	if (const char *grab = getenv("LAYOUTS_SELFTEST_GRAB")) {
+		EditContext::instance().pin(OBSSourceAutoRelease(obs_get_source_by_uuid(uuid.c_str())));
+		g_window->setGeometry(0, 60, 1400, 820);
+		g_window->open();
+		QApplication::processEvents();
+		g_window->grab().save(QString::fromUtf8(grab) + "-stacks.png");
+	}
+	OBSSourceAutoRelease made = obs_get_source_by_uuid(uuid.c_str());
+	if (made)
+		obs_source_remove(made);
+	roles::setRole({obs_sceneitem_get_source(ca), obs_sceneitem_get_source(cb)}, core::Role::None);
+	obs_sceneitem_remove(ca);
+	obs_sceneitem_remove(cb);
+	g_builder->hide();
+}
+
 } // namespace
 
 static bool enabled(const char *group)
@@ -2410,7 +2964,7 @@ static bool enabled(const char *group)
 	return QString::fromUtf8(only).split(',').contains(QString::fromUtf8(group));
 }
 
-void runSelfTest(ui::LayoutsWindow *window)
+void runSelfTest(ui::EditorWindow *window, ui::BuilderWindow *builder)
 {
 	static Runner runner;
 	R = &runner;
@@ -2432,6 +2986,7 @@ void runSelfTest(ui::LayoutsWindow *window)
 		g_beforeRegie = nullptr;
 	};
 	g_window = window;
+	g_builder = builder;
 	g_dock = window->canvas();
 	obs_log(LOG_INFO, "[selftest] START");
 	if (!getenv("LAYOUTS_SELFTEST_HIDDEN"))
@@ -2493,14 +3048,15 @@ void runSelfTest(ui::LayoutsWindow *window)
 				const QString base = QString::fromUtf8(grab);
 				QTimer::singleShot(1500, [base] {
 					g_window->grab().save(base + "-scene.png");
-					g_window->setMode(ui::LayoutsWindow::Mode::Builder);
-					g_window->builderSources()->selectNames({"BG _ DYNAMIQUE", "CAM _ VALENTIN",
-										 "CAM _ GUEST 1", "SCREEN _ RIGHT"});
+					g_builder->setGeometry(0, 120, 1400, 820);
+					g_builder->open();
+					g_builder->builderSources()->selectNames({"BG _ DYNAMIQUE", "CAM _ VALENTIN",
+										  "CAM _ GUEST 1", "SCREEN _ RIGHT"});
 				});
 				QTimer::singleShot(3000, [base] {
-					g_window->grab().save(base + "-builder.png");
+					g_builder->grab().save(base + "-builder.png");
+					g_builder->hide();
 					g_window->layers()->filter()->select(false, core::Role::Camera);
-					g_window->setMode(ui::LayoutsWindow::Mode::Scene);
 				});
 				QTimer::singleShot(4500, [base] { g_window->grab().save(base + "-filter.png"); });
 				return;
@@ -2608,6 +3164,12 @@ void runSelfTest(ui::LayoutsWindow *window)
 			g_window->showNormal();
 		});
 	}
+	if (enabled("split")) {
+		R->add(300, [] { testTwoWindows(); });
+		R->add(500, [] { testNavigatorCanvases(); });
+		R->add(500, [] { testBuilderTargets(); });
+		R->add(300, [] { cleanupNavigator(); });
+	}
 	if (enabled("collections")) {
 		R->add(200, [] { testGuidesSaved(); });
 		R->add(500, [] { switchAway(); });
@@ -2657,7 +3219,15 @@ void runSelfTest(ui::LayoutsWindow *window)
 			obs_frontend_set_preview_program_mode(false);
 		});
 		R->add(800, [] { liveProgramCheck(); });
-		R->add(2500, [] { liveOnAirCheck(); });
+		R->add(2500, [] { liveRecordingCheck(); });
+		R->add(5000, [] { liveStreamCheck(); });
+		R->add(3000, [] { liveStreamStoppedCheck(); });
+		R->add(300, [] { liveVerticalStart(); });
+		R->add(5000, [] { liveVerticalCheck(); });
+		R->add(3000, [] {
+			liveVerticalCleanup();
+			obs_frontend_set_preview_program_mode(true);
+		});
 	}
 	if (enabled("rawcanvas")) {
 		/* Same libobs calls as the canvas test, without Layouts (leak attribution). */
@@ -2683,12 +3253,17 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(800, [] { constraintsReset(); });
 		R->add(1000, [] { constraintsCheck(); });
 	}
+	if (enabled("stacks")) {
+		R->add(300, [] { stacksSwitch(); });
+		R->add(3000, [] { stacksCheck(); });
+	}
 	if (enabled("perf")) {
 		for (int n : {10, 50, 100, 250})
 			addPerfSteps(n);
 	}
 	R->add(100, [] {
 		/* Release test refs while libobs is alive. */
+		releasePortraitCanvas();
 		EditContext::instance().follow();
 		g_cleanScene = nullptr;
 		g_perfScene = nullptr;

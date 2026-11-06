@@ -19,7 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "layers-panel.hpp"
 
 #include "role-ui.hpp"
-#include "scenes-list.hpp"
+#include "scenes-navigator.hpp"
 #include "theme.hpp"
 #include "widgets.hpp"
 
@@ -276,11 +276,9 @@ LayersPanel::LayersPanel(QWidget *parent) : QWidget(parent)
 
 	auto *top = new QWidget(split);
 	auto *tv = new QVBoxLayout(top);
-	tv->setContentsMargins(tokens::kPanelMargin, tokens::kPanelMargin, 0, 0);
+	tv->setContentsMargins(tokens::kPanelMargin, tokens::kPanelMargin, 0, tokens::kRowSpacing);
 	tv->setSpacing(tokens::kRowSpacing);
-	tv->addWidget(sectionTitle(T("Scenes.Title"), top));
-	scenes_ = new ScenesList(top);
-	scenes_->setMinimumHeight(60);
+	scenes_ = new ScenesNavigator(top);
 	tv->addWidget(scenes_, 1);
 
 	auto *body = new QWidget(split);
@@ -291,7 +289,7 @@ LayersPanel::LayersPanel(QWidget *parent) : QWidget(parent)
 	split->addWidget(body);
 	split->setStretchFactor(0, 0);
 	split->setStretchFactor(1, 1);
-	split->setSizes({170, 600});
+	split->setSizes({380, 180}); /* as in the validated mock */
 
 	v->addWidget(sectionTitle(T("Layers.Title"), this));
 	filter_ = new RoleFilterBar(this);

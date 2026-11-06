@@ -24,94 +24,48 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "inspector-dock.hpp"
 #include "layers-panel.hpp"
 #include "theme.hpp"
-#include "widgets.hpp"
 
 #include "obs/store.hpp"
 
 #include <QCloseEvent>
 #include <QHBoxLayout>
 #include <QScreen>
-#include <QAbstractButton>
-#include <QButtonGroup>
 #include <QSplitter>
-#include <QStackedWidget>
-#include <QVBoxLayout>
+
+#include <algorithm>
 
 namespace layouts::ui {
 
-LayoutsWindow::LayoutsWindow(QWidget *obsMainWindow) : QWidget(obsMainWindow, Qt::Window), obsMain_(obsMainWindow)
-{
-	setObjectName("LayoutsWindow");
-	setWindowTitle(T("Window.Title"));
-	setMinimumSize(640, 400);
+/* ---- ToolWindow ---- */
 
+ToolWindow::ToolWindow(QWidget *obsMainWindow, QByteArray *geometry, QByteArray *splitter)
+	: QWidget(obsMainWindow, Qt::Window),
+	  obsMain_(obsMainWindow),
+	  geometry_(geometry),
+	  splitterState_(splitter)
+{
+	setMinimumSize(640, 400);
 	auto *lay = new QHBoxLayout(this);
 	lay->setContentsMargins(0, 0, 0, 0);
 	split_ = new QSplitter(Qt::Horizontal, this);
 	split_->setChildrenCollapsible(false);
-	/* Left: the mode switch above Layers (Scene) or the collection's sources (Builder). */
-	auto *left = new QWidget(split_);
-	left->setMinimumWidth(160);
-	auto *lv = new QVBoxLayout(left);
-	lv->setContentsMargins(0, 0, 0, 0);
-	lv->setSpacing(0);
-	auto *switchRow = new QWidget(left);
-	switchRow->setObjectName("LayoutsModeSwitch");
-	modeSwitch_ = segmented({T("Mode.Scene"), T("Mode.Builder")}, switchRow);
-	switchRow->layout()->setContentsMargins(tokens::kPanelMargin, tokens::kPanelMargin, 0, 0);
-	modeSwitch_->button(0)->setToolTip(T("Mode.SceneTooltip"));
-	modeSwitch_->button(1)->setToolTip(T("Mode.BuilderTooltip"));
-	lv->addWidget(switchRow);
-	leftStack_ = new QStackedWidget(left);
-	layers_ = new LayersPanel(leftStack_);
-	builderSources_ = new BuilderSources(leftStack_);
-	leftStack_->addWidget(layers_);
-	leftStack_->addWidget(builderSources_);
-	lv->addWidget(leftStack_, 1);
+	lay->addWidget(split_);
+}
 
-	canvas_ = new CanvasDock(split_);
-
-	rightStack_ = new QStackedWidget(split_);
-	rightStack_->setMinimumWidth(260);
-	inspector_ = new InspectorDock(rightStack_);
-	builderPanel_ = new BuilderPanel(builderSources_, rightStack_);
-	rightStack_->addWidget(inspector_);
-	rightStack_->addWidget(builderPanel_);
-
-	split_->addWidget(left);
-	split_->addWidget(canvas_);
-	split_->addWidget(rightStack_);
-	connect(modeSwitch_, &QButtonGroup::idClicked, this,
-		[this](int id) { setMode(id ? Mode::Builder : Mode::Scene); });
-	setMode(Mode::Scene);
+void ToolWindow::restoreSplitter(const QList<int> &defaults)
+{
 	split_->setStretchFactor(0, 0);
 	split_->setStretchFactor(1, 1);
 	split_->setStretchFactor(2, 0);
-	lay->addWidget(split_);
-
-	const ViewSettings &s = Store::instance().settings();
-	if (!s.splitterState.isEmpty())
-		split_->restoreState(s.splitterState);
-	else
-		split_->setSizes({tokens::kLayersWidth, 900, tokens::kInspectorWidth});
+	if (splitterState_->isEmpty() || !split_->restoreState(*splitterState_))
+		split_->setSizes(defaults);
 }
 
-void LayoutsWindow::setMode(Mode m)
-{
-	mode_ = m;
-	const int i = m == Mode::Builder ? 1 : 0;
-	modeSwitch_->button(i)->setChecked(true);
-	leftStack_->setCurrentIndex(i);
-	rightStack_->setCurrentIndex(i);
-	setWindowTitle(m == Mode::Builder ? T("Window.BuilderTitle") : T("Window.Title"));
-}
-
-void LayoutsWindow::open()
+void ToolWindow::open()
 {
 	if (!placed_) {
 		placed_ = true;
-		const ViewSettings &s = Store::instance().settings();
-		if (s.windowGeometry.isEmpty() || !restoreGeometry(s.windowGeometry)) {
+		if (geometry_->isEmpty() || !restoreGeometry(*geometry_)) {
 			/* A comfortable size, centered on OBS, never larger than its screen. */
 			QScreen *screen = obsMain_ ? obsMain_->screen() : this->screen();
 			const QRect avail = screen ? screen->availableGeometry() : QRect(0, 0, 1440, 900);
@@ -130,28 +84,74 @@ void LayoutsWindow::open()
 		show();
 	raise();
 	activateWindow();
-	canvas_->view()->setFocus();
 }
 
-void LayoutsWindow::saveState()
+void ToolWindow::saveState()
 {
-	ViewSettings &s = Store::instance().settings();
-	s.windowGeometry = saveGeometry();
-	s.splitterState = split_->saveState();
+	*geometry_ = saveGeometry();
+	*splitterState_ = split_->saveState();
 	Store::instance().saveSettings();
 }
 
-void LayoutsWindow::closeEvent(QCloseEvent *e)
+void ToolWindow::closeEvent(QCloseEvent *e)
 {
 	saveState();
 	e->accept(); /* hides the window; it is never deleted while OBS runs */
 }
 
-void LayoutsWindow::hideEvent(QHideEvent *e)
+void ToolWindow::hideEvent(QHideEvent *e)
 {
 	if (placed_)
 		saveState();
 	QWidget::hideEvent(e);
+}
+
+/* ---- Scene Editor ---- */
+
+EditorWindow::EditorWindow(QWidget *obsMainWindow)
+	: ToolWindow(obsMainWindow, &Store::instance().settings().windowGeometry,
+		     &Store::instance().settings().splitterState)
+{
+	setObjectName("LayoutsWindow");
+	setWindowTitle(T("Window.Title"));
+
+	/* Left: Scenes navigator above Layers. */
+	layers_ = new LayersPanel(split_);
+	layers_->setMinimumWidth(160);
+	canvas_ = new CanvasDock(split_);
+	inspector_ = new InspectorDock(split_);
+	inspector_->setMinimumWidth(260);
+	split_->addWidget(layers_);
+	split_->addWidget(canvas_);
+	split_->addWidget(inspector_);
+	restoreSplitter({tokens::kLayersWidth, 900, tokens::kInspectorWidth});
+	connect(canvas_, &CanvasDock::openBuilderRequested, this, &EditorWindow::openBuilderRequested);
+}
+
+void EditorWindow::open()
+{
+	ToolWindow::open();
+	canvas_->view()->setFocus();
+}
+
+/* ---- Scene Builder ---- */
+
+BuilderWindow::BuilderWindow(QWidget *obsMainWindow)
+	: ToolWindow(obsMainWindow, &Store::instance().settings().builderGeometry,
+		     &Store::instance().settings().builderSplitterState)
+{
+	setObjectName("LayoutsBuilderWindow");
+	setWindowTitle(T("Window.BuilderTitle"));
+
+	sources_ = new BuilderSources(split_);
+	sources_->setMinimumWidth(180);
+	panel_ = new BuilderPanel(sources_, split_);
+	panel_->setMinimumWidth(240);
+	split_->addWidget(sources_);
+	split_->addWidget(panel_->galleryColumn());
+	split_->addWidget(panel_);
+	restoreSplitter({tokens::kBuilderSourcesWidth, 700, tokens::kBuilderCreateWidth});
+	connect(panel_, &BuilderPanel::openInEditor, this, &BuilderWindow::openInEditor);
 }
 
 } // namespace layouts::ui

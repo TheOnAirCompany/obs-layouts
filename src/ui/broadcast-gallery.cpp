@@ -140,9 +140,9 @@ void drawSlot(QPainter &p, const core::Slot &s, const ThumbColors &c, double k)
 	p.restore();
 }
 
-QIcon broadcastThumb(const std::string &key, const ThumbColors &c, double aspect, bool mirrorH, bool mirrorV)
+QIcon broadcastThumb(const std::string &key, const ThumbColors &c, double aspect, bool mirrorH, bool mirrorV,
+		     const QSize &size = QSize(112, 63))
 {
-	const QSize size(112, 63);
 	/* The canvas shape inside the thumbnail box (portrait canvases stay portrait). */
 	const double bw = std::min<double>(size.width(), size.height() * aspect);
 	const double bh = bw / aspect;
@@ -187,6 +187,43 @@ int mirrorBits()
 }
 
 } // namespace
+
+void paintLayoutPreview(QPainter &p, const std::vector<core::Slot> &tiles, const std::vector<QColor> &fills,
+			const std::vector<QString> &names, const QFont &font)
+{
+	p.save();
+	p.setRenderHint(QPainter::Antialiasing);
+	p.setPen(Qt::NoPen);
+	for (size_t i = 0; i < tiles.size(); i++) {
+		const core::Slot &s = tiles[i];
+		const QRectF cell(s.cell.x, s.cell.y, s.cell.w, s.cell.h);
+		p.save();
+		if (s.rotation != 0) {
+			p.translate(cell.center());
+			p.rotate(s.rotation);
+			p.translate(-cell.center());
+		}
+		QPainterPath path;
+		if (s.shape == core::SlotShape::Rect) {
+			path.addRoundedRect(cell.adjusted(0.5, 0.5, -0.5, -0.5), tokens::kPreviewTileRadius,
+					    tokens::kPreviewTileRadius);
+		} else {
+			path = slotPath(s, cell.adjusted(0.5, 0.5, -0.5, -0.5));
+		}
+		p.setBrush(i < fills.size() ? fills[i] : QColor::fromRgba(tokens::kThumbCamera));
+		p.drawPath(path);
+		if (i < names.size() && !names[i].isEmpty()) {
+			p.setFont(font);
+			p.setPen(QColor::fromRgba(tokens::kRolePillText));
+			const QFontMetrics fm(font);
+			const QRectF tr = cell.adjusted(4, 2, -4, -2);
+			p.drawText(tr, Qt::AlignCenter, fm.elidedText(names[i], Qt::ElideRight, (int)tr.width()));
+			p.setPen(Qt::NoPen);
+		}
+		p.restore();
+	}
+	p.restore();
+}
 
 /* Exported for the Switcher dock: the gallery colors, the stored mirror. */
 QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor &screen, const QColor &bg,
@@ -288,7 +325,7 @@ void BroadcastGallery::renderThumbs()
 	renderedMirror_ = mirrorBits();
 	for (int i = 0; i < count(); i++)
 		item(i)->setIcon(broadcastThumb(item(i)->data(Qt::UserRole).toString().toStdString(), colors, aspect,
-						mirrorH(), mirrorV()));
+						mirrorH(), mirrorV(), iconSize()));
 }
 
 void BroadcastGallery::setTemplates(const QStringList &keys, double aspect)
@@ -332,8 +369,22 @@ QString BroadcastGallery::currentLabel() const
 	return currentItem() ? currentItem()->text() : QString();
 }
 
+void BroadcastGallery::setLarge(const QSize &thumb, int gap)
+{
+	fit_ = false;
+	setIconSize(thumb);
+	setGridSize(QSize(thumb.width() + gap, thumb.height() + gap + fontMetrics().height() * 2));
+	setSpacing(gap / 2);
+	setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+	setMinimumHeight(0);
+	setMaximumHeight(QWIDGETSIZE_MAX);
+	renderThumbs();
+}
+
 void BroadcastGallery::fitRows()
 {
+	if (!fit_)
+		return;
 	const QSize cell = gridSize();
 	const int cols = std::max(1, viewport()->width() / std::max(1, cell.width()));
 	const int rows = std::max(1, (count() + cols - 1) / cols);

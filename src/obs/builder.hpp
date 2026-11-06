@@ -43,6 +43,11 @@ struct Options {
 	bool background = true; /* the background in every scene */
 	bool graphics = true;   /* the graphics in every scene */
 	bool lock = true;
+	/* Canvas the scenes are made in (borrowed); null: the canvas of the edited scene. */
+	obs_canvas_t *canvas = nullptr;
+	/* Also make the 9:16 twin of each scene in the vertical canvas and link it in
+	 * Vertical for OBS (target "Both", 0.7). */
+	bool twin = false;
 };
 
 struct SceneSpec {
@@ -73,7 +78,12 @@ Plan plan(const std::vector<OBSSource> &sources, const Options &options, const T
  * among them go at the back and on top). */
 Plan single(const std::vector<OBSSource> &sources, const std::string &key, const QString &name);
 
-/* Creates the planned scenes in the canvas of the edited scene. Returns the names. */
-std::vector<QString> create(const Plan &plan, const Options &options);
+/* Creates the planned scenes in options.canvas (default: the canvas of the edited
+ * scene). Returns the names (of the 16:9 scenes when twins are made too) and, if asked,
+ * their uuids (scenes of other canvases are not found by name). */
+std::vector<QString> create(const Plan &plan, const Options &options, std::vector<std::string> *uuids = nullptr);
+
+/* Size of a canvas (null: the canvas of the edited scene). */
+core::Rect canvasRect(obs_canvas_t *canvas);
 
 } // namespace layouts::builder
