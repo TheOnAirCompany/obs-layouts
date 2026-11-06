@@ -38,7 +38,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *     An item that OBS renders through its own texture (crop, bounds crop, a non-default
  *     scale filter, sRGB-off blending) is clipped to its visible part: its shadow is drawn
  *     in the scene instead, just before the item (drawShadowInScene). Items inside a group
- *     keep no shadow in that case.
+ *     keep no shadow in that case, and a second view of the same scene in the same frame
+ *     (projector, multiview) reuses the item texture without calling its filters: no
+ *     shadow there; the program output (first render of the frame) has it.
  *
  * The border is an inner stroke drawn over the item as a second quad (no texture either),
  * so the chain never goes through an extra texture: the corners filter keeps seeing the
