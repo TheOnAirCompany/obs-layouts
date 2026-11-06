@@ -502,10 +502,10 @@ void shadowValues(const core::Style &s, double &blur, double &x, double &y, doub
 		opacity = 0;
 		break;
 	case core::ShadowPreset::Soft:
-		blur = 24;
+		blur = 16;
 		x = 0;
-		y = 8;
-		opacity = 0.35;
+		y = 6;
+		opacity = 0.25;
 		break;
 	case core::ShadowPreset::Hard:
 		blur = 6;

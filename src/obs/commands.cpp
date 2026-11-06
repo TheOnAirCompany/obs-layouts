@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "commands.hpp"
+#include "item-style.hpp"
 #include "core/broadcast-screens.hpp"
 
 #include "edit-context.hpp"
@@ -664,6 +665,7 @@ void applySlotStyle(obs_sceneitem_t *item, const core::Slot &slot)
 			obs_data_set_string(priv, kStyleKey, core::toJson(style).c_str());
 		obs_data_erase(priv, kSlotStyleKey);
 	}
+	itemstyle::render(item);
 }
 
 void stackInSlotOrder(const std::vector<obs_sceneitem_t *> &backToFront)
@@ -1088,6 +1090,9 @@ void applyBoth(obs_sceneitem_t *a, obs_data_t *pa, obs_sceneitem_t *b, obs_data_
 		applySlotProps(b, pb);
 		applySlotProps(a, pa);
 	}
+	/* The slot styles moved: redraw both (corners, border, shadow are per source). */
+	itemstyle::render(a);
+	itemstyle::render(b);
 }
 
 /* Undo / redo data: transform states, then the slot properties each item must get. */

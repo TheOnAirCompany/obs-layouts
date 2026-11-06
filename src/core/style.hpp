@@ -20,8 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 /* Item style (0.5): corners, border and shadow. Defaults live per source type
  * (store, "styles.<role>"), an item may override them (private setting
- * "layouts_style", same JSON as toJson). Values below are provisional until the
- * design review. */
+ * "layouts_style", same JSON as toJson). Values approved on the 0.5 design review. */
 
 #include "geometry.hpp"
 
@@ -41,7 +40,8 @@ struct Style {
 	double borderWidth = 4;
 	uint32_t borderColor = 0xFFFFFFFF; /* ARGB */
 	ShadowPreset shadow = ShadowPreset::None;
-	double shadowBlur = 24, shadowOffsetX = 0, shadowOffsetY = 8, shadowOpacity = 0.35;
+	double shadowBlur = 16, shadowOffsetX = 0, shadowOffsetY = 6,
+	       shadowOpacity = 0.25; /* Custom starts from Soft */
 	uint32_t shadowColor = 0xFF000000;
 	bool fadeShadowInTransition = true;
 	/* Diagonal mask of a Polygon slot: corners in cell-normalized coordinates (0..1,

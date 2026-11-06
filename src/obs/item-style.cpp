@@ -180,7 +180,7 @@ void resetToType(const std::vector<obs_sceneitem_t *> &items)
 void render(obs_sceneitem_t *item)
 {
 	const core::Style s = effective(item);
-	corners::applyItemStyle(item, s, nullptr, false);
+	corners::applyItemStyle(item, s, &s.polygon, false);
 	obs::style::setBorderShadow(item, s, false);
 }
 

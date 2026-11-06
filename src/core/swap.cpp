@@ -36,6 +36,8 @@ std::optional<SlotKind> swapKind(Role role)
 		return SlotKind::Camera;
 	case Role::Screen:
 		return SlotKind::Screen;
+	case Role::Chat:
+		return SlotKind::Chat;
 	default:
 		return std::nullopt;
 	}
