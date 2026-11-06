@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.3.0 — not released yet
+## 0.3.1 — 2026-11-06
+
+- Fixed: the Windows build (float literal). Same features as 0.3.0.
+
+## 0.3.0 — tagged, not released (Windows build failed)
 
 - **Layers panel** on the left of the Layouts window, like a design tool: the sources of the edited
   scene as a tree (front on top, groups unfold), selection in sync with the Canvas and OBS, eye and
