@@ -1914,6 +1914,7 @@ void prepareMoveCorners()
 {
 	EditContext &ctx = EditContext::instance();
 	OBSSourceAutoRelease white = colorSource("Moving", 800, 600, 0xFFFFFFFF);
+	OBSSourceAutoRelease shadowSource = colorSource("Move shadowed", 300, 300, 0xFFFFFFFF);
 	for (auto *slot : {&g_moveA, &g_moveB}) {
 		obs_scene_t *scene = obs_scene_create(slot == &g_moveA ? "Move A" : "Move B");
 		*slot = obs_source_get_ref(obs_scene_get_source(scene));
@@ -1923,17 +1924,41 @@ void prepareMoveCorners()
 		vec2 pos;
 		vec2_set(&pos, 200, 265);
 		obs_sceneitem_set_pos(item, &pos);
+		/* A grey patch and a white square with a hard shadow on it (not cropped). */
+		addColor(scene, slot == &g_moveA ? "Move patch A" : "Move patch B", 600, 500, 0xFF808080, 1150, 200);
+		obs_sceneitem_t *shadowed = obs_scene_add(scene, shadowSource);
+		vec2 sp;
+		vec2_set(&sp, 1300, 300);
+		obs_sceneitem_set_pos(shadowed, &sp);
 		obs_scene_release(scene);
 		ctx.pin(*slot);
 		ctx.markDirty();
 		selectNames({"Moving"});
 		corners::setRadius(core::parseExpression("40", 0));
+		itemstyle::edit({shadowed}, [](core::Style &st) {
+			st.radiusMode = core::RadiusMode::None;
+			st.shadow = core::ShadowPreset::Hard;
+			st.fadeShadowInTransition = true;
+		});
 	}
 	g_savedTransition = obs_get_output_source(0);
 	g_move = obs_source_create_private("move_transition", "Layouts move test", nullptr);
 	obs_set_output_source(0, g_move);
 	corners::watchProgram();
 	obs_transition_set(g_move, g_moveA);
+}
+
+/* Before the transition: scene A alone on program, the hard shadow is there. */
+void checkMoveShadowStatic()
+{
+	char *path = obs_frontend_get_last_screenshot();
+	const QString p = QString::fromUtf8(path ? path : "");
+	bfree(path);
+	QImage img(p);
+	const int below = img.isNull() ? -1 : qGray(img.pixel(1450, 603));
+	R->check(below >= 0 && below < 90, "shadow-before-move-transition", QString("below %1").arg(below));
+	if (!getenv("LAYOUTS_SELFTEST_KEEP_SHOTS"))
+		QFile::remove(p);
 	obs_transition_start(g_move, OBS_TRANSITION_MODE_AUTO, 4000, g_moveB);
 }
 
@@ -1948,6 +1973,10 @@ void checkMoveCorners()
 	const int edge = img.isNull() ? -1 : qGray(img.pixel(550, 266));
 	R->check(mid && corner >= 0 && corner < 40 && edge > 215, "corners-during-move-transition",
 		 QString("active %1, corner %2, edge %3").arg(mid).arg(corner).arg(edge));
+	/* Hard shadow (60 %) would make the grey patch ~51 just below the square: during the
+	 * transition it fades out (set to fade in transitions). */
+	const int below = img.isNull() ? -1 : qGray(img.pixel(1450, 603));
+	R->check(mid && below > 95, "shadow-fades-during-move-transition", QString("below %1").arg(below));
 	if (!getenv("LAYOUTS_SELFTEST_KEEP_SHOTS"))
 		QFile::remove(p);
 	obs_set_output_source(0, g_savedTransition);
@@ -2537,6 +2566,8 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(1500, [] { checkShapes(); });
 		if (moveAvailable()) {
 			R->add(300, [] { prepareMoveCorners(); });
+			R->add(800, [] { takeShot(); });
+			R->add(1000, [] { checkMoveShadowStatic(); });
 			R->add(1800, [] { takeShot(); });
 			R->add(800, [] { checkMoveCorners(); });
 		}
