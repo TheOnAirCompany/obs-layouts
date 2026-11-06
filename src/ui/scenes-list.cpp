@@ -128,14 +128,14 @@ void ScenesList::refresh()
 	for (size_t i = 0; i < canvases.canvases.num; i++) {
 		obs_canvas_t *c = canvases.canvases.array[i];
 		struct Ctx {
-			decltype(add) *add;
+			decltype(add) *addRow;
 			QString prefix;
 		} p{&add, QString::fromUtf8(obs_canvas_get_name(c)) + QString::fromUtf8(" \xE2\x80\xBA ")};
 		obs_canvas_enum_scenes(
 			c,
 			[](void *param, obs_source_t *src) {
 				auto *pc = static_cast<Ctx *>(param);
-				(*pc->add)(src, pc->prefix);
+				(*pc->addRow)(src, pc->prefix);
 				return true;
 			},
 			&p);

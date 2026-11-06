@@ -113,7 +113,7 @@ void drawSlot(QPainter &p, const core::Slot &s, const ThumbColors &c, double k)
 		if (s.ticker) {
 			/* a band of messages: a row of dots */
 			const double d = std::clamp(r.height() * 0.32, 0.8, 2.0);
-			ink.setAlphaF(0.6);
+			ink.setAlphaF(0.6f);
 			p.setBrush(ink);
 			const double step = d * 3.2;
 			for (double x = r.x() + step / 2; x < r.right() - d; x += step)
@@ -126,10 +126,10 @@ void drawSlot(QPainter &p, const core::Slot &s, const ThumbColors &c, double k)
 				const double y = r.y() + pad + i * lh * 2;
 				if (y + lh > r.bottom() - 0.5)
 					break;
-				ink.setAlphaF(0.65);
+				ink.setAlphaF(0.65f);
 				p.setBrush(ink);
 				p.drawEllipse(QRectF(r.x() + pad, y, lh, lh));
-				ink.setAlphaF(0.4);
+				ink.setAlphaF(0.4f);
 				p.setBrush(ink);
 				const double len = (r.width() - pad * 2 - lh * 1.6) * (0.55 + ((i * 37) % 40) / 100.0);
 				p.drawRoundedRect(QRectF(r.x() + pad + lh * 1.6, y, std::max(1.0, len), lh), lh / 2,
