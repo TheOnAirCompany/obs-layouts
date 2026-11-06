@@ -52,6 +52,7 @@ QString tr(const char *key)
 /* Scenes being rendered on this thread, innermost last: the scene filter pushes its
  * token while its scene renders (see SceneMarker). */
 thread_local std::vector<std::string> t_scenes;
+thread_local std::vector<SceneRenderContext> t_contexts;
 
 /* The shape of a source in one scene. Settings written before 0.5 have no mode: Pixels.
  * Auto and Round are resolved at render time from the visible size in canvas pixels. */
@@ -429,7 +430,16 @@ void markerRender(void *data, gs_effect_t *)
 		std::lock_guard<std::mutex> g(m->lock);
 		t_scenes.push_back(m->token);
 	}
+	SceneRenderContext ctx;
+	ctx.scene = obs_filter_get_parent(m->context);
+	ctx.target = gs_get_render_target();
+	ctx.zstencil = gs_get_zstencil_target();
+	gs_get_viewport(&ctx.viewport);
+	gs_matrix_get(&ctx.matrix);
+	ctx.space = gs_get_color_space();
+	t_contexts.push_back(ctx);
 	obs_source_skip_video_filter(m->context); /* the scene draws itself, as without the filter */
+	t_contexts.pop_back();
 	t_scenes.pop_back();
 }
 
@@ -1033,6 +1043,14 @@ void scrub(double delta, bool finished)
 }
 
 /* ---- shared with the border and shadow filter (style-render.cpp) ---------------- */
+
+bool sceneRenderContext(SceneRenderContext &out)
+{
+	if (t_contexts.empty())
+		return false;
+	out = t_contexts.back();
+	return true;
+}
 
 std::string renderingScene()
 {

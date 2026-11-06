@@ -326,6 +326,66 @@ void drawQuad(Filter *f, const char *technique, float l, float t, float r, float
 	gs_blend_state_pop();
 }
 
+/* An item that OBS draws through its own texture (crop): that texture is cut to the
+ * visible part, so the shadow is drawn in the scene instead, just before the item is
+ * drawn there (right stacking). The scene marker recorded where the scene draws (target,
+ * viewport, matrix); the scene projection is the one texrender_begin saved on top of the
+ * projection stack, popped for the draw and pushed back after, so it is right in every
+ * view (program, preview, projectors, multiview). Items inside a group are skipped. */
+void drawShadowInScene(Filter *f, obs_source_t *source, const Look &look, float opacity, float l, float t, float r,
+		       float b, uint32_t w, uint32_t h)
+{
+	corners::SceneRenderContext ctx;
+	if (!corners::sceneRenderContext(ctx) || !ctx.scene)
+		return;
+	obs_scene_t *scene = obs_scene_from_source(ctx.scene);
+	obs_sceneitem_t *item = scene ? obs_scene_find_source(scene, obs_source_get_name(source)) : nullptr;
+	if (!item)
+		return;
+	struct matrix4 draw;
+	obs_sceneitem_get_draw_transform(item, &draw);
+
+	gs_texture_t *itemTarget = gs_get_render_target();
+	gs_zstencil_t *itemZs = gs_get_zstencil_target();
+	struct gs_rect itemVp;
+	gs_get_viewport(&itemVp);
+	const enum gs_color_space itemSpace = gs_get_color_space();
+
+	gs_projection_pop(); /* the scene projection, saved by gs_texrender_begin */
+	gs_set_render_target_with_color_space(ctx.target, ctx.zstencil, ctx.space);
+	gs_set_viewport(ctx.viewport.x, ctx.viewport.y, ctx.viewport.cx, ctx.viewport.cy);
+	gs_matrix_push();
+	gs_matrix_set(&ctx.matrix);
+	gs_matrix_mul(&draw);
+	const bool previous = gs_set_linear_srgb(true);
+
+	/* The texture holds the visible part: the box is (0, 0, r - l, b - t). */
+	const float bw = r - l, bh = b - t;
+	struct vec4 box;
+	vec4_set(&box, 0.0f, 0.0f, bw, bh);
+	gs_effect_set_vec4(f->rect, &box);
+	struct matrix4 m;
+	gs_matrix_get(&m);
+	const float angle = std::atan2(m.x.y, m.x.x);
+	const float c = std::cos(-angle), s = std::sin(-angle);
+	struct vec2 offset;
+	vec2_set(&offset, look.x * c - look.y * s, look.x * s + look.y * c);
+	const float pad = look.blur + std::max(std::fabs(offset.x), std::fabs(offset.y)) + 2.0f;
+	struct vec4 color;
+	premultiplied(look.shadowColor, opacity, color);
+	gs_effect_set_vec4(f->color, &color);
+	gs_effect_set_vec2(f->offset, &offset);
+	gs_effect_set_float(f->blur, look.blur);
+	drawQuad(f, "Shadow", -pad / look.sx, -pad / look.sy, bw + pad / look.sx, bh + pad / look.sy);
+
+	gs_set_linear_srgb(previous);
+	gs_matrix_pop();
+	gs_set_render_target_with_color_space(itemTarget, itemZs, itemSpace);
+	gs_set_viewport(itemVp.x, itemVp.y, itemVp.cx, itemVp.cy);
+	gs_projection_push();
+	gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f); /* as render_item set it */
+}
+
 void filterRender(void *data, gs_effect_t *)
 {
 	auto *f = static_cast<Filter *>(data);
@@ -370,6 +430,10 @@ void filterRender(void *data, gs_effect_t *)
 		gs_effect_set_vec2(f->offset, &offset);
 		gs_effect_set_float(f->blur, look.blur);
 		drawQuad(f, "Shadow", l - pad / look.sx, t - pad / look.sy, r + pad / look.sx, b + pad / look.sy);
+	} else if (look.shadow() && opacity > 0.001f && itemTexture) {
+		drawShadowInScene(f, parent, look, opacity, l, t, r, b, w, h);
+		/* Back to the item's own rectangle for the border. */
+		gs_effect_set_vec4(f->rect, &rect);
 	}
 
 	obs_source_skip_video_filter(f->context);
