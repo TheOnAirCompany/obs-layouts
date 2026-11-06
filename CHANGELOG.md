@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 — unreleased
+## 0.7.0 — 2026-11-07
 
 - **Layouts Switcher set aside**: the Switcher dock, the lost camera failover, their hotkeys and the
   obs-websocket requests are not part of this version. Their code stays in the repository behind the
