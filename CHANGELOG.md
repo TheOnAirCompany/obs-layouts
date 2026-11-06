@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.0 — not released yet
+## 0.6.0 — 2026-11-06
 
 - **AUTO** in the Layouts Switcher: the program glides to the prepared layout inside the same
   scene, no scene transition: tiles move and resize, crops and rotations follow, tiles that leave
@@ -13,8 +13,9 @@
 - Fixed: the lost camera failover, the Switcher tally and AUTO now act on the scene really on air
   (in Studio Mode with "duplicate scene", OBS shows a private copy of the scene).
 
-## 0.5.0 — not released yet
+## 0.5.0 — 2026-11-06
 
+- **Signed and notarized macOS package** (Developer ID): macOS installs it without warning.
 - **118 broadcast layouts for 16:9** (23 before): 33 more with cameras only, 42 more with screens
   (screens alone, screens + cameras) and 20 inventive ones, 10 of them with a chat: tilted cards,
   Polaroid, bento, dock of bubbles, diagonal duo, card stack, tilted screen, masonry wall,
@@ -69,7 +70,7 @@
 
 - Fixed: the Windows build (float literals) and the Linux build (GCC). Same features as 0.4.0.
 
-## 0.4.0 — tagged, not released (Windows and Linux builds failed)
+## 0.4.0 — 2026-11-06
 
 - **Source types**: Host, Cam, Screen, BG (background) and CG (graphics: logo, banner, name,
   frame). Set them from a colored pill on each row (several sources at once); they are saved
@@ -107,7 +108,7 @@
 
 - Fixed: the Windows build (float literal). Same features as 0.3.0.
 
-## 0.3.0 — tagged, not released (Windows build failed)
+## 0.3.0 — 2026-11-06
 
 - **Layers panel** on the left of the Layouts window, like a design tool: the sources of the edited
   scene as a tree (front on top, groups unfold), selection in sync with the Canvas and OBS, eye and
