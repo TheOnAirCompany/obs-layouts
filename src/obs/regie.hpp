@@ -99,6 +99,8 @@ public:
 	bool take();
 	/* AUTO (0.6): animates the program scene to the preview composition. */
 	bool autoTake();
+	/* Dual output: refresh the 9:16 twin and put it on the vertical program. */
+	void cutVertical(obs_source_t *landscape);
 
 	/* Re-reads the Plateau (sources, counts, current layout guess). */
 	void refresh();

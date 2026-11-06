@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0 — not released yet
+
+- **AUTO** in the Layouts Switcher: the program glides to the prepared layout inside the same
+  scene, no scene transition: tiles move and resize, crops and rotations follow, tiles that leave
+  fade out, new ones fade in. Duration next to the button (300 ms by default, 0 = cut). One undo
+  step. Also from obs-websocket (`Auto`).
+- **Vertical twin** (with Vertical for OBS): each Plateau gets a 9:16 twin built from the same
+  sources (screens on top, guests stacked, chat at the bottom), and CUT / AUTO switch the vertical
+  output at the same time ("Also switch the vertical 9:16 output" in the Switcher). Layouts never
+  creates a canvas itself: it uses the one Vertical for OBS exposes, or an existing portrait canvas.
+- Fixed: the lost camera failover, the Switcher tally and AUTO now act on the scene really on air
+  (in Studio Mode with "duplicate scene", OBS shows a private copy of the scene).
+
 ## 0.5.0 — not released yet
 
 - **118 broadcast layouts for 16:9** (23 before): 33 more with cameras only, 42 more with screens

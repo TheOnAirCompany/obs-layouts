@@ -164,6 +164,15 @@ RegieDock::RegieDock(QWidget *parent) : QWidget(parent)
 	});
 	root->addLayout(buttons);
 	root->addWidget(failover);
+	/* Dual output (0.6): CUT / AUTO also switch the 9:16 twin on the Vertical for OBS canvas. */
+	auto *vertical = new QCheckBox(loc("Regie.Vertical"));
+	vertical->setToolTip(loc("Regie.VerticalTip"));
+	vertical->setChecked(Store::instance().settings().dualEnabled);
+	connect(vertical, &QCheckBox::toggled, this, [](bool on) {
+		Store::instance().settings().dualEnabled = on;
+		Store::instance().notifySettingsChanged();
+	});
+	root->addWidget(vertical);
 	connect(cut_, &QPushButton::clicked, this, [] { Regie::instance().take(); });
 
 	connect(plateau_, &QComboBox::currentIndexChanged, this, [this](int i) {

@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "regie.hpp"
+#include "dual.hpp"
 #include "failover.hpp"
 #include "morph.hpp"
 
@@ -528,6 +529,7 @@ bool Regie::autoTake()
 	finishPlacement(placed, commands::broadcastSlots(preview_.key, canvasRect(program), spec()));
 	program_ = preview_;
 	armFailover();
+	cutVertical(plateauSource());
 	emitChanged();
 	return true;
 }
@@ -636,8 +638,19 @@ bool Regie::take()
 	obs_frontend_preview_program_trigger_transition();
 	program_ = preview_;
 	armFailover();
+	cutVertical(prepared);
 	emitChanged();
 	return true;
+}
+
+/* Dual output (0.6): the 9:16 twin of the scene follows the same layout and goes on the
+ * vertical canvas program at the same time. */
+void Regie::cutVertical(obs_source_t *landscape)
+{
+	if (!landscape || !dual::enabled())
+		return;
+	if (dual::refreshTwin(landscape, program_.key))
+		dual::cutTwin(landscape);
 }
 
 /* The lost-camera failover watches what is on air: the scene that just went to program
