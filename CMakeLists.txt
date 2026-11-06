@@ -85,6 +85,10 @@ target_sources(
     src/core/shape.hpp
     src/core/swap.cpp
     src/core/swap.hpp
+    src/core/morph.cpp
+    src/core/morph.hpp
+    src/obs/morph.cpp
+    src/obs/morph.hpp
     src/obs/obs-convert.hpp
     src/obs/store.cpp
     src/obs/store.hpp

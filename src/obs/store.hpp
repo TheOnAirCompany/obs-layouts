@@ -79,6 +79,7 @@ struct ViewSettings {
 	bool builderGraphics = true;
 	bool failoverEnabled = true; /* a dropped camera / screen reorganizes the program ("failover.enabled") */
 	QColor guideColor{0xFF, 0x3D, 0x71};
+	int morphDurationMs = 300; /* animated layout change (AUTO), key "morph.durationMs" */
 };
 
 class Store : public QObject {

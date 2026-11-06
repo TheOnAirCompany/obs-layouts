@@ -33,6 +33,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/failover.hpp"
 #include "obs/hotkeys.hpp"
 #include "obs/regie.hpp"
+#include "obs/morph.hpp"
 #include "obs/store.hpp"
 #include "obs/user-layouts.hpp"
 #include "ui/canvas-dock.hpp"
@@ -177,6 +178,7 @@ bool obs_module_load(void)
 				    new layouts::ui::RegieDock(main));
 	layouts::Regie::instance().registerHotkeys();
 
+	layouts::morph::init();
 	obs_frontend_add_event_callback(onFrontendEvent, nullptr);
 	obs_frontend_add_save_callback(onSave, nullptr);
 
@@ -195,6 +197,7 @@ void obs_module_unload(void)
 	layouts::Regie::instance().unregisterVendor();
 	obs_frontend_remove_save_callback(onSave, nullptr);
 	obs_frontend_remove_event_callback(onFrontendEvent, nullptr);
+	layouts::morph::shutdown();
 	layouts::ConstraintWatcher::instance().stop();
 	layouts::EditContext::instance().shutdown();
 	obs_log(LOG_INFO, "plugin unloaded");

@@ -35,6 +35,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QLabel>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSpinBox>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -139,10 +140,22 @@ RegieDock::RegieDock(QWidget *parent) : QWidget(parent)
 	cut_->setToolTip(loc("Regie.CutTooltip"));
 	auto_ = new QPushButton(loc("Regie.Auto"));
 	auto_->setMinimumHeight(tokens::kRegieCutHeight);
-	auto_->setEnabled(false);
-	auto_->setToolTip("0.6");
+	auto_->setToolTip(loc("Regie.AutoTip"));
 	buttons->addWidget(cut_, 1);
 	buttons->addWidget(auto_, 1);
+	/* AUTO duration (store "morph.durationMs"). */
+	auto *duration = new QSpinBox;
+	duration->setRange(0, 5000);
+	duration->setSingleStep(50);
+	duration->setSuffix(" ms");
+	duration->setValue(Store::instance().settings().morphDurationMs);
+	duration->setToolTip(loc("Regie.AutoDuration"));
+	buttons->addWidget(duration);
+	connect(duration, &QSpinBox::valueChanged, this, [](int ms) {
+		Store::instance().settings().morphDurationMs = ms;
+		Store::instance().notifySettingsChanged();
+	});
+	connect(auto_, &QPushButton::clicked, this, [] { Regie::instance().autoTake(); });
 	auto *failover = new QCheckBox(loc("Failover.Enabled"));
 	failover->setChecked(Store::instance().settings().failoverEnabled);
 	connect(failover, &QCheckBox::toggled, this, [](bool on) {
@@ -190,6 +203,7 @@ void RegieDock::rebuild()
 	const bool studio = r.studioMode();
 	studioBanner_->setVisible(!r.plateau().isEmpty() && !studio);
 	cut_->setEnabled(studio && r.plateauSource());
+	auto_->setEnabled(r.plateauSource() && !r.preview().key.empty());
 
 	/* Rows are rebuilt on every change: they are few and the state is small. */
 	while (QLayoutItem *it = rowsLayout_->takeAt(0)) {

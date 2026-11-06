@@ -18,6 +18,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "regie.hpp"
 #include "failover.hpp"
+#include "morph.hpp"
 
 #include "commands.hpp"
 #include "obs-convert.hpp"
@@ -204,6 +205,11 @@ void wsSwap(obs_data_t *req, obs_data_t *res, void *)
 void wsTake(obs_data_t *, obs_data_t *res, void *)
 {
 	onUiThread([res] { reply(res, Regie::instance().take(), "Studio Mode is off"); });
+}
+
+void wsAuto(obs_data_t *, obs_data_t *res, void *)
+{
+	onUiThread([res] { reply(res, Regie::instance().autoTake(), "Nothing to animate"); });
 }
 
 } // namespace
@@ -428,43 +434,99 @@ obs_source_t *Regie::targetScene()
 	return b ? b.Get() : nullptr;
 }
 
-bool Regie::apply(obs_source_t *sceneSource, const RegieComposition &c)
+/* Where every managed item of a scene goes for a composition: slot transform (mirror,
+ * rotation, flips kept) or hidden. Items in slot order first, back to front. */
+std::vector<morph::Target> Regie::targetsFor(obs_source_t *sceneSource, const RegieComposition &c,
+					     std::vector<std::pair<obs_sceneitem_t *, core::Slot>> &placed) const
 {
+	std::vector<morph::Target> out;
 	obs_scene_t *scene = obs_scene_from_source(sceneSource);
 	if (!scene || c.key.empty())
-		return false;
-	const std::vector<core::Slot> tiles = core::buildBroadcast(c.key, canvasRect(sceneSource), spec());
+		return out;
+	const std::vector<core::Slot> tiles = commands::broadcastSlots(c.key, canvasRect(sceneSource), spec());
 	if (tiles.empty())
-		return false;
+		return out;
 	auto managed = [this](const std::string &name) {
 		return std::any_of(sources_.begin(), sources_.end(),
 				   [&](const RegieSource &s) { return s.name == name; });
 	};
-	const bool pip = c.key.find("Pip") != std::string::npos;
 	for (const ItemRef &r : topItems(scene)) {
 		if (!managed(r.name))
 			continue;
 		const auto it = std::find(c.tiles.begin(), c.tiles.end(), r.name);
 		const size_t i = (size_t)(it - c.tiles.begin());
-		if (it == c.tiles.end() || i >= tiles.size()) {
-			obs_sceneitem_set_visible(r.item, false);
-			continue;
-		}
 		obs_source_t *src = obs_sceneitem_get_source(r.item);
 		obs_transform_info info = {};
 		obs_sceneitem_crop crop = {};
 		obs_sceneitem_get_info2(r.item, &info);
 		obs_sceneitem_get_crop(r.item, &crop);
 		const core::ItemModel m{fromObs(info, crop), obs_source_get_width(src), obs_source_get_height(src)};
-		toObs(commands::slotTransform(m, tiles[i].kind, tiles[i].cell), info, crop);
-		obs_sceneitem_defer_update_begin(r.item);
-		obs_sceneitem_set_info2(r.item, &info);
-		obs_sceneitem_set_crop(r.item, &crop);
-		obs_sceneitem_defer_update_end(r.item);
-		obs_sceneitem_set_visible(r.item, true);
-		if (pip && tiles[i].kind == core::SlotKind::Camera)
-			obs_sceneitem_set_order(r.item, OBS_ORDER_MOVE_TOP);
+		if (it == c.tiles.end() || i >= tiles.size()) {
+			out.push_back({OBSSceneItem(r.item), m.t, false});
+			continue;
+		}
+		out.push_back({OBSSceneItem(r.item), commands::slotTransform(m, tiles[i]), true});
+		placed.push_back({r.item, tiles[i]});
 	}
+	return out;
+}
+
+/* After the items are in place: slot styles (round, diagonal, frame) and stacking. */
+static void finishPlacement(std::vector<std::pair<obs_sceneitem_t *, core::Slot>> &placed,
+			    const std::vector<core::Slot> &order)
+{
+	std::vector<obs_sceneitem_t *> stack;
+	for (const core::Slot &slot : order) {
+		for (const auto &[item, sl] : placed) {
+			if (sl.cell == slot.cell && sl.kind == slot.kind)
+				stack.push_back(item);
+		}
+	}
+	for (const auto &[item, sl] : placed)
+		commands::applySlotStyle(item, sl);
+	commands::stackInSlotOrder(stack);
+}
+
+bool Regie::apply(obs_source_t *sceneSource, const RegieComposition &c)
+{
+	std::vector<std::pair<obs_sceneitem_t *, core::Slot>> placed;
+	const std::vector<morph::Target> targets = targetsFor(sceneSource, c, placed);
+	if (targets.empty())
+		return false;
+	for (const morph::Target &t : targets) {
+		if (t.visible) {
+			obs_transform_info info = {};
+			obs_sceneitem_crop crop = {};
+			toObs(t.t, info, crop);
+			obs_sceneitem_defer_update_begin(t.item);
+			obs_sceneitem_set_info2(t.item, &info);
+			obs_sceneitem_set_crop(t.item, &crop);
+			obs_sceneitem_defer_update_end(t.item);
+		}
+		obs_sceneitem_set_visible(t.item, t.visible);
+	}
+	finishPlacement(placed, commands::broadcastSlots(c.key, canvasRect(sceneSource), spec()));
+	return true;
+}
+
+/* AUTO (0.6): the program scene glides to the prepared composition, no transition. */
+bool Regie::autoTake()
+{
+	if (!plateauSource() || preview_.key.empty())
+		return false;
+	OBSSourceAutoRelease program = obs_frontend_get_current_scene();
+	obs_scene_t *scene = program ? obs_scene_from_source(program) : nullptr;
+	if (!scene)
+		return false;
+	std::vector<std::pair<obs_sceneitem_t *, core::Slot>> placed;
+	const std::vector<morph::Target> targets = targetsFor(program, preview_, placed);
+	if (targets.empty())
+		return false;
+	morph::applyAnimated(scene, targets);
+	finishPlacement(placed, commands::broadcastSlots(preview_.key, canvasRect(program), spec()));
+	program_ = preview_;
+	armFailover();
+	emitChanged();
 	return true;
 }
 
@@ -790,13 +852,14 @@ void Regie::registerVendor()
 	obs_websocket_vendor_register_request(vendor_, "AssignSlot", wsAssignSlot, nullptr);
 	obs_websocket_vendor_register_request(vendor_, "Swap", wsSwap, nullptr);
 	obs_websocket_vendor_register_request(vendor_, "Take", wsTake, nullptr);
+	obs_websocket_vendor_register_request(vendor_, "Auto", wsAuto, nullptr);
 }
 
 void Regie::unregisterVendor()
 {
 	if (!vendor_)
 		return;
-	for (const char *r : {"GetState", "ListLayouts", "SetLayout", "AssignSlot", "Swap", "Take"})
+	for (const char *r : {"GetState", "ListLayouts", "SetLayout", "AssignSlot", "Swap", "Take", "Auto"})
 		obs_websocket_vendor_unregister_request(vendor_, r);
 	vendor_ = nullptr;
 }
