@@ -1830,6 +1830,46 @@ double programItemWidth(const char *name)
 	return (obs_source_get_width(obs_sceneitem_get_source(item)) - c.left - c.right) * scale.x;
 }
 
+/* obs-websocket, as Stream Deck / Companion call it: CallVendorRequest on vendor "layouts".
+ * Returns the response JSON ("" when obs-websocket is not loaded). */
+std::string websocketVendorCall(const char *requestType, obs_data_t *requestData)
+{
+	proc_handler_t *global = obs_get_proc_handler();
+	calldata_t cd;
+	calldata_init(&cd);
+	proc_handler_t *ph = nullptr;
+	if (global && proc_handler_call(global, "obs_websocket_api_get_ph", &cd))
+		ph = (proc_handler_t *)calldata_ptr(&cd, "ph");
+	calldata_free(&cd);
+	if (!ph)
+		return "";
+	OBSDataAutoRelease req = obs_data_create();
+	obs_data_set_string(req, "vendorName", "layouts");
+	obs_data_set_string(req, "requestType", requestType);
+	if (requestData)
+		obs_data_set_obj(req, "requestData", requestData);
+	calldata_init(&cd);
+	calldata_set_string(&cd, "request_type", "CallVendorRequest");
+	calldata_set_string(&cd, "request_data", obs_data_get_json(req)); /* JSON text */
+	std::string out;
+	if (proc_handler_call(ph, "call_request", &cd)) {
+		struct Response {
+			unsigned int status;
+			char *comment;
+			char *data;
+		};
+		auto *r = (Response *)calldata_ptr(&cd, "response");
+		if (r) {
+			out = r->data ? r->data : "";
+			bfree(r->comment);
+			bfree(r->data);
+			bfree(r);
+		}
+	}
+	calldata_free(&cd);
+	return out;
+}
+
 void prepareRegie()
 {
 	g_beforeRegie = obs_frontend_get_current_scene();
@@ -1861,6 +1901,13 @@ void prepareRegie()
 	R->check(set && r.preview().key == "Cam2Split" && r.preview().tiles.size() == 2, "regie-layout-in-preview",
 		 QString::fromStdString(r.preview().key));
 	R->check(r.studioMode() && r.take(), "regie-cut", r.studioMode() ? "" : "studio mode off");
+	/* Stream Deck / Companion path: obs-websocket CallVendorRequest. */
+	const std::string state = websocketVendorCall("GetState", nullptr);
+	R->check(state.find("Cam2Split") != std::string::npos, "websocket-getstate",
+		 QString::fromStdString(state.substr(0, 160)));
+	const std::string list = websocketVendorCall("ListLayouts", nullptr);
+	R->check(list.find("Cam1Full") != std::string::npos, "websocket-listlayouts",
+		 QString::number(list.size()) + " bytes");
 }
 
 void checkRegieProgram()
