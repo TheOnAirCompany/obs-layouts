@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.4.0 — not released yet
+## 0.4.1 — 2026-11-06
+
+- Fixed: the Windows build (float literals) and the Linux build (GCC). Same features as 0.4.0.
+
+## 0.4.0 — tagged, not released (Windows and Linux builds failed)
 
 - **Source types**: Host, Cam, Screen, BG (background) and CG (graphics: logo, banner, name,
   frame). Set them from a colored pill on each row (several sources at once); they are saved
@@ -34,7 +38,11 @@
 - Rounded corners stay during **Move Transition** (exeldro) and other transitions that draw the
   sources themselves: the radius goes smoothly from the first scene's to the second's.
 
-## 0.3.0 — not released yet
+## 0.3.1 — 2026-11-06
+
+- Fixed: the Windows build (float literal). Same features as 0.3.0.
+
+## 0.3.0 — tagged, not released (Windows build failed)
 
 - **Layers panel** on the left of the Layouts window, like a design tool: the sources of the edited
   scene as a tree (front on top, groups unfold), selection in sync with the Canvas and OBS, eye and
