@@ -1737,6 +1737,11 @@ void prepareShapes()
 	obs_sceneitem_t *diag = addColor(scene, "Shape diagonal", 400, 400, 0xFFFFFFFF, 700, 100);
 	obs_sceneitem_t *shadow = addColor(scene, "Shape shadow", 400, 400, 0xFFFFFFFF, 1300, 100);
 	obs_sceneitem_t *border = addColor(scene, "Shape border", 400, 200, 0xFFFFFFFF, 100, 700);
+	/* Cropped (OBS draws it through its own texture): 600x400, crop 100 left / 100 top,
+	 * visible 500x300 at (1300, 640). */
+	obs_sceneitem_t *cropped = addColor(scene, "Shape cropped shadow", 600, 400, 0xFFFFFFFF, 1300, 640);
+	obs_sceneitem_crop cc = {100, 100, 0, 0};
+	obs_sceneitem_set_crop(cropped, &cc);
 	ctx.pin(g_shapeScene);
 	ctx.markDirty();
 	itemstyle::edit({round}, [](core::Style &st) { st.radiusMode = core::RadiusMode::Round; });
@@ -1745,6 +1750,10 @@ void prepareShapes()
 		st.polygon = {{0, 0}, {0.6, 0}, {0.4, 1}, {0, 1}};
 	});
 	itemstyle::edit({shadow}, [](core::Style &st) {
+		st.radiusMode = core::RadiusMode::None;
+		st.shadow = core::ShadowPreset::Hard;
+	});
+	itemstyle::edit({cropped}, [](core::Style &st) {
 		st.radiusMode = core::RadiusMode::None;
 		st.shadow = core::ShadowPreset::Hard;
 	});
@@ -1782,6 +1791,9 @@ void checkShapes()
 	const QRgb edge = img.pixel(103, 800);
 	R->check(qRed(edge) > 200 && qGreen(edge) < 80 && lum(300, 800) > 230, "style-border-inside",
 		 QString("edge %1,%2,%3").arg(qRed(edge)).arg(qGreen(edge)).arg(qBlue(edge)));
+	/* Cropped item: the shadow is drawn in the scene below it, the item stays intact. */
+	R->check(lum(1550, 944) < 110 && lum(1550, 790) > 230 && lum(1290, 790) > 110, "style-shadow-cropped-item",
+		 QString("below %1 item %2 left %3").arg(lum(1550, 944)).arg(lum(1550, 790)).arg(lum(1290, 790)));
 	if (!getenv("LAYOUTS_SELFTEST_KEEP_SHOTS"))
 		QFile::remove(p);
 	if (g_beforeShapes)

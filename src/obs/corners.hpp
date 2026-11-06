@@ -32,6 +32,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "core/style.hpp"
 
 #include <obs.h>
+#include <graphics/graphics.h>
+#include <graphics/matrix4.h>
 
 #include <vector>
 
@@ -87,6 +89,19 @@ bool applyItemStyle(obs_sceneitem_t *item, const core::Style &style, const std::
 /* The "polygon" of an item's "layouts_style", made convex (empty: none). */
 std::vector<core::Vec2> itemPolygon(obs_sceneitem_t *item);
 /* ---- shared with the border and shadow filter (style-render.cpp) ---- */
+
+/* Where the innermost scene being rendered on this thread draws (recorded by its scene
+ * marker before the scene renders its items): lets a filter draw into the scene itself,
+ * e.g. the shadow of an item that OBS renders through its own texture (crop). */
+struct SceneRenderContext {
+	obs_source_t *scene = nullptr;
+	gs_texture_t *target = nullptr;
+	gs_zstencil_t *zstencil = nullptr;
+	struct gs_rect viewport = {};
+	struct matrix4 matrix = {};
+	enum gs_color_space space = GS_CS_SRGB;
+};
+bool sceneRenderContext(SceneRenderContext &out);
 
 /* Token of the scene rendering on this thread (scene marker), empty outside a scene. */
 std::string renderingScene();
