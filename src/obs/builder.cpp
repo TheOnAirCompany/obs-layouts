@@ -24,40 +24,70 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "edit-context.hpp"
 #include "obs-convert.hpp"
 #include "roles.hpp"
+#include "scene-directory.hpp"
 #include "core/slot-apply.hpp"
 
 #include <obs-frontend-api.h>
+
+#include <cmath>
 
 namespace layouts::builder {
 
 namespace {
 
-/* Transform and crop of the source somewhere in the collection (first scene that has it). */
-bool existingPlacement(obs_source_t *source, obs_transform_info &info, obs_sceneitem_crop &crop)
+struct FoundPlacement {
+	obs_source_t *source;
+	obs_transform_info *info;
+	obs_sceneitem_crop *crop;
+	obs_source_t *scene = nullptr;
+	bool found = false;
+};
+
+bool findIn(void *p, obs_source_t *sceneSource)
 {
-	struct Find {
-		obs_source_t *source;
-		obs_transform_info *info;
-		obs_sceneitem_crop *crop;
-		bool found;
-	} f{source, &info, &crop, false};
-	obs_enum_scenes(
-		[](void *p, obs_source_t *sceneSource) {
-			auto *f = static_cast<Find *>(p);
-			obs_scene_t *scene = obs_source_is_group(sceneSource) ? nullptr
-									      : obs_scene_from_source(sceneSource);
-			obs_sceneitem_t *item =
-				scene ? obs_scene_find_source_recursive(scene, obs_source_get_name(f->source))
+	auto *f = static_cast<FoundPlacement *>(p);
+	obs_scene_t *scene = obs_source_is_group(sceneSource) ? nullptr : obs_scene_from_source(sceneSource);
+	obs_sceneitem_t *item = scene ? obs_scene_find_source_recursive(scene, obs_source_get_name(f->source))
 				      : nullptr;
-			if (!item)
-				return true;
-			obs_sceneitem_get_info2(item, f->info);
-			obs_sceneitem_get_crop(item, f->crop);
-			f->found = true;
-			return false;
-		},
-		&f);
-	return f.found;
+	if (!item)
+		return true;
+	obs_sceneitem_get_info2(item, f->info);
+	obs_sceneitem_get_crop(item, f->crop);
+	f->scene = sceneSource;
+	f->found = true;
+	return false;
+}
+
+/* Transform and crop of the source somewhere in the collection: first a scene of the
+ * target canvas, else any scene, scaled to the target width (what sat in the lower half
+ * stays at the bottom, as for the 9:16 twins). */
+bool existingPlacement(obs_source_t *source, obs_transform_info &info, obs_sceneitem_crop &crop,
+		       obs_canvas_t *target = nullptr)
+{
+	FoundPlacement f{source, &info, &crop};
+	if (target)
+		obs_canvas_enum_scenes(target, findIn, &f);
+	if (f.found)
+		return true;
+	obs_enum_scenes(findIn, &f);
+	if (!f.found || !target)
+		return f.found;
+	const core::Rect to = canvasRect(target);
+	const double fromW = obs_source_get_width(f.scene), fromH = obs_source_get_height(f.scene);
+	if (fromW <= 0 || fromH <= 0 || (std::fabs(to.w - fromW) < 0.5 && std::fabs(to.h - fromH) < 0.5))
+		return true;
+	const double k = to.w / fromW;
+	const double h = obs_source_get_height(source) * std::fabs(info.scale.y);
+	const double top = info.pos.y * k;
+	const double fromBottom = (fromH - info.pos.y - h) * k;
+	const double y = info.pos.y + h / 2 < fromH / 2 ? top : to.h - fromBottom - h * k;
+	info.pos.x = (float)(info.pos.x * k);
+	info.pos.y = (float)y;
+	info.scale.x = (float)(info.scale.x * k);
+	info.scale.y = (float)(info.scale.y * k);
+	info.bounds.x = (float)(info.bounds.x * k);
+	info.bounds.y = (float)(info.bounds.y * k);
+	return true;
 }
 
 /* Model of a source for slotTransform: its size, and its flip where it is already used. */
@@ -75,12 +105,16 @@ core::ItemModel modelOf(obs_source_t *source)
 	return m;
 }
 
-QString uniqueSceneName(const QString &wanted)
+/* Unique in the collection and in the target canvas (scenes of other canvases have
+ * their own names). */
+QString uniqueSceneName(const QString &wanted, obs_canvas_t *canvas)
 {
 	QString name = wanted;
 	for (int i = 2;; i++) {
-		OBSSourceAutoRelease existing = obs_get_source_by_name(name.toUtf8().constData());
-		if (!existing)
+		const QByteArray n = name.toUtf8();
+		OBSSourceAutoRelease existing = obs_get_source_by_name(n.constData());
+		OBSSourceAutoRelease inCanvas = canvas ? obs_canvas_get_source_by_name(canvas, n.constData()) : nullptr;
+		if (!existing && !inCanvas)
 			return name;
 		name = wanted + " " + QString::number(i);
 	}
@@ -140,7 +174,7 @@ Plan plan(const std::vector<OBSSource> &sources, const Options &options, const T
 				{"Screen1Full", soloName(QString::fromUtf8(obs_source_get_name(s))), {}, {s}, {}});
 	}
 	if (options.layouts) {
-		const core::Rect canvas = EditContext::instance().canvasRect();
+		const core::Rect canvas = canvasRect(options.canvas);
 		for (const core::BroadcastTemplate &t : core::templatesFor((int)p.cameras.size(), (int)p.screens.size(),
 									   (int)p.chats.size(), canvas.h > canvas.w)) {
 			if (t.cameras + t.screens + t.chats < 2)
@@ -161,14 +195,16 @@ Plan single(const std::vector<OBSSource> &sources, const std::string &key, const
 	return p;
 }
 
-std::vector<QString> create(const Plan &plan, const Options &options)
+std::vector<QString> create(const Plan &plan, const Options &options, std::vector<std::string> *uuids)
 {
 	std::vector<QString> names;
 	EditContext &ctx = EditContext::instance();
-	const core::Rect canvas = ctx.canvasRect();
+	const core::Rect canvas = canvasRect(options.canvas);
 	for (const SceneSpec &spec : plan.scenes) {
-		const QString name = uniqueSceneName(spec.name);
-		obs_canvas_t *c = ctx.sceneSource() ? obs_source_get_canvas(ctx.sceneSource()) : obs_get_main_canvas();
+		obs_canvas_t *c = options.canvas      ? obs_canvas_get_ref(options.canvas)
+				  : ctx.sceneSource() ? obs_source_get_canvas(ctx.sceneSource())
+						      : obs_get_main_canvas();
+		const QString name = uniqueSceneName(spec.name, c);
 		obs_scene_t *scene = c ? obs_canvas_scene_create(c, name.toUtf8().constData())
 				       : obs_scene_create(name.toUtf8().constData());
 		if (c)
@@ -231,7 +267,7 @@ std::vector<QString> create(const Plan &plan, const Options &options)
 			for (const OBSSource &g : plan.graphics) {
 				obs_transform_info info = {};
 				obs_sceneitem_crop crop = {};
-				const bool known = existingPlacement(g, info, crop);
+				const bool known = existingPlacement(g, info, crop, options.canvas);
 				obs_sceneitem_t *item = obs_scene_add(scene, g);
 				if (!item)
 					continue;
@@ -244,14 +280,29 @@ std::vector<QString> create(const Plan &plan, const Options &options)
 			}
 		}
 		names.push_back(name);
-		/* Dual output (off by default): its 9:16 twin in the vertical canvas. */
-		if (dual::enabled())
-			dual::refreshTwin(obs_scene_get_source(scene), spec.key);
+		if (uuids)
+			uuids->push_back(obs_source_get_uuid(obs_scene_get_source(scene)));
+		/* Its 9:16 twin in the vertical canvas ("Both"), linked in Vertical for OBS so a
+		 * cut on the main output switches the vertical one too. The dual output setting
+		 * (off by default) also makes twins. */
+		if (options.twin || dual::enabled()) {
+			OBSSource twin = dual::refreshTwin(obs_scene_get_source(scene), spec.key, options.twin);
+			if (twin)
+				SceneDirectory::linkVertical(name, QString::fromUtf8(obs_source_get_name(twin)));
+		}
 		obs_scene_release(scene);
 	}
 	if (!names.empty())
 		obs_frontend_save();
 	return names;
+}
+
+core::Rect canvasRect(obs_canvas_t *canvas)
+{
+	obs_video_info ovi = {};
+	if (canvas && obs_canvas_get_video_info(canvas, &ovi) && ovi.base_width > 0 && ovi.base_height > 0)
+		return {0, 0, (double)ovi.base_width, (double)ovi.base_height};
+	return EditContext::instance().canvasRect();
 }
 
 } // namespace layouts::builder

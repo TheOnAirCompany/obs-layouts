@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.7.0 — 2026-11-07
+
+- **Layouts Switcher set aside**: the Switcher dock, the lost camera failover, their hotkeys and the
+  obs-websocket requests are not part of this version. Their code stays in the repository behind the
+  `LAYOUTS_REGIE` build option (off by default); their saved settings are kept in the scene
+  collection.
+- **Two windows** instead of one: **Tools > Scene Editor** (FR *Éditeur de scènes*) to edit a scene
+  (Scenes navigator and Layers, Canvas, Inspector) and **Tools > Scene Builder** (FR *Créateur de
+  scènes*) to make the scenes of the show from the sources. Both can be open at once; each has a
+  button that opens the other. The Scene | Builder switch is gone. The "Open the Layouts window"
+  hotkey opens the Scene Editor; a new hotkey opens the Scene Builder.
+- **Scenes navigator** above Layers, replacing the scene menu of the Canvas toolbar and the flat
+  Scenes list: one section per canvas (Main 16:9, Vertical 9:16...), the stacks of Stacks for OBS
+  inside when it is installed (colors, counts, collapsible), search, All / 16:9 / 9:16 / favorites
+  filter, red dot on program, green dot in preview (a collapsed stack shows the dot of a scene it
+  holds), "+" for a new scene in the canvas and stack of the edited scene.
+- **Follow OBS** is a pin in the Canvas toolbar (blue when on); a click on a scene in the
+  navigator turns it off. A **breadcrumb** names the edited scene: `16:9 › Plateau › Duo`.
+- **On air, only when it is true**: the amber PROGRAM and red ON AIR banners are replaced by a
+  red **● PROGRAM** chip in the Canvas toolbar and the red frame, shown only when the scene is on
+  the program of its canvas and that canvas is streamed or sent to a virtual camera (OBS streaming
+  or virtual camera for the main canvas; a streaming output or Vertical's virtual camera for the
+  others). Recording alone no longer counts. "Block edits on air" follows the same rule.
+- **Scene Builder** in three columns: sources of the collection (search, type chips), layouts for
+  the selection with a **16:9 / 9:16 / Both** target and the mirror toggles, and Create: a large
+  preview with the source names, the scene name, **Put in stack** (Stacks for OBS), BG at the back,
+  CG on top, Create scene, Create show scenes… (with a confirmation) and **Open in Scene Editor ↗**.
+  9:16 makes the scene in the canvas of Vertical for OBS; Both makes the 16:9 scene and its 9:16
+  twin, linked in Vertical for OBS. The Builder stays open after Create and shows "Created: …".
+- Uses the new API of Stacks for OBS (`stacks_get_organization`, `stacks_place_scene`, signal
+  `stacks_changed`) when it is installed; works without it (flat lists, no "Put in stack").
+
 ## 0.6.0 — 2026-11-06
 
 - **Signed and notarized macOS package** (Developer ID): macOS installs it without warning.

@@ -16,32 +16,21 @@ You should have received a copy of the GNU General Public License along
 with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
-#pragma once
+#include "live.hpp"
 
-/* Scenes above Layers (like the pages of a design tool): every scene, the first row
- * follows OBS. Clicking a scene edits it in the Layouts window without changing what is
- * on air; the scene on the program has a red dot. */
+namespace layouts::core::live {
 
-#include <obs-frontend-api.h>
+bool seenByAudience(const Facts &f)
+{
+	if (!f.onProgram)
+		return false;
+	if (f.mainCanvas && (f.mainStreaming || f.mainVirtualCam))
+		return true;
+	for (const OutputFacts &o : f.outputs) {
+		if (o.active && o.feedsCanvas && (o.stream || o.virtualCamera))
+			return true;
+	}
+	return false;
+}
 
-#include <QListWidget>
-
-namespace layouts::ui {
-
-class ScenesList : public QListWidget {
-	Q_OBJECT
-
-public:
-	explicit ScenesList(QWidget *parent = nullptr);
-	~ScenesList() override;
-
-	void refresh();
-
-private:
-	static void onFrontendEvent(enum obs_frontend_event event, void *data);
-	void onClicked(QListWidgetItem *item);
-
-	bool updating_ = false;
-};
-
-} // namespace layouts::ui
+} // namespace layouts::core::live

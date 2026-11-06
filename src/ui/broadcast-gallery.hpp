@@ -29,15 +29,24 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QListWidget>
 #include <QStringList>
 
+class QPainter;
 class QToolButton;
 
+#include "core/broadcast.hpp"
+
 #include <string>
+#include <vector>
 
 namespace layouts::ui {
 
 /* Thumbnail of a template in the canvas shape (also used by the Switcher dock). */
 QIcon broadcastThumb(const std::string &key, const QColor &camera, const QColor &screen, const QColor &bg,
 		     double aspect);
+
+/* Scene Builder (0.7): the chosen layout drawn large, each tile in the color of the type
+ * of its source and with its name (tiles in canvas-widget coordinates). */
+void paintLayoutPreview(QPainter &p, const std::vector<core::Slot> &tiles, const std::vector<QColor> &fills,
+			const std::vector<QString> &names, const QFont &font);
 
 class BroadcastGallery : public QListWidget {
 	Q_OBJECT
@@ -50,6 +59,8 @@ public:
 	QString currentKey() const;
 	QString currentLabel() const;
 	void fitRows();
+	/* Scene Builder (0.7): bigger cards, the gallery fills its column and scrolls. */
+	void setLarge(const QSize &thumb, int gap);
 
 	/* Mirrored layouts (persisted in the store): thumbnails and every apply / new
 	 * scene use the mirrored slots. */
@@ -80,6 +91,7 @@ private:
 	QToolButton *mirrorH_ = nullptr;
 	QToolButton *mirrorV_ = nullptr;
 	int renderedMirror_ = 0; /* bit 0 = h, bit 1 = v, of the drawn thumbnails */
+	bool fit_ = true;        /* height fits the rows (Inspector) */
 };
 
 /* "Save as layout...": asks a name, saves the scene being edited (selection, or every

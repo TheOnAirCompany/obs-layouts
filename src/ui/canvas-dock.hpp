@@ -37,6 +37,13 @@ class CanvasDock : public QWidget {
 public:
 	explicit CanvasDock(QWidget *parent = nullptr);
 	CanvasView *view() const { return view_; }
+	QToolButton *followPin() const { return pin_; }
+	QLabel *liveChip() const { return chip_; }
+	QLabel *breadcrumb() const { return crumb_; }
+
+signals:
+	/* "Scene Builder ↗" in the toolbar. */
+	void openBuilderRequested();
 
 private slots:
 	void refreshScenes();
@@ -51,7 +58,9 @@ private:
 	RulerWidget *hRuler_ = nullptr;
 	RulerWidget *vRuler_ = nullptr;
 	RulerCorner *corner_ = nullptr;
-	QComboBox *scenes_ = nullptr;
+	QToolButton *pin_ = nullptr;
+	QLabel *crumb_ = nullptr;
+	QLabel *chip_ = nullptr;
 	QToolButton *zoomLabel_ = nullptr;
 	QToolButton *rulers_ = nullptr;
 	QToolButton *guides_ = nullptr;
@@ -59,8 +68,7 @@ private:
 	QToolButton *snap_ = nullptr;
 	QToolButton *safe_ = nullptr;
 	QLabel *status_ = nullptr;
-	QLabel *live_ = nullptr;
-	bool updating_ = false;
+	QString refused_;
 };
 
 /* Grid, snapping, safe areas, guide color and live policy. */

@@ -121,6 +121,11 @@ scenes, so renaming or changing its settings applies to both outputs automatical
   menu stops automatic rebuilds of that twin.
 * **Builder.** "Also build the vertical scenes" checkbox (on when dual is enabled).
 
+0.7 shipped a different shape for the last two points (see UX-SPECIFICATION.md): the Scene
+Editor's navigator lists the scenes of every canvas (open the twin there), and the Scene Builder
+has a **16:9 / 9:16 / Both** target. Both builds the twin with `refreshTwin` and links it in
+Vertical for OBS with `vertical_link_scene`; 9:16 makes a scene in the vertical canvas only.
+
 ## 5. Limits
 
 * **Who outputs the vertical canvas.** OBS 33 streams and records the main canvas only.

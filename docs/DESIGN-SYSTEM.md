@@ -96,11 +96,28 @@ filters, so they are part of the video output.
 | `kRegieCutHeight` | 44 px | CUT and AUTO (AUTO greyed until 0.6) |
 | lost source banner | `kTallyProgram` / `kTallyPreview`, white text | under the dock title: red while a source is lost, green for a few seconds once it is back |
 
-### Banners
-| Token | Value |
-|---|---|
-| `kLiveBanner` | `#E5484D` (on air) |
-| `kProgramBanner` | `#8A5A00` (program) |
+### Scene Editor and Scene Builder (0.7)
+Values taken from the validated two-window mocks (2026-11-06).
+
+| Token | Value | Use |
+|---|---|---|
+| `kLayersWidth` | 250 px | Scenes navigator + Layers column on first launch (240 px until 0.6) |
+| `kBuilderSourcesWidth` / `kBuilderCreateWidth` | 270 / 290 px | Builder columns 1 and 3 on first launch |
+| `kNavRowHeight` | 26 px | navigator row |
+| `kNavRowPadX` | 6 px | inner padding of a row |
+| `kNavRowRadius` / `kNavSelectedFill` | 5 px / `#18A0FB` 18 % | edited scene: fill plus a 1 px `kSelection` outline |
+| `kNavStripWidth` × `kNavStripHeight`, `kNavStripRadius` | 3 × 14 px, 2 px | stack color strip (Stacks colors) |
+| `kTallyDot` | 7 px | program (`kTallyProgram`) / preview (`kTallyPreview`) dot |
+| `kNavFavorite` | `#E6C547` | favorite star |
+| `kRatioTagRadius`, `kRatioTagPt` | 4 px, 0.8 × (monospace) | `16:9` tag of a canvas section |
+| `kChipLive`, `kChipRadius`, `kChipPadX` / `kChipPadY` | `#E5484D`, 4 px, 7 / 2 px | ● PROGRAM chip (white bold text, 0.85 ×), only while seen live |
+| `kGalleryCardMin`, `kGalleryGap` | 150 px, 12 px | Builder gallery cards |
+| `kPreviewRadius`, `kPreviewTileRadius`, `kPreviewBackdrop` | 6 px, 3 px, `#0E0F12` | Builder large preview |
+| `kButtonRadius`, `kButtonPadX` / `kButtonPadY` | 6 px, 10 / 7 px | primary "Create scene" button (`kSelection`, white bold text) |
+| `kCreatedMessageMs` (provisional) | 4000 ms | how long "Created: <name>" stays |
+
+The amber PROGRAM and red ON AIR banners (`kLiveBanner`, `kProgramBanner`) are gone: the chip
+and the red frame (`kLiveFrame`) replace them.
 
 ## Components
 | Component | Implementation | States |

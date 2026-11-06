@@ -56,7 +56,6 @@ public slots:
 
 private:
 	void build();
-	void updateLive();
 	void bindField(NumericField *f, commands::Field field);
 	QWidget *section(const QString &title, QWidget *body);
 	QWidget *buildLayoutSection();
@@ -79,7 +78,6 @@ protected:
 private:
 	QLabel *title_ = nullptr;
 	QLabel *subtitle_ = nullptr;
-	QLabel *live_ = nullptr;
 	QLabel *empty_ = nullptr;
 	QToolButton *lock_ = nullptr;
 	QToolButton *copy_ = nullptr;

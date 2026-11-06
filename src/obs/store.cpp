@@ -364,6 +364,8 @@ void Store::loadSettings()
 		s.broadcastKinds = std::clamp((int)obs_data_get_int(d, "broadcast_kinds"), 0, 2);
 	s.windowGeometry = QByteArray::fromBase64(obs_data_get_string(d, "window_geometry"));
 	s.splitterState = QByteArray::fromBase64(obs_data_get_string(d, "splitter_state_3"));
+	s.builderGeometry = QByteArray::fromBase64(obs_data_get_string(d, "builder_geometry"));
+	s.builderSplitterState = QByteArray::fromBase64(obs_data_get_string(d, "builder_splitter_state"));
 	if (obs_data_has_user_value(d, "guide_color")) {
 		const QColor c(QString::fromUtf8(obs_data_get_string(d, "guide_color")));
 		if (c.isValid())
@@ -434,6 +436,8 @@ void Store::saveSettings()
 	obs_data_set_int(d, "broadcast_kinds", s.broadcastKinds);
 	obs_data_set_string(d, "window_geometry", s.windowGeometry.toBase64().constData());
 	obs_data_set_string(d, "splitter_state_3", s.splitterState.toBase64().constData());
+	obs_data_set_string(d, "builder_geometry", s.builderGeometry.toBase64().constData());
+	obs_data_set_string(d, "builder_splitter_state", s.builderSplitterState.toBase64().constData());
 	obs_data_set_string(d, "guide_color", s.guideColor.name(QColor::HexRgb).toUtf8().constData());
 
 	if (!obs_data_save_json_safe(d, path.c_str(), "tmp", "bak"))

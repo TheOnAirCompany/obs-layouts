@@ -1,33 +1,47 @@
 # UX specification
 
 Layouts brings design-tool composition to OBS while keeping OBS conventions where they already
-exist. This document describes the behavior of version 0.5.0; sections added after 0.1.0 give the
+exist. This document describes the behavior of version 0.7.0; sections added after 0.1.0 give the
 version that brought them.
 
-## The Layouts window (0.2)
+## Two windows: Scene Editor and Scene Builder (0.7)
 
-One regular top-level window titled **Layouts**: the Canvas in the middle, the Inspector in a
-resizable panel on the right. It can be resized, maximized and put in full screen; double-clicking
-its title bar maximizes it like any macOS window and never docks it into OBS. It is opened from
-**Tools > Layouts** or the "Layouts: Open the Layouts window" hotkey, never by itself at startup.
-Closing it only hides it; its size, position and panel width are remembered. Nothing is added to
-the OBS main window.
+Two regular top-level windows, each opened from its own entry of the **Tools** menu and never by
+itself at startup. Both can be open at once (side by side on two screens, for instance). They can
+be resized, maximized and put in full screen; double-clicking a title bar maximizes the window like
+any macOS window and never docks it into OBS. Closing one only hides it; the size, position and
+panel widths of each are remembered. Nothing is added to the OBS main window.
 
-(0.1 used two OBS docks instead: an Inspector docked on the right and a floating Canvas.)
+| Window | Tools menu (EN / FR) | Hotkey | Columns |
+| --- | --- | --- | --- |
+| Scene Editor | Scene Editor / Éditeur de scènes | "Layouts: Open the Scene Editor" (the 0.6 "Open the Layouts window" binding, kept) | Scenes navigator above Layers (250 px), Canvas, Inspector |
+| Scene Builder | Scene Builder / Créateur de scènes | "Layouts: Open the Scene Builder" | Sources of the collection (270 px), layouts for the selection, Create (290 px) |
+
+Gateways: **Scene Builder ↗** at the right of the Canvas toolbar opens (or raises) the Builder;
+**Open in Scene Editor ↗** in the Builder opens the editor on the scene just made.
+
+(0.2 to 0.6 had one "Layouts" window with a Scene | Builder switch at the top left; 0.1 used two
+OBS docks.)
 
 ## Edited scene
 
-The Canvas toolbar has a scene picker:
+The scene shown in the Scene Editor (Layers, Canvas, Inspector):
 
-- **Follow OBS (scene name)** (default): the preview scene in Studio Mode, otherwise the program
-  scene. Changes when OBS changes scene.
-- **Any scene**, including scenes of other OBS 33 canvases (shown as `Canvas › Scene`): pinned
-  until *Follow OBS* is chosen again or the scene is deleted.
+- **Follow OBS** (default): the pin at the left of the Canvas toolbar, blue while on. The editor
+  shows the preview scene in Studio Mode, otherwise the program scene, and changes when OBS
+  changes scene. Clicking the pin again stops following and keeps the current scene.
+- **Any scene**, from the Scenes navigator, including scenes of other OBS 33 canvases (the 9:16
+  canvas of Vertical for OBS): clicking a scene edits it and turns Follow OBS off. Nothing changes
+  on air. It stays until the pin is turned on again or the scene is deleted.
+
+A breadcrumb next to the pin names the edited scene: `16:9 › Plateau › Duo` (the ratio of its
+canvas, its stacks when Stacks for OBS files it, the scene in bold).
 
 The Inspector always shows the selection of the edited scene.
 
 ## Layers (0.3)
-Left panel of the Layouts window (default width 240 px, resizable down to 160 px). The sources of the
+Left column of the Scene Editor, below the Scenes navigator (column 250 px by default, resizable
+down to 160 px; the split between both is resizable too). The sources of the
 edited scene as a tree, front on top like a design tool's layers; groups unfold and remember being
 folded while the scene stays the same. Each row: type icon (camera, screen, window, image, text,
 browser, media, color, group, scene, audio), name, lock, eye. Hidden sources are dimmed.
@@ -40,12 +54,30 @@ browser, media, color, group, scene, audio), name, lock, eye. Hidden sources are
   can't go into a group (OBS has no nested groups). One row at a time. One undo entry, holding the
   whole order of the scene: libobs transform states do not carry the order or the grouping.
 
-### Scenes (0.4)
-Above Layers, in a resizable split: "Follow OBS (scene)" then every scene (other canvases as
-"Canvas › Scene"). Clicking a scene edits it in the window (Layers, Canvas, Inspector) without
-changing the program or the preview; the first row goes back to following OBS. The scene on the
-program has a red dot (in Studio Mode, the scene whose private copy is on the program). Same
-choice as the scene menu of the Canvas toolbar, which stays.
+### Scenes navigator (0.7)
+Above Layers, in a resizable split (0.4 had a flat "Scenes" list there and a scene menu in the
+Canvas toolbar; both are replaced).
+
+- **Sections per canvas**: "Main" / "Principal" first, then every other canvas ("Vertical"...),
+  each with a ratio tag (`16:9`, `9:16`).
+- **Stacks**: when Stacks for OBS is installed, the main canvas shows its stacks (color strip,
+  bold name, scene count; nested stacks nest) and its order; scenes Stacks has not filed follow at
+  the end. Stacks open or closed as in Stacks; opening or closing one here is remembered for the
+  session and never written to Stacks. Other canvases (Stacks organizes the main one) and every
+  canvas without Stacks are flat lists in OBS order.
+- **Search** (`Search a scene`): scene names, case and accents ignored; the stacks and the canvas
+  of what matches stay, everything opens.
+- **Filter**: All / 16:9 / 9:16 / ★. 16:9 and 9:16 keep the landscape or portrait canvases; ★ keeps
+  the favorites of Stacks (disabled without Stacks).
+- **Click** a scene: the Scene Editor edits it, without changing the program or the preview, and
+  Follow OBS turns off. The edited scene is outlined in blue (selection color, 18 % fill); its
+  stack opens if needed.
+- **Tallies**: a red dot on the scene on program (in Studio Mode with "duplicate scene", the scene
+  whose private copy is on the program; for other canvases, the scene on their program channel),
+  a green dot on the preview scene (Studio Mode). A collapsed stack shows the dot of a scene it
+  holds (program first), like Stacks.
+- **+**: a new scene ("Scene 1", "Scene 2"...) in the canvas of the edited scene, filed in its
+  stack when Stacks files the edited scene, and edited at once.
 
 ### Types and filter (0.4)
 - A pill after the name shows the source's type: HOST, CAM, SCREEN, CHAT (0.5), BG, CG, or a
@@ -63,23 +95,48 @@ choice as the scene menu of the Canvas toolbar, which stays.
   Cam, Screen, Chat, BG, CG, Not set. Groups stay while
   one of their sources matches. Drag and drop is off while a filter is active.
 
-## Layouts Builder (0.4)
-Tools > Layouts Builder, or the Scene | Builder switch at the top left of the window (Tools >
-Layouts opens Scene mode; the hotkey keeps the current mode). The Canvas stays in the center.
-- Left: "Sources of the collection", every video input once (scenes and groups excluded): source
-  icon, name, number of scenes that use it, type pill (same menu as Layers). Same filter row.
-  Select the sources of the scene to make (Cmd / Shift for several, Cmd+A for all).
-- Right: "Broadcast layouts", the same gallery as in Scene mode for the selection (hosts and cams
-  are cameras, screens are screens, chats are chats; sources without a type are ignored and
-  counted), gap and
-  margin (shared), "Background at the back" and "Graphics on top" (enabled when one is selected),
-  lock. "New scene" (or a double-click on a layout) makes the chosen layout; "Create show scenes"
-  makes a full-screen scene per host, cam and screen, then one per layout that fits. The new
-  scene opens on the Canvas.
+## Scene Builder (0.7; Layouts Builder 0.4)
+A window of its own (Tools > Scene Builder), three columns in work order:
+
+1. **Sources of the collection**: every video input once (scenes and groups excluded): source
+   icon, name, number of scenes that use it, type pill (same menu as Layers). A search field
+   (case and accents ignored), the same type chips as Layers (with counts). Select the sources of
+   the scene to make (Cmd / Shift for several, Cmd+A for all).
+2. **Layouts for the selection**: a header names the selection ("2 · Layouts for Host · Cam ·
+   Screen · BG", hosts and cams are cameras, screens are screens, chats are chats; sources without
+   a type are ignored and counted), then the target canvas, a segmented control **16:9 / 9:16 /
+   Both**, and the mirror toggles ↔ ↕. The gallery (cards of at least 150 px) shows the layouts
+   that fit, drawn in the shape of the target canvas; gap and margin (shared) below it.
+3. **Create**: a large preview of the chosen layout, each tile in the color of the type of the
+   source that fills it and with its name; **Scene name** (follows the chosen layout until you
+   type one); **Put in stack (Stacks)**, a menu of the stacks of Stacks for OBS (only when Stacks
+   is installed; "None" by default); **BG at the back**, **CG on top** (enabled when one is
+   selected), **Lock**; then **Create scene** (primary), **Create show scenes…** (asks to confirm
+   the number of scenes) and **Open in Scene Editor ↗**. A double-click on a layout creates the
+   scene directly.
+
+Targets:
+
+- **16:9**: the scene is made in the main canvas.
+- **9:16**: the scene is made in the canvas of Vertical for OBS (`vertical_get_canvas`), with the
+  portrait layouts.
+- **Both**: the 16:9 scene, then its 9:16 twin (same sources, mapped like the 0.6 vertical twin)
+  in the vertical canvas, linked in Vertical for OBS (`vertical_link_scene`) so a cut on the main
+  output also switches the vertical one when its linked mode is on.
+- Without Vertical for OBS (or before its canvas is ready), 9:16 and Both are disabled, with a
+  tooltip saying why.
+
+After **Create scene** the Builder stays open and shows "Created: <name>" for a few seconds; the
+Scene Editor keeps its scene. **Open in Scene Editor ↗** opens (or raises) the editor on the scene
+just made. "Put in stack" files the 16:9 scene through `stacks_place_scene` (one Edit > Undo
+step in Stacks); a 9:16-only scene is not filed (Stacks organizes the main canvas).
+
 - Each scene: the first BG at the back, covering the canvas (bounding box "scale to outer bounds",
   centered, cropped to bounds); screens, then hosts and cams in their tiles (hosts first, so they
   get the large tile), flips kept; CG on top with the transform and crop they have in the first
-  scene that uses them. Locked when "Lock" is checked. Names made unique ("Duo 2").
+  scene of the target canvas that uses them (else in another canvas, scaled to the width, kept at
+  the top or the bottom). Locked when "Lock" is checked. Names made unique in the collection and
+  the target canvas ("Duo 2").
 - 0.5: host slots get a Host source first; items are added back to front in the layout's stacking
   order (see Broadcast layouts), chats after cameras, graphics last; slot rotation, shape and frame
   are written as the item's style. Create show scenes makes no full-screen scene for a chat.
@@ -247,7 +304,7 @@ one scene per layout that fits the selection; the button briefly says how many w
 previews the chosen layout on the Canvas. The Constraints section moves under a collapsed *Advanced*.
 
 #### Save as layout (0.5)
-*Save as layout…* (Inspector broadcast section, gallery and Canvas context menus, Scene mode) asks
+*Save as layout…* (Inspector broadcast section, gallery and Canvas context menus, Scene Editor) asks
 for a name and saves the scene as a layout of the gallery: the selected sources, or every visible
 top-level camera, screen and chat when nothing is selected. Each tile is the visual frame of the
 item (crop, bounding box, rotation and groups included), relative to the canvas. Host and Cam give
@@ -307,17 +364,32 @@ place when the size changes. Changing it never moves anything.
 ## Layouts Canvas
 
 ### Toolbar
-Scene picker · zoom out · zoom % (menu: fit, 100 %, selection) · zoom in · Rulers · Guides ·
-Grid ▾ (square, columns, rows, settings) · Snapping ▾ (guides, grid, elements, spacing, canvas) ·
-Safe areas · Settings.
+Follow OBS pin · breadcrumb · ● PROGRAM chip (only when on air, see below) · zoom out · zoom %
+(menu: fit, 100 %, selection) · zoom in · Rulers · Guides · Grid ▾ (square, columns, rows,
+settings) · Snapping ▾ (guides, grid, elements, spacing, canvas) · Safe areas · Settings ·
+Scene Builder ↗.
 
 ### Status bar
 Canvas size · cursor X Y · selected count.
 
-### Banners
-Amber *PROGRAM* when the scene is on the program output; red *ON AIR* (and a red frame around the
-canvas) when it is on the program while an output runs. When edits are blocked the banner says so
-and refused actions show the reason.
+### On air (0.7)
+The warning appears only when an audience really sees the edited scene: the scene is on the
+program of its canvas (or nested in it) **and** that canvas is streamed or sent to a virtual
+camera.
+
+- Main canvas: OBS streaming or the OBS virtual camera is active (or another active streaming
+  output takes the main video).
+- Other canvases (Vertical for OBS): an active output whose video is the canvas video and that is
+  a stream (`OBS_OUTPUT_SERVICE`) or a virtual camera (`vertical_virtualcam`).
+- Recording or the replay buffer alone do not count. A scene on the program while nothing is
+  streamed shows nothing: editing the program or the preview is fine.
+
+Then a compact red chip **● PROGRAM** sits in the Canvas toolbar and the red frame surrounds the
+canvas. The "Block edits on a scene that is on air" setting uses the same definition; a refused
+action shows its reason in the status bar for a moment. The state follows the frontend events
+(streaming, virtual camera) and a light timer for the outputs of other canvases. (0.6 had an
+amber PROGRAM banner and a red ON AIR banner across the Canvas and the Inspector, shown as soon as
+any output, recording included, ran.)
 
 ### Mouse
 | Action | Result |
@@ -385,7 +457,8 @@ and refused actions show the reason.
 | Ctrl/Cmd + Z, Ctrl/Cmd + Shift + Z | OBS undo / redo (OBS shortcuts, untouched) |
 
 ### Global hotkeys (0.2)
-In OBS *Settings > Hotkeys*, under names starting with "Layouts:": show or hide rulers, guides, grid
+In OBS *Settings > Hotkeys*, under names starting with "Layouts:": open the Scene Editor, open
+the Scene Builder (0.7), show or hide rulers, guides, grid
 and safe areas, turn snapping on or off, the six alignments, distribute horizontal and vertical
 spacing, zoom the Canvas to fit. No key is bound by default; bindings are saved in the plugin
 configuration. They work even when the Canvas does not have the focus. The Switcher adds its own

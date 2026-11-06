@@ -71,8 +71,6 @@ target_sources(
     src/core/failover.hpp
     src/obs/source-health.cpp
     src/obs/source-health.hpp
-    src/obs/failover.cpp
-    src/obs/failover.hpp
     src/core/roles.cpp
     src/core/user-layouts.hpp
     src/core/user-layouts.cpp
@@ -91,6 +89,16 @@ target_sources(
     src/obs/morph.hpp
     src/core/portrait-map.cpp
     src/core/portrait-map.hpp
+    src/core/json.cpp
+    src/core/json.hpp
+    src/core/scene-nav.cpp
+    src/core/scene-nav.hpp
+    src/core/live.cpp
+    src/core/live.hpp
+    src/obs/live.cpp
+    src/obs/live.hpp
+    src/obs/scene-directory.cpp
+    src/obs/scene-directory.hpp
     src/obs/obs-convert.hpp
     src/obs/store.cpp
     src/obs/store.hpp
@@ -117,9 +125,6 @@ target_sources(
     src/obs/hotkeys.hpp
     src/obs/item-style.cpp
     src/obs/item-style.hpp
-    src/obs/regie.cpp
-    src/obs/regie.hpp
-    src/third-party/obs-websocket-api.h
     src/obs/commands.hpp
     src/ui/theme.cpp
     src/ui/theme.hpp
@@ -130,13 +135,11 @@ target_sources(
     src/ui/layers-panel.cpp
     src/ui/broadcast-gallery.cpp
     src/ui/broadcast-gallery.hpp
-    src/ui/regie-dock.cpp
-    src/ui/regie-dock.hpp
     src/ui/builder-panel.cpp
     src/ui/builder-panel.hpp
     src/ui/role-ui.cpp
-    src/ui/scenes-list.cpp
-    src/ui/scenes-list.hpp
+    src/ui/scenes-navigator.cpp
+    src/ui/scenes-navigator.hpp
     src/ui/role-ui.hpp
     src/ui/style-editor.cpp
     src/ui/style-editor.hpp
@@ -153,6 +156,24 @@ target_sources(
 )
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
+
+# The Layouts Switcher (Régie dock, lost camera failover, hotkeys and obs-websocket
+# requests) is set aside for now: off by default, its code is not built.
+option(LAYOUTS_REGIE "Build the Layouts Switcher (Régie) dock and the lost camera failover" OFF)
+if(LAYOUTS_REGIE)
+  target_sources(
+    ${CMAKE_PROJECT_NAME}
+    PRIVATE
+      src/obs/failover.cpp
+      src/obs/failover.hpp
+      src/obs/regie.cpp
+      src/obs/regie.hpp
+      src/third-party/obs-websocket-api.h
+      src/ui/regie-dock.cpp
+      src/ui/regie-dock.hpp
+  )
+  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE LAYOUTS_REGIE)
+endif()
 
 option(LAYOUTS_SELFTEST "Build the in-OBS self-test (development only)" OFF)
 if(LAYOUTS_SELFTEST)
