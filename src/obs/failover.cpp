@@ -33,7 +33,7 @@ namespace layouts {
 
 namespace {
 
-QString tr(const char *key)
+QString text(const char *key)
 {
 	return QString::fromUtf8(obs_module_text(key));
 }
@@ -260,7 +260,7 @@ void Failover::update()
 	const QString names = joinNames(lost_);
 	blog(LOG_WARNING, "[Layouts] failover on '%s': %s -> %s (lost: %s)", scene_.toUtf8().constData(), key_.c_str(),
 	     fallbackKey_.c_str(), names.toUtf8().constData());
-	emit alert((choice.ok ? tr("Failover.Lost") : tr("Failover.LostNoLayout")).arg(names), true);
+	emit alert((choice.ok ? text("Failover.Lost") : text("Failover.LostNoLayout")).arg(names), true);
 }
 
 void Failover::restore()
@@ -289,7 +289,7 @@ void Failover::restore()
 	applied_ = false;
 	fallbackKey_.clear();
 	blog(LOG_INFO, "[Layouts] failover on '%s': layout %s restored", scene_.toUtf8().constData(), key_.c_str());
-	emit alert(tr("Failover.Restored"), false);
+	emit alert(text("Failover.Restored"), false);
 }
 
 } // namespace layouts

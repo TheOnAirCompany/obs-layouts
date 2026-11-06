@@ -2038,6 +2038,27 @@ void testMultiCanvas()
 
 /* Dual output: the 9:16 twin of a 16:9 duo lands in the vertical canvas, stacked, with
  * the same sources, and CUT puts it on the vertical program. */
+
+/* With Vertical for OBS loaded: the twin goes to its canvas (proc handler). */
+void testVerticalPlugin()
+{
+	proc_handler_t *ph = obs_get_proc_handler();
+	calldata_t cd;
+	calldata_init(&cd);
+	const bool present = ph && proc_handler_call(ph, "vertical_get_canvas", &cd);
+	const char *uuid = present ? calldata_string(&cd, "uuid") : nullptr;
+	const std::string want = uuid ? uuid : "";
+	calldata_free(&cd);
+	if (!present) {
+		obs_log(LOG_INFO, "[selftest] INFO Vertical for OBS not loaded: skipped");
+		return;
+	}
+	obs_canvas_t *c = dual::verticalCanvas(false);
+	const std::string got = c ? obs_canvas_get_uuid(c) : "";
+	obs_canvas_release(c);
+	R->check(!want.empty() && got == want, "dual-uses-vertical-plugin-canvas", QString::fromStdString(want));
+}
+
 void testDualTwin()
 {
 	if (!g_vertical)
@@ -2050,7 +2071,10 @@ void testDualTwin()
 	R->check(twin != nullptr, "dual-twin-created");
 	if (twin) {
 		obs_canvas_t *c = obs_source_get_canvas(twin);
-		R->check(c == g_vertical, "dual-twin-in-vertical-canvas");
+		/* The Vertical for OBS canvas when loaded, else the portrait canvas of this test. */
+		obs_canvas_t *want = dual::verticalCanvas(false);
+		R->check(c == want, "dual-twin-in-vertical-canvas");
+		obs_canvas_release(want);
 		obs_canvas_release(c);
 		struct Boxes {
 			std::vector<std::pair<std::string, core::Rect>> list;
@@ -2083,9 +2107,11 @@ void testDualTwin()
 				 "dual-twin-stacked", rectStr(ra) + rectStr(rb));
 		}
 		R->check(dual::cutTwin(obs_scene_get_source(land)), "dual-cut-twin");
-		OBSSourceAutoRelease onAir = obs_canvas_get_channel(g_vertical, 0);
+		obs_canvas_t *vc = dual::verticalCanvas(false);
+		OBSSourceAutoRelease onAir = obs_canvas_get_channel(vc, 0);
 		R->check(onAir.Get() == twin.Get(), "dual-twin-on-vertical-program");
-		obs_canvas_set_channel(g_vertical, 0, nullptr);
+		obs_canvas_set_channel(vc, 0, nullptr);
+		obs_canvas_release(vc);
 	}
 	roles::setRole({obs_sceneitem_get_source(a), obs_sceneitem_get_source(b)}, core::Role::None);
 	obs_source_remove(obs_scene_get_source(land));
@@ -2543,6 +2569,7 @@ void runSelfTest(ui::LayoutsWindow *window)
 		});
 	}
 	if (enabled("canvas")) {
+		R->add(300, [] { testVerticalPlugin(); });
 		R->add(1500, [] { testMultiCanvas(); });
 		R->add(800, [] { testDualTwin(); });
 		R->add(800, [] { cleanupCanvas(); });
