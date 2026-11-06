@@ -2112,6 +2112,8 @@ void testDualTwin()
 		R->check(onAir.Get() == twin.Get(), "dual-twin-on-vertical-program");
 		obs_canvas_set_channel(vc, 0, nullptr);
 		obs_canvas_release(vc);
+		/* Leave no test scene in the vertical canvas. */
+		obs_source_remove(twin);
 	}
 	roles::setRole({obs_sceneitem_get_source(a), obs_sceneitem_get_source(b)}, core::Role::None);
 	obs_source_remove(obs_scene_get_source(land));
