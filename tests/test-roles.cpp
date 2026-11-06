@@ -49,10 +49,28 @@ TEST("roles: the longest prefix wins and custom rules apply")
 
 TEST("roles: keys and prefix lists")
 {
-	for (Role r : {Role::None, Role::Host, Role::Camera, Role::Screen, Role::Background, Role::Graphics})
+	for (Role r :
+	     {Role::None, Role::Host, Role::Camera, Role::Screen, Role::Background, Role::Graphics, Role::Chat})
 		CHECK(roleFromKey(roleKey(r)) == r);
 	CHECK(roleFromKey("bogus") == Role::None);
 	const std::vector<std::string> l = splitPrefixList(" CAM, CAMÉRA ,,GUEST ");
 	CHECK(l.size() == 3 && l[0] == "CAM" && l[1] == "CAMÉRA" && l[2] == "GUEST");
 	CHECK(normalizeName("Œuvre Ça") == "OEUVRE CA");
+}
+
+TEST("roles: chat sources are recognized from their names")
+{
+	CHECK(roleFromName("CHAT _ YOUTUBE") == Role::Chat);
+	CHECK(roleFromName("Tchat Twitch") == Role::Chat);
+	CHECK(roleFromName("tchat-live") == Role::Chat);
+	CHECK(roleFromName("ChatBox.StreamLabs") == Role::Chat);
+	CHECK(roleFromName("CHATBOX") == Role::Chat);
+	CHECK(roleFromName("chat") == Role::Chat);
+	CHECK(roleFromName("Chatterbox") == Role::None); /* separator required */
+	CHECK(roleFromName("Chatbot 2") == Role::None);
+	CHECK(roleFromName("Tchatche") == Role::None);
+	CHECK(!isCameraRole(Role::Chat));
+	CHECK(roleKey(Role::Chat) == std::string("chat"));
+	CHECK(roleFromKey("chat") == Role::Chat);
+	CHECK((int)Role::Graphics == 5 && (int)Role::Chat == 6); /* saved values stay stable */
 }

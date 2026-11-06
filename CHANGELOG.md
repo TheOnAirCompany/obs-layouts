@@ -1,10 +1,63 @@
 # Changelog
 
+## 0.5.0 — 2026-11-06
+
+- **Signed and notarized macOS package** (Developer ID): macOS installs it without warning.
+- **118 broadcast layouts for 16:9** (23 before): 33 more with cameras only, 42 more with screens
+  (screens alone, screens + cameras) and 20 inventive ones, 10 of them with a chat: tilted cards,
+  Polaroid, bento, dock of bubbles, diagonal duo, card stack, tilted screen, masonry wall,
+  porthole... Layouts drawn for landscape only are hidden on a portrait canvas.
+- **Chat**, a new source type (pill CHAT, light green), suggested from the start of the name
+  (`CHAT`, `TCHAT`, `CHATBOX`). A chat is fitted whole in its tile, never cropped: at the top of a
+  column, centered in a ticker.
+- Slots can be **rotated**, **round** (radius 50 %), **cut on a diagonal** or **framed** (Polaroid
+  border); the host goes in the slot made for the host. When slots overlap they are stacked back to
+  front as the layout draws them; the background stays below and the graphics above.
+- **Mirror ↔ ↕** toggles above the gallery: the layouts swap sides (left / right, top / bottom).
+  Only the positions move; the image of a source is never flipped.
+- **Style** section in the Inspector (it replaces the corner radius field of Dimensions):
+  - Corners: Auto (4 % of the short side, between 6 and 48 px), px, Round, None.
+  - Border: 4 px white when you turn it on, inside the frame, following the corners.
+  - Shadow: None, Soft, Hard or Custom (blur, offset, opacity, color).
+  - Fade during transitions, Move Transition included.
+  - **Styles by type…**: a default style per type of source (radius Auto, no border, no shadow
+    until you change it). An item with its own style shows a "modified" dot and a **Reset to type**
+    button. Every edit is one Edit > Undo step.
+- **Handles like a design tool**: the ratio lock decides. Locked, corners and edges keep the ratio
+  (an edge grows around the middle of the other side); unlocked, everything is free. Shift
+  inverts the lock during a drag, Alt resizes from the center, both at once without moving the
+  mouse. A free resize follows the frame mode: Fill crops, Fit letterboxes, only Stretch distorts.
+  A badge shows the ratio (16:9, 1:1...) while you drag.
+- **Swap**: drag a camera onto another camera (a screen onto a screen, a chat onto a chat) and they
+  exchange their slots. The place, rotation, stacking and style stay with the slot; flips and
+  frame mode stay with the source. Works on locked layouts; one undo step. Hold Alt for a plain
+  move.
+- **Save as layout**: your own scene becomes a layout of the gallery, marked with a dot. Rename,
+  delete, export; import and export JSON files to move them between machines.
+- **Switcher dock** (Docks > Layouts Switcher): pick a Plateau scene and recompose it live like a
+  vision mixer. A LAYOUTS row, one BUS row per slot, a PREVIEW line and CUT (AUTO comes in 0.6).
+  Red = on air, green = in preview. With Studio Mode, changes are prepared in preview and go on
+  air with CUT. OBS hotkeys (cut, next / previous layout, layouts 1 to 9, slot N = source M) and
+  obs-websocket requests (vendor `layouts`: GetState, ListLayouts, SetLayout, AssignSlot, Swap,
+  Take, event StateChanged) for Stream Deck and Companion.
+- **Lost camera**: when a camera or a screen on air stops sending video for 1.5 s, the program
+  drops to the same layout with one tile less, at once and without a transition, and the Switcher
+  shows a red banner. When the source is back and stable for 2 s, the original layout returns by
+  itself. On by default (checkbox in the Switcher).
+- Fixed: the Windows build (float literals).
+- Self-tests release the scenes they create while OBS still runs (no more crash on exit after
+  the corners tests), and cover round, diagonal, border and shadow pixels, the Switcher CUT and the
+  lost camera failover end to end.
+- The drop shadow also shows on cropped items (cameras in Fill) in the program output (stream,
+  recording, virtual camera): OBS draws them through a texture cut to their visible part, so their
+  shadow is drawn in the scene just before them. Limit: a second view of the same scene in the same
+  frame (projector or multiview of the program) reuses that texture and shows it without shadow.
+
 ## 0.4.1 — 2026-11-06
 
 - Fixed: the Windows build (float literals) and the Linux build (GCC). Same features as 0.4.0.
 
-## 0.4.0 — tagged, not released (Windows and Linux builds failed)
+## 0.4.0 — 2026-11-06
 
 - **Source types**: Host, Cam, Screen, BG (background) and CG (graphics: logo, banner, name,
   frame). Set them from a colored pill on each row (several sources at once); they are saved
@@ -42,7 +95,7 @@
 
 - Fixed: the Windows build (float literal). Same features as 0.3.0.
 
-## 0.3.0 — tagged, not released (Windows build failed)
+## 0.3.0 — 2026-11-06
 
 - **Layers panel** on the left of the Layouts window, like a design tool: the sources of the edited
   scene as a tree (front on top, groups unfold), selection in sync with the Canvas and OBS, eye and

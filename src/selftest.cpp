@@ -26,7 +26,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "core/expression.hpp"
 #include "obs/commands.hpp"
 #include "obs/constraints.hpp"
+#include "obs/edit-session.hpp"
 #include "obs/corners.hpp"
+#include "obs/regie.hpp"
+#include "obs/item-style.hpp"
 #include "obs/builder.hpp"
 #include "obs/roles.hpp"
 #include "obs/edit-context.hpp"
@@ -50,6 +53,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <QAction>
 #include <QApplication>
+#include <QDir>
 #include <QFile>
 #include <QImage>
 #include <QMainWindow>
@@ -81,9 +85,12 @@ struct Runner {
 			detail.toUtf8().constData());
 	}
 	void add(int delayMs, std::function<void()> fn) { steps.emplace_back(delayMs, std::move(fn)); }
+	std::function<void()> onDone; /* drops the references the tests keep, while OBS runs */
 	void run()
 	{
 		if (next >= steps.size()) {
+			if (onDone)
+				onDone();
 			obs_log(LOG_INFO, "[selftest] DONE pass=%d fail=%d", pass, fail);
 			if (getenv("LAYOUTS_SELFTEST_QUIT"))
 				QTimer::singleShot(500, [] {
@@ -685,14 +692,20 @@ void testLayoutsV02()
 	const core::Rect b0 = box("A").united(box("B"));
 	const QPointF h = v->worldToView({b0.right(), b0.bottom()});
 	const double d = 100 * v->zoom(); /* +100 canvas px on x */
+	/* Handles follow the ratio lock (0.5): locked here, so the corner keeps the ratio. */
+	const bool lockBefore = Store::instance().settings().ratioLock;
+	Store::instance().settings().ratioLock = true;
 	sendMouse(v, QEvent::MouseButtonPress, h, Qt::LeftButton);
 	for (int i = 1; i <= 10; i++)
 		sendMouse(v, QEvent::MouseMove, h + QPointF(d * i / 10.0, 0), Qt::LeftButton, Qt::ControlModifier);
 	sendMouse(v, QEvent::MouseButtonRelease, h + QPointF(d, 0), Qt::NoButton, Qt::ControlModifier);
 	ctx.markDirty();
+	Store::instance().settings().ratioLock = lockBefore;
 	const core::Rect b1 = box("A").united(box("B"));
-	const double k = (b0.w + 100) / b0.w;
-	R->check(std::fabs(b1.x - b0.x) < 0.6 && std::fabs(b1.w - b0.w * k) < 1.5 && std::fabs(b1.h - b0.h * k) < 1.5,
+	/* Locked corner: the pointer is projected on the diagonal (Figma), the box grows and
+	 * keeps its ratio, the opposite corner stays. */
+	R->check(std::fabs(b1.x - b0.x) < 0.6 && std::fabs(b1.y - b0.y) < 0.6 && b1.w > b0.w + 10 &&
+			 std::fabs(b1.w / b1.h - b0.w / b0.h) < 0.01,
 		 "multi-resize-keeps-ratio", rectStr(b0) + " -> " + rectStr(b1));
 }
 
@@ -729,6 +742,30 @@ void testRoles()
 		 "roles-suggested-from-name");
 	obs_source_remove(guest);
 	obs_source_remove(bg);
+}
+
+/* 0.5: chat sources, suggested from their name and fitted whole in chat slots. */
+void testChatRole()
+{
+	OBSSourceAutoRelease chat = colorSource("TCHAT _ TWITCH", 400, 900, 0xFFFFFFFF);
+	R->check(roles::role(chat) == core::Role::Chat && roles::explicitRole(chat) == core::Role::None,
+		 "chat-suggested-from-name", core::roleKey(roles::role(chat)));
+	obs_source_remove(chat);
+
+	core::ItemModel m;
+	m.sourceWidth = 400;
+	m.sourceHeight = 900;
+	const core::Rect cell{1400, 0, 520, 1080};
+	const core::ItemTransform column = commands::slotTransform(m, core::SlotKind::Chat, cell, false);
+	const core::ItemTransform ticker = commands::slotTransform(m, core::SlotKind::Chat, cell, true);
+	R->check(column.boundsType == core::BoundsType::ScaleInner && column.bounds.x == cell.w &&
+			 column.bounds.y == cell.h && column.pos.x == cell.x && column.pos.y == cell.y &&
+			 column.boundsAlign == (uint32_t)core::kAlignTop && column.crop.left == 0 &&
+			 column.crop.top == 0 && !column.cropToBounds,
+		 "chat-fits-top-of-column");
+	R->check(ticker.boundsType == core::BoundsType::ScaleInner &&
+			 ticker.boundsAlign == (uint32_t)core::kAlignCenter,
+		 "chat-centered-in-ticker");
 }
 
 /* 0.4: types in Layers (filter), in broadcast layouts (BG / CG never in a tile) and the
@@ -1067,11 +1104,72 @@ void testBroadcast()
 	selectNames({"A", "B", "C"});
 	emit ctx.itemsChanged();
 	auto *gallery = g_window->inspector()->findChild<QListWidget *>();
-	R->check(gallery && gallery->count() == 2, "broadcast-gallery-three-guests",
-		 gallery ? QString::number(gallery->count()) : "no gallery");
+	R->check(gallery && gallery->count() == (int)core::templatesFor(3, 0, 0, ui::canvasAspect() < 1.0).size(),
+		 "broadcast-gallery-three-guests", gallery ? QString::number(gallery->count()) : "no gallery");
 	Store::instance().settings().broadcastKinds = 0;
 	emit ctx.itemsChanged();
-	R->check(gallery && !gallery->isVisible(), "broadcast-gallery-empty-for-three-screens");
+	R->check(gallery && gallery->count() == (int)core::templatesFor(0, 3, 0, ui::canvasAspect() < 1.0).size(),
+		 "broadcast-gallery-three-screens", gallery ? QString::number(gallery->count()) : "no gallery");
+}
+
+/* Swap (0.5): a locked Duo, the right camera dropped on the left one on the canvas. */
+void testSwap()
+{
+	EditContext &ctx = EditContext::instance();
+	obs_sceneitem_t *a = addColor(ctx.scene(), "CAM Swap L", 1920, 1080, 0xFF3060C0, 0, 0);
+	obs_sceneitem_t *b = addColor(ctx.scene(), "CAM Swap R", 1080, 1920, 0xFFC06030, 0, 0);
+	const core::ItemModel ma{commands::slotTransform({{}, 1920, 1080}, core::SlotKind::Camera, {0, 0, 960, 1080}),
+				 1920, 1080};
+	const core::ItemModel mb{commands::slotTransform({{}, 1080, 1920}, core::SlotKind::Camera, {960, 0, 960, 1080}),
+				 1080, 1920};
+	applyChangesAtomically(ctx.scene(), {{OBSSceneItem(a), ma.t}, {OBSSceneItem(b), mb.t}});
+	commands::lockItem(a);
+	commands::lockItem(b);
+	{
+		OBSDataAutoRelease priv = obs_sceneitem_get_private_settings(a);
+		obs_data_set_string(priv, "layouts_style", "{\"border\":true}");
+	}
+	const int orderA = obs_sceneitem_get_order_position(a), orderB = obs_sceneitem_get_order_position(b);
+	ctx.markDirty();
+	selectNames({"CAM Swap R"});
+
+	/* Drag R onto L with the mouse: one release, one swap. */
+	ui::CanvasView *v = g_dock->view();
+	const QPointF start = v->worldToView(box("CAM Swap R").center());
+	const QPointF end = v->worldToView(box("CAM Swap L").center());
+	sendMouse(v, QEvent::MouseButtonPress, start, Qt::LeftButton);
+	for (int i = 1; i <= 10; i++)
+		sendMouse(v, QEvent::MouseMove, start + (end - start) * (i / 10.0), Qt::LeftButton);
+	sendMouse(v, QEvent::MouseButtonRelease, end, Qt::NoButton);
+	ctx.markDirty();
+
+	const core::Rect l = box("CAM Swap L"), r = box("CAM Swap R");
+	R->check(std::fabs(l.x - 960) < 0.6 && std::fabs(l.w - 960) < 0.6 && std::fabs(r.x) < 0.6 &&
+			 std::fabs(r.w - 960) < 0.6 && std::fabs(r.h - 1080) < 0.6,
+		 "swap-drag-exchanges-cells", rectStr(l) + " / " + rectStr(r));
+	R->check(obs_sceneitem_locked(a) && obs_sceneitem_locked(b), "swap-keeps-lock");
+	R->check(obs_sceneitem_get_order_position(a) == orderB && obs_sceneitem_get_order_position(b) == orderA,
+		 "swap-exchanges-order");
+	{
+		OBSDataAutoRelease pa = obs_sceneitem_get_private_settings(a);
+		OBSDataAutoRelease pb = obs_sceneitem_get_private_settings(b);
+		R->check(!obs_data_has_user_value(pa, "layouts_style") &&
+				 QString::fromUtf8(obs_data_get_string(pb, "layouts_style")).contains("border"),
+			 "swap-style-stays-with-slot");
+	}
+
+	QAction *undo = findAction(QKeySequence(QKeySequence::Undo));
+	if (undo) {
+		undo->trigger();
+		ctx.markDirty();
+		R->check(std::fabs(box("CAM Swap L").x) < 0.6 && std::fabs(box("CAM Swap R").x - 960) < 0.6 &&
+				 obs_sceneitem_get_order_position(a) == orderA,
+			 "swap-one-undo-step", rectStr(box("CAM Swap L")));
+	}
+	unlockAll({"CAM Swap L", "CAM Swap R"});
+	obs_sceneitem_remove(a);
+	obs_sceneitem_remove(b);
+	ctx.markDirty();
 }
 
 void testBroadcastScene()
@@ -1140,8 +1238,15 @@ void testShowScenes()
 			&locked);
 		obs_source_remove(src);
 	}
-	R->check(n == 5 && found == 5 && locked == 3 + 3 + 3 && ctx.sceneName() == edited, "broadcast-show-scenes",
-		 QString("created %1 found %2 locked %3").arg(n).arg(found).arg(locked));
+	/* The other layouts for three guests were created too: remove them. */
+	const std::vector<core::BroadcastTemplate> trio = core::templatesFor(3, 0, 0, ui::canvasAspect() < 1.0);
+	for (const core::BroadcastTemplate &t : trio) {
+		OBSSourceAutoRelease src = obs_get_source_by_name(("Show " + t.key).c_str());
+		if (src)
+			obs_source_remove(src);
+	}
+	R->check(n == 3 + (int)trio.size() && found == 5 && locked == 3 + 3 + 3 && ctx.sceneName() == edited,
+		 "broadcast-show-scenes", QString("created %1 found %2 locked %3").arg(n).arg(found).arg(locked));
 
 	/* A group is never shared with another scene. */
 	selectNames({"G"});
@@ -1404,7 +1509,8 @@ OBSSourceAutoRelease g_cleanScene;
 
 void prepareCleanOutput()
 {
-	obs_source_t *s = obs_scene_get_source(obs_scene_create("Layouts Clean"));
+	obs_scene_t *sScene = obs_scene_create("Layouts Clean");
+	obs_source_t *s = obs_scene_get_source(sScene);
 	g_cleanScene = s;
 	addColor(obs_scene_from_source(s), "Clean BG", 1920, 1080, 0xFF303030, 0, 0);
 	obs_frontend_set_current_scene(s);
@@ -1460,7 +1566,8 @@ void prepareCorners()
 {
 	EditContext &ctx = EditContext::instance();
 	g_beforeCorners = obs_frontend_get_current_scene();
-	obs_source_t *s = obs_scene_get_source(obs_scene_create("Layouts Corners"));
+	obs_scene_t *sScene = obs_scene_create("Layouts Corners");
+	obs_source_t *s = obs_scene_get_source(sScene);
 	g_cornerScene = s;
 	/* 800x600 white, cropped 100 left / 50 top: visible 700x550 at (200, 265). */
 	obs_sceneitem_t *item = addColor(obs_scene_from_source(s), "Rounded", 800, 600, 0xFFFFFFFF, 200, 265);
@@ -1526,7 +1633,8 @@ void checkCorners()
 
 	/* The same source in another scene keeps square corners: the radius belongs to the scene. */
 	EditContext &ctx = EditContext::instance();
-	obs_source_t *other = obs_scene_get_source(obs_scene_create("Layouts Corners B"));
+	obs_scene_t *otherScene = obs_scene_create("Layouts Corners B");
+	obs_source_t *other = obs_scene_get_source(otherScene);
 	g_cornerSceneB = other;
 	OBSSourceAutoRelease halfSource = obs_get_source_by_name("Rounded half");
 	obs_sceneitem_t *again = obs_scene_add(obs_scene_from_source(other), halfSource);
@@ -1612,6 +1720,233 @@ void testCornersMigration()
 
 /* Move Transition (exeldro) draws each source itself during the transition: the corners
  * must stay. Runs only when the Move Transition plugin is loaded. */
+
+/* ---- 0.5 styles: round, diagonal mask, border, shadow (program pixels) ---- */
+OBSSourceAutoRelease g_shapeScene;
+OBSSourceAutoRelease g_beforeShapes;
+
+void prepareShapes()
+{
+	EditContext &ctx = EditContext::instance();
+	g_beforeShapes = obs_frontend_get_current_scene();
+	obs_scene_t *scene = obs_scene_create("Layouts Shapes");
+	g_shapeScene = obs_scene_get_source(scene);
+	addColor(scene, "Shapes BG", 1920, 1080, 0xFF808080, 0, 0);
+	obs_sceneitem_t *round = addColor(scene, "Shape round", 400, 400, 0xFFFFFFFF, 100, 100);
+	obs_sceneitem_t *diag = addColor(scene, "Shape diagonal", 400, 400, 0xFFFFFFFF, 700, 100);
+	obs_sceneitem_t *shadow = addColor(scene, "Shape shadow", 400, 400, 0xFFFFFFFF, 1300, 100);
+	obs_sceneitem_t *border = addColor(scene, "Shape border", 400, 200, 0xFFFFFFFF, 100, 700);
+	/* Cropped (OBS draws it through its own texture): 600x400, crop 100 left / 100 top,
+	 * visible 500x300 at (1300, 640). */
+	obs_sceneitem_t *cropped = addColor(scene, "Shape cropped shadow", 600, 400, 0xFFFFFFFF, 1300, 640);
+	obs_sceneitem_crop cc = {100, 100, 0, 0};
+	obs_sceneitem_set_crop(cropped, &cc);
+	ctx.pin(g_shapeScene);
+	ctx.markDirty();
+	itemstyle::edit({round}, [](core::Style &st) { st.radiusMode = core::RadiusMode::Round; });
+	itemstyle::edit({diag}, [](core::Style &st) {
+		st.radiusMode = core::RadiusMode::None;
+		st.polygon = {{0, 0}, {0.6, 0}, {0.4, 1}, {0, 1}};
+	});
+	itemstyle::edit({shadow}, [](core::Style &st) {
+		st.radiusMode = core::RadiusMode::None;
+		st.shadow = core::ShadowPreset::Hard;
+	});
+	itemstyle::edit({cropped}, [](core::Style &st) {
+		st.radiusMode = core::RadiusMode::None;
+		st.shadow = core::ShadowPreset::Hard;
+	});
+	itemstyle::edit({border}, [](core::Style &st) {
+		st.radiusMode = core::RadiusMode::None;
+		st.border = true;
+		st.borderWidth = 8;
+		st.borderColor = 0xFFFF0000;
+	});
+	obs_frontend_set_current_scene(g_shapeScene);
+}
+
+void checkShapes()
+{
+	char *path = obs_frontend_get_last_screenshot();
+	const QString p = QString::fromUtf8(path ? path : "");
+	bfree(path);
+	QImage img(p);
+	R->check(!img.isNull(), "shapes-screenshot", p);
+	if (img.isNull())
+		return;
+	auto lum = [&](int x, int y) {
+		return qGray(img.pixel(x, y));
+	};
+	/* Round: outside the circle (near the corner) the grey background shows. */
+	R->check(lum(140, 140) < 160 && lum(300, 300) > 230, "style-round-mask",
+		 QString("corner %1 center %2").arg(lum(140, 140)).arg(lum(300, 300)));
+	/* Diagonal: right of the slanted edge is cut, left of it is kept. */
+	R->check(lum(1060, 300) < 160 && lum(740, 300) > 230, "style-diagonal-mask",
+		 QString("cut %1 kept %2").arg(lum(1060, 300)).arg(lum(740, 300)));
+	/* Hard shadow: darker than the background just below the item. */
+	R->check(lum(1500, 504) < 110 && lum(1500, 300) > 230, "style-shadow-under-item",
+		 QString("below %1 item %2").arg(lum(1500, 504)).arg(lum(1500, 300)));
+	/* Border: red inside the edge, white in the middle. */
+	const QRgb edge = img.pixel(103, 800);
+	R->check(qRed(edge) > 200 && qGreen(edge) < 80 && lum(300, 800) > 230, "style-border-inside",
+		 QString("edge %1,%2,%3").arg(qRed(edge)).arg(qGreen(edge)).arg(qBlue(edge)));
+	/* Cropped item: the shadow is drawn in the scene below it, the item stays intact. */
+	R->check(lum(1550, 944) < 110 && lum(1550, 790) > 230 && lum(1290, 790) > 110, "style-shadow-cropped-item",
+		 QString("below %1 item %2 left %3").arg(lum(1550, 944)).arg(lum(1550, 790)).arg(lum(1290, 790)));
+	if (!getenv("LAYOUTS_SELFTEST_KEEP_SHOTS"))
+		QFile::remove(p);
+	if (g_beforeShapes)
+		obs_frontend_set_current_scene(g_beforeShapes);
+}
+
+/* ---- 0.5 Switcher + lost camera failover, end to end on the program ---- */
+OBSSourceAutoRelease g_plateau;
+OBSSourceAutoRelease g_beforeRegie;
+
+obs_sceneitem_t *programItem(const char *name)
+{
+	/* What is really on air (the private copy in Studio Mode with duplication). */
+	OBSSource scene = commands::onAirScene();
+	obs_scene_t *sc = scene ? obs_scene_from_source(scene) : nullptr;
+	return sc ? obs_scene_find_source(sc, name) : nullptr;
+}
+
+double programItemWidth(const char *name)
+{
+	obs_sceneitem_t *item = programItem(name);
+	if (!item)
+		return -1;
+	vec2 scale;
+	obs_sceneitem_get_scale(item, &scale);
+	obs_bounds_type bt = obs_sceneitem_get_bounds_type(item);
+	if (bt != OBS_BOUNDS_NONE) {
+		vec2 b;
+		obs_sceneitem_get_bounds(item, &b);
+		return b.x;
+	}
+	obs_sceneitem_crop c;
+	obs_sceneitem_get_crop(item, &c);
+	return (obs_source_get_width(obs_sceneitem_get_source(item)) - c.left - c.right) * scale.x;
+}
+
+/* obs-websocket, as Stream Deck / Companion call it: CallVendorRequest on vendor "layouts".
+ * Returns the response JSON ("" when obs-websocket is not loaded). */
+std::string websocketVendorCall(const char *requestType, obs_data_t *requestData)
+{
+	proc_handler_t *global = obs_get_proc_handler();
+	calldata_t cd;
+	calldata_init(&cd);
+	proc_handler_t *ph = nullptr;
+	if (global && proc_handler_call(global, "obs_websocket_api_get_ph", &cd))
+		ph = (proc_handler_t *)calldata_ptr(&cd, "ph");
+	calldata_free(&cd);
+	if (!ph)
+		return "";
+	OBSDataAutoRelease req = obs_data_create();
+	obs_data_set_string(req, "vendorName", "layouts");
+	obs_data_set_string(req, "requestType", requestType);
+	if (requestData)
+		obs_data_set_obj(req, "requestData", requestData);
+	calldata_init(&cd);
+	calldata_set_string(&cd, "request_type", "CallVendorRequest");
+	calldata_set_string(&cd, "request_data", obs_data_get_json(req)); /* JSON text */
+	std::string out;
+	if (proc_handler_call(ph, "call_request", &cd)) {
+		struct Response {
+			unsigned int status;
+			char *comment;
+			char *data;
+		};
+		auto *r = (Response *)calldata_ptr(&cd, "response");
+		if (r) {
+			out = r->data ? r->data : "";
+			bfree(r->comment);
+			bfree(r->data);
+			bfree(r);
+		}
+	}
+	calldata_free(&cd);
+	return out;
+}
+
+void prepareRegie()
+{
+	g_beforeRegie = obs_frontend_get_current_scene();
+	obs_scene_t *scene = obs_scene_create("Layouts Plateau");
+	g_plateau = obs_scene_get_source(scene);
+	/* Image sources: removing the file drops the picture like an unplugged capture. */
+	const QString file = QDir::temp().filePath("layouts-selftest-cam.png");
+	QImage pic(640, 360, QImage::Format_RGB32);
+	pic.fill(Qt::red);
+	pic.save(file);
+	auto image = [&](const char *name) {
+		OBSDataAutoRelease st = obs_data_create();
+		obs_data_set_string(st, "file", file.toUtf8().constData());
+		OBSSourceAutoRelease src = obs_source_create("image_source", name, st, nullptr);
+		return obs_scene_add(scene, src);
+	};
+	obs_sceneitem_t *a = image("REGIE CAM 1");
+	obs_sceneitem_t *b = image("REGIE CAM 2");
+	roles::setRole({obs_sceneitem_get_source(a), obs_sceneitem_get_source(b)}, core::Role::Camera);
+	Regie &r = Regie::instance();
+	r.setPlateau("Layouts Plateau");
+	r.refresh();
+	bool hasDuo = false;
+	for (const core::BroadcastTemplate &t : r.layouts())
+		hasDuo = hasDuo || t.key == "Cam2Split";
+	R->check(r.sources().size() == 2 && hasDuo, "regie-reads-plateau",
+		 QString("%1 sources, %2 layouts").arg(r.sources().size()).arg(r.layouts().size()));
+	const bool set = r.setLayout("Cam2Split");
+	R->check(set && r.preview().key == "Cam2Split" && r.preview().tiles.size() == 2, "regie-layout-in-preview",
+		 QString::fromStdString(r.preview().key));
+	R->check(r.studioMode() && r.take(), "regie-cut", r.studioMode() ? "" : "studio mode off");
+	/* Stream Deck / Companion path: obs-websocket CallVendorRequest. */
+	const std::string state = websocketVendorCall("GetState", nullptr);
+	R->check(state.find("Cam2Split") != std::string::npos, "websocket-getstate",
+		 QString::fromStdString(state.substr(0, 160)));
+	const std::string list = websocketVendorCall("ListLayouts", nullptr);
+	R->check(list.find("Cam1Full") != std::string::npos, "websocket-listlayouts",
+		 QString::number(list.size()) + " bytes");
+}
+
+void checkRegieProgram()
+{
+	const double w1 = programItemWidth("REGIE CAM 1"), w2 = programItemWidth("REGIE CAM 2");
+	R->check(Regie::instance().program().key == "Cam2Split" && w1 > 900 && w1 < 980 && w2 > 900 && w2 < 980,
+		 "regie-program-duo", QString("%1 / %2").arg(w1).arg(w2));
+	/* CAM 2 stops sending video (a capture unplugged): width 0. */
+	OBSSourceAutoRelease src = obs_get_source_by_name("REGIE CAM 2");
+	OBSDataAutoRelease st = obs_data_create();
+	obs_data_set_string(st, "file", "/nonexistent/layouts-selftest-cam.png");
+	obs_source_update(src, st);
+}
+
+void checkFailoverLost()
+{
+	obs_sceneitem_t *lost = programItem("REGIE CAM 2");
+	const double w1 = programItemWidth("REGIE CAM 1");
+	R->check(lost && !obs_sceneitem_visible(lost) && w1 > 1900, "failover-drops-to-solo",
+		 QString("cam2 %1, cam1 width %2")
+			 .arg(lost && obs_sceneitem_visible(lost) ? "visible" : "hidden")
+			 .arg(w1));
+	OBSSourceAutoRelease src = obs_get_source_by_name("REGIE CAM 2");
+	OBSDataAutoRelease st = obs_data_create();
+	obs_data_set_string(st, "file", QDir::temp().filePath("layouts-selftest-cam.png").toUtf8().constData());
+	obs_source_update(src, st);
+}
+
+void checkFailoverBack()
+{
+	obs_sceneitem_t *back = programItem("REGIE CAM 2");
+	const double w1 = programItemWidth("REGIE CAM 1");
+	R->check(back && obs_sceneitem_visible(back) && w1 > 900 && w1 < 980, "failover-restores-layout",
+		 QString("cam1 width %1").arg(w1));
+	Regie::instance().setPlateau(QString());
+	/* Leave the program as the next tests expect it. */
+	if (g_beforeRegie)
+		obs_frontend_set_current_scene(g_beforeRegie);
+}
+
 OBSSourceAutoRelease g_move, g_savedTransition, g_moveA, g_moveB;
 
 bool moveAvailable()
@@ -1938,6 +2273,23 @@ void runSelfTest(ui::LayoutsWindow *window)
 {
 	static Runner runner;
 	R = &runner;
+	runner.onDone = [] {
+		/* Released here, not by static destructors after libobs is gone. */
+		g_cleanScene = nullptr;
+		g_cornerScene = nullptr;
+		g_beforeCorners = nullptr;
+		g_cornerSceneB = nullptr;
+		g_move = nullptr;
+		g_savedTransition = nullptr;
+		g_moveA = nullptr;
+		g_moveB = nullptr;
+		g_ccScene = nullptr;
+		g_perfScene = nullptr;
+		g_shapeScene = nullptr;
+		g_beforeShapes = nullptr;
+		g_plateau = nullptr;
+		g_beforeRegie = nullptr;
+	};
 	g_window = window;
 	g_dock = window->canvas();
 	obs_log(LOG_INFO, "[selftest] START");
@@ -2073,7 +2425,9 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(300, [] { testLayers(); });
 		R->add(300, [] { testLayoutsV02(); });
 		R->add(300, [] { testRoles(); });
+		R->add(300, [] { testChatRole(); });
 		R->add(300, [] { testBroadcast(); });
+		R->add(300, [] { testSwap(); });
 		R->add(300, [] { testBroadcastScene(); });
 		R->add(300, [] { testShowScenes(); });
 		R->add(300, [] { testTypes(); });
@@ -2124,6 +2478,12 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(1000, [] { takeShot(); });
 		R->add(1500, [] { checkCleanOutput(); });
 	}
+	if (enabled("regie")) {
+		R->add(500, [] { prepareRegie(); });
+		R->add(1500, [] { checkRegieProgram(); });
+		R->add(3000, [] { checkFailoverLost(); });
+		R->add(3500, [] { checkFailoverBack(); });
+	}
 	if (enabled("corners")) {
 		R->add(500, [] { prepareCorners(); });
 		R->add(1000, [] { takeShot(); });
@@ -2131,6 +2491,9 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(1000, [] { takeShot(); });
 		R->add(1500, [] { checkCornersOtherScene(); });
 		R->add(300, [] { testCornersMigration(); });
+		R->add(300, [] { prepareShapes(); });
+		R->add(1200, [] { takeShot(); });
+		R->add(1500, [] { checkShapes(); });
 		if (moveAvailable()) {
 			R->add(300, [] { prepareMoveCorners(); });
 			R->add(1800, [] { takeShot(); });

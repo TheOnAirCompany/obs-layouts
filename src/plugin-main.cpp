@@ -28,13 +28,18 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "obs/constraints.hpp"
 #include "obs/corners.hpp"
+#include "obs/style-render.hpp"
 #include "obs/edit-context.hpp"
+#include "obs/failover.hpp"
 #include "obs/hotkeys.hpp"
+#include "obs/regie.hpp"
 #include "obs/store.hpp"
+#include "obs/user-layouts.hpp"
 #include "ui/canvas-dock.hpp"
 #include "ui/canvas-view.hpp"
 #include "ui/inspector-dock.hpp"
 #include "ui/layouts-window.hpp"
+#include "ui/regie-dock.hpp"
 #include "ui/theme.hpp"
 
 OBS_DECLARE_MODULE()
@@ -71,6 +76,8 @@ void openWindow(layouts::ui::LayoutsWindow::Mode mode)
 void onFrontendEvent(enum obs_frontend_event event, void *)
 {
 	layouts::EditContext::instance().handleFrontendEvent(event);
+	layouts::Failover::instance().handleFrontendEvent(event);
+	layouts::Regie::instance().handleFrontendEvent(event);
 	if (event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP) {
 		/* The old collection was saved just before. A new, empty collection does not
 		 * call the load callback, so start from an empty document. */
@@ -83,6 +90,8 @@ void onFrontendEvent(enum obs_frontend_event event, void *)
 		layouts::ConstraintWatcher::instance().stop();
 		layouts::hotkeys::save();
 		layouts::hotkeys::unregisterAll();
+		layouts::Regie::instance().saveHotkeys();
+		layouts::Regie::instance().unregisterHotkeys();
 	}
 	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING) {
 		layouts::ConstraintWatcher::instance().start();
@@ -97,9 +106,13 @@ void onSave(obs_data_t *data, bool saving, void *)
 {
 	if (saving) {
 		layouts::Store::instance().saveGuides(data);
+		layouts::Regie::instance().save(data);
 		layouts::hotkeys::save(); /* bindings may have changed in Settings > Hotkeys */
-	} else
+		layouts::Regie::instance().saveHotkeys();
+	} else {
 		layouts::Store::instance().loadGuides(data);
+		layouts::Regie::instance().load(data);
+	}
 }
 
 } // namespace
@@ -109,7 +122,9 @@ bool obs_module_load(void)
 	Q_INIT_RESOURCE(layouts);
 
 	layouts::Store::instance().loadSettings();
+	layouts::userlayouts::load();
 	layouts::corners::registerFilter();
+	layouts::obs::style::registerFilter();
 	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 
 #ifdef LAYOUTS_SELFTEST
@@ -157,6 +172,11 @@ bool obs_module_load(void)
 				g_window->open();
 		});
 
+	/* Switcher: a dock of the OBS window (Docks menu), for live use. */
+	obs_frontend_add_dock_by_id("layouts-regie", obs_module_text("Regie.DockTitle"),
+				    new layouts::ui::RegieDock(main));
+	layouts::Regie::instance().registerHotkeys();
+
 	obs_frontend_add_event_callback(onFrontendEvent, nullptr);
 	obs_frontend_add_save_callback(onSave, nullptr);
 
@@ -164,8 +184,15 @@ bool obs_module_load(void)
 	return true;
 }
 
+void obs_module_post_load(void)
+{
+	/* obs-websocket is loaded by now: register the "layouts" vendor requests. */
+	layouts::Regie::instance().registerVendor();
+}
+
 void obs_module_unload(void)
 {
+	layouts::Regie::instance().unregisterVendor();
 	obs_frontend_remove_save_callback(onSave, nullptr);
 	obs_frontend_remove_event_callback(onFrontendEvent, nullptr);
 	layouts::ConstraintWatcher::instance().stop();

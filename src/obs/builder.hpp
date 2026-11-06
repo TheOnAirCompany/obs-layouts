@@ -20,8 +20,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 /* Layouts Builder: makes the scenes of a show from typed sources, whatever scene they
  * are in. Each scene gets the background at the very back, the hosts, cameras and
- * screens in the tiles of a broadcast layout, and the graphics on top at the place
- * they already have elsewhere. */
+ * screens in the tiles of a broadcast layout, the chats above them, and the graphics on
+ * top at the place they already have elsewhere. */
 
 #include "core/broadcast.hpp"
 #include "core/roles.hpp"
@@ -50,11 +50,13 @@ struct SceneSpec {
 	QString name;    /* wanted name (made unique when created) */
 	std::vector<OBSSource> cameras;
 	std::vector<OBSSource> screens;
+	std::vector<OBSSource> chats;
 };
 
 struct Plan {
 	std::vector<OBSSource> cameras; /* hosts first */
 	std::vector<OBSSource> screens;
+	std::vector<OBSSource> chats;
 	OBSSource background; /* the first one */
 	std::vector<OBSSource> graphics;
 	std::vector<SceneSpec> scenes;

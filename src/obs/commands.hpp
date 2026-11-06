@@ -30,6 +30,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "core/layout.hpp"
 
 #include <obs.h>
+#include <obs.hpp>
 
 #include <functional>
 #include <optional>
@@ -91,12 +92,31 @@ bool autoLayout(const core::FlowSpec &spec, bool inCanvas);
 bool applyPreset(core::Preset preset, const core::PresetSpec &spec);
 /* ---- broadcast layouts (cameras + screens, TV style) ---- */
 enum class KindMode { Auto, AllCameras, AllScreens };
-/* Kind of each selected top-level item, in selection order. */
+/* Kind of each selected top-level item, in selection order. Chat sources are always
+ * SlotKind::Chat, whatever the mode. */
 std::vector<core::SlotKind> selectionKinds(KindMode mode);
 
 /* Transform that places a source in a broadcast tile: cameras fill it (cropped on the
- * face), screens fit; a flipped source stays flipped. */
-core::ItemTransform slotTransform(const core::ItemModel &m, core::SlotKind kind, const core::Rect &cell);
+ * face), screens fit; a flipped source stays flipped. A chat is never cropped: it fits
+ * inside the cell (scale-inner bounds), at the top of a column cell, centered in a
+ * ticker cell. */
+core::ItemTransform slotTransform(const core::ItemModel &m, core::SlotKind kind, const core::Rect &cell,
+				  bool ticker = false);
+/* Same, turned by the slot rotation around the cell center (0.5). */
+core::ItemTransform slotTransform(const core::ItemModel &m, const core::Slot &slot);
+/* Writes the shape and frame of the slot in the item style override (private setting
+ * "layouts_style"); an item moving to a plain slot loses what a slot had added. */
+void applySlotStyle(obs_sceneitem_t *item, const core::Slot &slot);
+/* Slots of a template on the canvas, mirrored as set in the gallery (store settings
+ * broadcastMirrorH / broadcastMirrorV). Every place that applies a template uses it. */
+std::vector<core::Slot> broadcastSlots(const std::string &key, const core::Rect &canvas,
+				       const core::BroadcastSpec &spec);
+/* Stacks the items of a template in slot order (back to front), keeping them in the
+ * places they already take among the other items (background below, graphics above). */
+void stackInSlotOrder(const std::vector<obs_sceneitem_t *> &backToFront);
+/* The scene really on air: the active source of the program transition. In Studio Mode
+ * with "duplicate scene", that is a private copy, not obs_frontend_get_current_scene. */
+OBSSource onAirScene();
 /* Locks an item and makes it scale with the canvas. */
 void lockItem(obs_sceneitem_t *item);
 /* Target frames (one per selected item that gets a slot) for a template. */
@@ -114,6 +134,16 @@ QString createBroadcastScene(const std::string &key, const QString &sceneName, c
 int createShowScenes(const core::BroadcastSpec &spec, KindMode mode, bool lock,
 		     const std::function<QString(const std::string &key)> &templateName,
 		     const std::function<QString(const QString &sourceName)> &soloName);
+
+/* ---- swap (0.5) ---- */
+/* True when both items can exchange their slots: different items of the same scene
+ * with compatible roles (camera/host with camera/host, screen with screen). */
+bool canSwapItems(obs_sceneitem_t *a, obs_sceneitem_t *b);
+/* The two items exchange their slots (one undo entry): visible cell, rotation, z-order,
+ * style, lock and constraints stay with the slot; each item keeps its flips and frame
+ * mode, its crop is recomputed for the new cell. Works on locked items (a locked
+ * broadcast layout can still be recast) and on any scene, not only the edited one. */
+bool swapItems(obs_sceneitem_t *a, obs_sceneitem_t *b);
 
 /* Shows the frames as a ghost preview on the Canvas (empty clears it). */
 void showPreview(const std::vector<core::Frame> &frames);

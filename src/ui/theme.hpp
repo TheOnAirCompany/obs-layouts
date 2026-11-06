@@ -44,6 +44,13 @@ constexpr int kIconSize = 16;
 constexpr int kLabelWidth = 16;         /* scrub label "X", "W"... */
 constexpr int kRefGridSize = 46;        /* 3x3 reference point picker */
 constexpr qreal kSectionTitlePt = 0.85; /* section title font, relative */
+/* Style section (0.5) */
+constexpr int kSwatchSize = 14;                /* provisional: color swatch inside its button */
+constexpr QRgb kSwatchOutline = 0x80FFFFFF;    /* provisional */
+constexpr int kStyleFieldWidth = 72;           /* provisional: px / width fields next to a row */
+constexpr int kStyleRoleListWidth = 150;       /* provisional: "Styles by type" role list */
+constexpr int kOverrideDot = 6;                /* provisional: "differs from its type" dot */
+constexpr QRgb kOverrideDotColor = 0xFF18A0FB; /* provisional */
 
 /* ---- Canvas overlays (canvas colors are ARGB) ---- */
 constexpr QRgb kSelection = 0xFF18A0FB;  /* selection outline and handles */
@@ -61,18 +68,32 @@ constexpr QRgb kPreview = 0xFF8B6CFF; /* ghost frames before a preset / layout i
 constexpr QRgb kPreviewFill = 0x308B6CFF;
 constexpr QRgb kThumbCamera = 0xFF5FB4F5; /* broadcast gallery: camera tiles */
 constexpr QRgb kThumbScreen = 0xFFC9A24A; /* broadcast gallery: screen tiles */
+constexpr QRgb kThumbFrame = 0xFFF4F1EA;  /* broadcast gallery: Polaroid border, provisional */
 /* Source types (0.4): pills in Layers and the Builder, filter dots. */
-constexpr QRgb kRoleHost = 0xFF7ED6C4; /* provisional, see the Builder review page */
+constexpr QRgb kRoleHost = 0xFF7ED6C4;
 constexpr QRgb kRoleCamera = kThumbCamera;
 constexpr QRgb kRoleScreen = kThumbScreen;
 constexpr QRgb kRoleBackground = 0xFF8E8AA3;
 constexpr QRgb kRoleGraphics = 0xFFE2708A;
+constexpr QRgb kRoleChat = 0xFFB5D96B;
+constexpr QRgb kThumbChat = kRoleChat;       /* broadcast gallery: chat tiles */
 constexpr QRgb kRoleNone = 0xFF7D828E;       /* dashed outline, "not set" */
 constexpr QRgb kRolePillText = 0xFF15171C;   /* text on a filled pill */
 constexpr QRgb kCrop = 0xFFFF9F0A;           /* crop mode handles and frame */
 constexpr QRgb kCanvasBackdrop = 0xFF000000; /* behind the scene, inside the canvas */
 constexpr QRgb kOutside = 0xFF1B1C1F;        /* around the canvas (dark themes) */
 constexpr QRgb kLiveFrame = 0xFFE5484D;      /* frame around the canvas when on air */
+constexpr QRgb kSwap = 0xFF18A0FB;           /* outline of the slot a dragged item swaps with */
+constexpr QRgb kSwapFill = 0x1F18A0FB;       /* 12 % fill of that slot */
+constexpr int kSwapOutline = 2;              /* outline width, device px at 1x */
+/* Switcher dock (0.5): tally of the source and layout buttons. */
+constexpr QRgb kTallyProgram = 0xFFE5484D; /* on program (red) */
+constexpr QRgb kTallyPreview = 0xFF30A46C; /* on preview (green) */
+constexpr QRgb kTallyText = 0xFFFFFFFF;    /* text on a lit button */
+constexpr int kRegieButton = 28;           /* height of a bus button (compact) */
+constexpr int kRegieThumbW = 72;           /* provisional: layout button thumbnail */
+constexpr int kRegieThumbH = 40;           /* provisional */
+constexpr int kRegieCutHeight = 44;        /* provisional: CUT / AUTO buttons */
 
 constexpr int kHandleSize = 8;      /* logical px */
 constexpr int kHandleHit = 7;       /* hit radius around a handle */

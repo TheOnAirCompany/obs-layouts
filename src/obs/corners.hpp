@@ -28,6 +28,18 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * The Inspector shows and edits the radius in canvas pixels. */
 
 #include "core/expression.hpp"
+#include "core/geometry.hpp"
+#include "core/style.hpp"
+
+#include <obs.h>
+#include <graphics/graphics.h>
+#include <graphics/matrix4.h>
+
+#include <vector>
+
+#include <obs.hpp>
+
+#include <string>
 
 namespace layouts {
 
@@ -53,6 +65,55 @@ bool setRadius(const core::Expression &expr);
 
 /* Field label drag: applied live, one undo step once finished. */
 void scrub(double delta, bool finished);
+
+/* Per-item style (0.5).
+ *
+ * How an item's style reaches the filter: the filter only knows its source and, while a
+ * scene renders, that scene's token; OBS never tells a filter which scene item draws it.
+ * So the style is copied, per scene, into the source's filter settings ("scenes" entries:
+ * mode, radius, ratio, scale_x/scale_y, polygon), and the item's private setting
+ * "layouts_style" stays the reference. The UI calls applyItemStyle whenever
+ * "layouts_style" or the item's size changes (the Auto/Round radius of a cropped item uses
+ * the scale stored here; an uncropped one reads its scale from the render matrix).
+ * Limit: two items of the same source in the same scene share one shape (the last
+ * applied).
+ *
+ * applyItemStyle ensures the filter (and the scene marker) exist, stores the item's
+ * radius mode and its mask polygon (cell-normalized, convex, up to 8 points; read from
+ * "layouts_style".polygon when polygon is null) for the item's scene (its parent scene
+ * for an item of a group), as one undo step. Returns false for groups and scenes. */
+/* undo false: the caller records its own step (the Style section does). */
+bool applyItemStyle(obs_sceneitem_t *item, const core::Style &style, const std::vector<core::Vec2> *polygon = nullptr,
+		    bool undo = true);
+
+/* The "polygon" of an item's "layouts_style", made convex (empty: none). */
+std::vector<core::Vec2> itemPolygon(obs_sceneitem_t *item);
+/* ---- shared with the border and shadow filter (style-render.cpp) ---- */
+
+/* Where the innermost scene being rendered on this thread draws (recorded by its scene
+ * marker before the scene renders its items): lets a filter draw into the scene itself,
+ * e.g. the shadow of an item that OBS renders through its own texture (crop). */
+struct SceneRenderContext {
+	obs_source_t *scene = nullptr;
+	gs_texture_t *target = nullptr;
+	gs_zstencil_t *zstencil = nullptr;
+	struct gs_rect viewport = {};
+	struct matrix4 matrix = {};
+	enum gs_color_space space = GS_CS_SRGB;
+};
+bool sceneRenderContext(SceneRenderContext &out);
+
+/* Token of the scene rendering on this thread (scene marker), empty outside a scene. */
+std::string renderingScene();
+/* Token of a scene, created when missing (UI thread). */
+std::string sceneToken(obs_source_t *scene);
+/* Token of a scene read from its marker, render thread safe; empty when it has none. */
+std::string sceneTokenAtRender(obs_source_t *scene);
+/* The transition on the program, as last seen from the UI thread (render thread safe). */
+OBSSource programTransition();
+/* Corner radius of a source for the render in progress (source pixels, horizontal, and
+ * vertical/horizontal ratio); false when the source has no corners filter. */
+bool renderRadius(obs_source_t *source, float &r, float &ratio);
 
 } // namespace corners
 } // namespace layouts

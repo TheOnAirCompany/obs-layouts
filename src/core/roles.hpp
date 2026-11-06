@@ -25,6 +25,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *   Screen     shown whole, never cropped
  *   Background full canvas, always at the very back, never in a tile
  *   Graphics   (CG) logo, banner, name, frame: always on top, never moved by layouts
+ *   Chat       live chat box (0.5): fitted whole in chat slots, never cropped
  *   None       not set: ignored by the Builder
  *
  * A role is suggested from the start of the source name ("CAM _ GUEST 1" is a camera),
@@ -36,7 +37,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace layouts::core {
 
-enum class Role { None, Host, Camera, Screen, Background, Graphics };
+enum class Role { None, Host, Camera, Screen, Background, Graphics, Chat };
 
 /* Host or Camera: placed in a camera tile. */
 inline bool isCameraRole(Role r)
@@ -44,7 +45,8 @@ inline bool isCameraRole(Role r)
 	return r == Role::Host || r == Role::Camera;
 }
 
-/* Stable keys for saving ("none", "host", "camera", "screen", "background", "graphics"). */
+/* Stable keys for saving ("none", "host", "camera", "screen", "background", "graphics",
+ * "chat"). */
 const char *roleKey(Role r);
 Role roleFromKey(std::string_view key); /* None for unknown keys */
 
@@ -54,6 +56,7 @@ struct PrefixRules {
 	std::vector<std::string> screen;
 	std::vector<std::string> background;
 	std::vector<std::string> graphics;
+	std::vector<std::string> chat;
 };
 
 const PrefixRules &defaultPrefixRules();

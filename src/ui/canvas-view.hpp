@@ -156,6 +156,9 @@ private:
 	void startMove(const QPointF &p);
 	void updateMove(const QPointF &p, Qt::KeyboardModifiers mods);
 	void updateResize(const QPointF &p, Qt::KeyboardModifiers mods);
+	/* The inspector ratio lock, inverted while Shift is held. */
+	static bool resizeKeepsRatio(Qt::KeyboardModifiers mods);
+	bool refreshResizeForModifier(QKeyEvent *e);
 	void updateCrop(const QPointF &p);
 	bool canCrop();
 	void updateRotate(const QPointF &p, Qt::KeyboardModifiers mods);
@@ -195,6 +198,7 @@ private:
 	core::Rect dragUnion_;
 	std::unique_ptr<EditSession> session_;
 	int handle_ = -1;
+	bool resizeLocked_ = false; /* the running resize keeps the ratio (badge) */
 	double rotStartAngle_ = 0, rotStartRot_ = 0;
 	core::Vec2 rotCenter_;
 	uint64_t guideId_ = 0;
@@ -206,6 +210,12 @@ private:
 	bool rubberAdditive_ = false;
 	std::vector<std::pair<int64_t, int64_t>> rubberBase_;
 	core::SnapResult snap_;
+	/* Swap (0.5): the item pressed, and the item it would swap with on release. A locked
+	 * item does not move but can still be dropped on another slot. */
+	OBSSceneItem swapSource_;
+	OBSSceneItem swapTarget_;
+	bool swapOnly_ = false;
+	void updateSwapTarget(const core::Vec2 &world, Qt::KeyboardModifiers mods);
 	std::optional<core::SnapLine> valueSnap_;
 	std::pair<int64_t, int64_t> hover_{-1, -1};
 	bool spaceHeld_ = false;

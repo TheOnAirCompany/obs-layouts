@@ -17,6 +17,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "broadcast.hpp"
+#include "broadcast-inventive.hpp"
+#include "broadcast-cams.hpp"
+#include "broadcast-screens.hpp"
+#include "user-layouts.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -93,17 +97,25 @@ const std::vector<BroadcastTemplate> &broadcastTemplates()
 			l.push_back({"Screen1Cam" + std::to_string(n) + "Column", n, 1});
 		for (int n = 2; n <= 6; n++)
 			l.push_back({"Screen1Cam" + std::to_string(n) + "Strip", n, 1});
+		appendCamTemplates(l);
+		appendScreenTemplates(l);
+		appendInventiveTemplates(l);
 		return l;
 	}();
 	return list;
 }
 
-std::vector<BroadcastTemplate> templatesFor(int cameras, int screens)
+std::vector<BroadcastTemplate> templatesFor(int cameras, int screens, int chats, bool portrait)
 {
 	std::vector<BroadcastTemplate> out;
 	for (const BroadcastTemplate &t : broadcastTemplates()) {
-		if (t.cameras == cameras && t.screens == screens)
+		if (t.cameras == cameras && t.screens == screens && t.chats == chats && !(portrait && t.landscapeOnly))
 			out.push_back(t);
+	}
+	/* Layouts saved by the user, after the built-in ones. */
+	for (const UserLayout &l : UserLayoutRegistry::instance().all()) {
+		if (l.cameras() == cameras && l.screens() == screens && l.chats() == chats)
+			out.push_back({l.key, cameras, screens, l.chats()});
 	}
 	return out;
 }
@@ -175,6 +187,8 @@ static std::vector<Slot> buildLandscape(const std::string &key, const Rect &canv
 		cams(out, {cells[2], cells[3]});
 		out.push_back({SlotKind::Screen, fit169(cells[0])});
 		out.push_back({SlotKind::Screen, fit169(cells[1])});
+	} else {
+		buildCamTemplate(key, canvas, spec, out);
 	}
 	return out;
 }
@@ -217,8 +231,10 @@ std::vector<Slot> buildPortrait(const std::string &key, const Rect &canvas, cons
 	}
 	if (key.rfind("Cam", 0) == 0) {
 		/* The landscape arrangement turned a quarter: columns become rows. */
-		for (const Slot &s : buildLandscape(key, transposed(canvas), spec))
-			out.push_back({s.kind, transposed(s.cell)});
+		for (Slot s : buildLandscape(key, transposed(canvas), spec)) {
+			s.cell = transposed(s.cell);
+			out.push_back(s);
+		}
 		return out;
 	}
 	if (key == "Screen1Full") {
@@ -260,6 +276,16 @@ std::vector<Slot> buildBroadcast(const std::string &key, const Rect &canvas, con
 {
 	if (!(canvas.w > 0) || !(canvas.h > 0))
 		return {};
+	if (isUserKey(key)) {
+		const UserLayout *l = UserLayoutRegistry::instance().find(key);
+		return l ? buildUserLayout(*l, canvas) : std::vector<Slot>{};
+	}
+	std::vector<Slot> inventive;
+	if (buildInventiveTemplate(key, canvas, spec, inventive))
+		return inventive;
+	/* 0.5 screen templates: one 16:9 drawing, letterboxed on a portrait canvas. */
+	if (std::vector<Slot> out; buildScreenTemplate(key, canvas, spec, out))
+		return out;
 	return canvas.h > canvas.w ? buildPortrait(key, canvas, spec) : buildLandscape(key, canvas, spec);
 }
 

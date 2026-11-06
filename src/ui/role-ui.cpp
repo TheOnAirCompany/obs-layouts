@@ -23,6 +23,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/edit-context.hpp"
 #include "obs/roles.hpp"
 
+#include "core/user-layouts.hpp"
+
 #include <obs-module.h>
 
 #include <QApplication>
@@ -53,6 +55,8 @@ const char *roleKeySuffix(core::Role r)
 		return "Background";
 	case core::Role::Graphics:
 		return "Graphics";
+	case core::Role::Chat:
+		return "Chat";
 	case core::Role::None:
 		break;
 	}
@@ -147,8 +151,9 @@ QIcon dotIcon(const QColor &c)
 
 const std::vector<core::Role> &roleOrder()
 {
-	static const std::vector<core::Role> order{core::Role::Host,       core::Role::Camera,   core::Role::Screen,
-						   core::Role::Background, core::Role::Graphics, core::Role::None};
+	static const std::vector<core::Role> order{core::Role::Host, core::Role::Camera,     core::Role::Screen,
+						   core::Role::Chat, core::Role::Background, core::Role::Graphics,
+						   core::Role::None};
 	return order;
 }
 
@@ -165,6 +170,8 @@ QColor roleColor(core::Role r)
 		return QColor::fromRgba(tokens::kRoleBackground);
 	case core::Role::Graphics:
 		return QColor::fromRgba(tokens::kRoleGraphics);
+	case core::Role::Chat:
+		return QColor::fromRgba(tokens::kRoleChat);
 	case core::Role::None:
 		break;
 	}
@@ -221,6 +228,10 @@ QString sourceIcon(obs_source_t *src)
 
 QString broadcastLabel(const std::string &key, double aspect)
 {
+	if (core::isUserKey(key)) {
+		const core::UserLayout *l = core::UserLayoutRegistry::instance().find(key);
+		return l ? QString::fromStdString(l->name) : QString();
+	}
 	const std::string base = "Broadcast." + key;
 	const char *portrait = nullptr;
 	if (aspect < 1 && obs_module_get_string((base + ".Portrait").c_str(), &portrait))

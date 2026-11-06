@@ -12,7 +12,7 @@ Layouts for OBS is a native OBS Studio plugin that brings the composition tools 
 
 ![The Layouts window: Canvas with rulers and guides, Inspector on the right](docs/images/layouts-window.png)
 
-> **Status: 0.2.0 preview.** Tested in OBS Studio 33.0.1 on macOS (Apple Silicon). Windows and Linux packages are built by CI but not tested at runtime yet. Packages are unsigned. Keep a backup of your scene collection and report anything odd in [Issues](https://github.com/TheOnAirCompany/obs-layouts/issues).
+> **Status: 0.5.0.** Tested in OBS Studio 33.0.1 on macOS (Apple Silicon). Windows and Linux packages are built by CI but not tested at runtime yet. The macOS package is signed and notarized; Windows and Linux packages are not signed. Keep a backup of your scene collection and report anything odd in [Issues](https://github.com/TheOnAirCompany/obs-layouts/issues).
 
 ## What it adds
 
@@ -22,7 +22,7 @@ The left panel of the Layouts window: every source of the edited scene, front on
 
 ### Types and Layouts Builder
 
-Give each source a type (Host, Cam, Screen, BG, CG) from a colored pill, or let Layouts suggest it from the name (`CAM _ GUEST 1`, `SCREEN _ RIGHT`, `BG _ DYNAMIQUE`, `LOGO`). Filter Layers by type. **Tools > Layouts Builder** lists every source of the collection: select the ones you want and pick a broadcast layout from the same gallery as in Scene mode to make the scene (background at the back, hosts in the large tile, graphics on top where they already are), or create all the scenes of the show at once.
+Give each source a type (Host, Cam, Screen, Chat, BG, CG) from a colored pill, or let Layouts suggest it from the name (`CAM _ GUEST 1`, `SCREEN _ RIGHT`, `TCHAT _ TWITCH`, `BG _ DYNAMIQUE`, `LOGO`). Filter Layers by type. **Tools > Layouts Builder** lists every source of the collection: select the ones you want and pick a broadcast layout from the same gallery as in Scene mode to make the scene (background at the back, hosts in the large tile, graphics on top where they already are), or create all the scenes of the show at once.
 
 ### Inspector
 
@@ -32,11 +32,11 @@ The right panel of the Layouts window. It always shows the selection of the edit
 - **Math in every field**: `1920/2`, `100% - 120`, `+20`, `-10`, `*1.5`, `=-10` for an absolute negative value. Drag a field label to scrub (Shift ×10, Alt ×0.1).
 - **Ratio lock**, **Fit / Fill / Stretch** to the canvas, **original size**, **reset**, **rotate ±90°**, **flip**.
 - **Crop** in source pixels (the image stays in place), **bounding box** type and alignment.
-- **Rounded corners** with a clean anti-aliased mask that follows the crop, without any shader plugin.
+- **Style**: corners (Auto, px, Round, None), border, drop shadow (Soft, Hard or your own) and a fade during transitions, drawn by Layouts' own filters with a clean anti-aliased mask that follows the crop, without any shader plugin. Each type of source has a default style (**Styles by type…**); an item can have its own, and **Reset to type** brings it back.
 - **Frame modes**: turn a 16:9 camera into a 1:1 or 9:16 tile by typing W and H or with a ratio button; Fill crops instead of distorting, anchored on the reference point.
 - **Multiple selection**: align to the selection, the canvas or a **key object**; distribute centers or spacing; type an **exact gap**; same width / height / size; **Mixed** values.
 - **Copy / paste properties** (position, size, rotation, crop, bounding box).
-- **Broadcast layouts**: select 1 to 6 cameras and up to 2 screens, pick a TV-style layout (duo, three columns, host + guests, grids, screen + guests on the side or below, picture in picture) and apply it, or make a new scene with it. Cameras fill their tile, screens are never cropped. Works on vertical canvases too (guests stack, screens on top). **Create show scenes** makes, in one click, a full-screen scene per guest and screen plus a scene for every layout that fits. **Lock the layout** keeps everything in place.
+- **Broadcast layouts**: select your cameras, screens and chat, pick one of **118 TV-style layouts** (duo, three columns, host + guests, grids, screen + guests on the side or below, picture in picture, and inventive ones: tilted cards, Polaroid, bento, dock of bubbles, diagonal duo, card stack, masonry wall, porthole...) and apply it, or make a new scene with it. Cameras fill their tile, screens and chats are never cropped; slots can be tilted, round, cut on a diagonal or framed. Mirror the gallery left / right or top / bottom. Works on vertical canvases too (guests stack, screens on top). **Create show scenes** makes, in one click, a full-screen scene per guest and screen plus a scene for every layout that fits. **Lock the layout** keeps everything in place. **Save as layout** turns your own scene into a layout of the gallery, to export and import between machines.
 
   ![Broadcast layouts in the Inspector, three columns previewed on the Canvas](docs/images/broadcast-layouts.png)
 
@@ -53,11 +53,18 @@ The editing surface in the middle of the Layouts window, next to the OBS preview
 - **Layout grids**: square grid (presets 8 to 64 px), columns, rows.
 - **Smart snapping**: guides, grid, other elements (edges, centers, **equal spacing**), canvas — with red smart guides. Hold Ctrl/Cmd to bypass it, as in OBS.
 - **Measurements**: hold Alt to see the distances to the hovered element or to the canvas.
-- **Direct manipulation**: select, Shift-select, rubber band, move, resize from 8 handles (Alt from the center), rotate just outside a corner, nudge with the arrows. With several elements selected, the handles scale the whole selection.
+- **Direct manipulation**: select, Shift-select, rubber band, move, resize from 8 handles, rotate just outside a corner, nudge with the arrows. The ratio lock decides whether the handles keep the ratio, Shift inverts it, Alt resizes from the center; a free resize crops (Fill) or letterboxes (Fit) instead of distorting. With several elements selected, the handles scale the whole selection.
+- **Swap**: drop a camera on another camera (a screen on a screen, a chat on a chat) and they exchange their places, style and stacking, even in a locked layout. Alt + drag for a plain move.
 - **Crop mode** (C): the handles crop the source and the image stays in place.
 - **Zoom** (fit, 100 %, selection, pinch, Ctrl/Cmd + wheel) and **pan** (Space + drag, wheel).
 - **Safe areas**, center lines and custom margins.
 - Edit the scene OBS shows, or **pin any scene**, including scenes of other OBS 33 canvases (vertical...).
+
+### Layouts Switcher
+
+**Docks > Layouts Switcher** turns a scene of your show (the *Plateau*) into a vision mixer: a row of layouts, one bus of sources per slot, a PREVIEW line and **CUT**. Red is on air, green is in preview; with Studio Mode, prepare the next shot in preview and take it. Every action has an OBS hotkey (cut, next / previous layout, layouts 1 to 9, slot N = source M) and an obs-websocket request (vendor `layouts`), for Stream Deck and Companion.
+
+If a camera or a screen on air stops sending video, the program drops at once to the same layout with one tile less and the Switcher shows a red banner; the original layout comes back by itself when the source returns.
 
 ### Made for live shows
 
@@ -72,7 +79,7 @@ Download the file for your system from the [releases](https://github.com/TheOnAi
 
 | System | File | How to install |
 |---|---|---|
-| macOS 13+ (Apple Silicon and Intel) | `obs-layouts-<version>-macos-universal.pkg` | Open the package and follow the installer (it installs for the current user). The package is not notarized yet: if macOS blocks it, right-click it and choose *Open*, or allow it in *System Settings > Privacy & Security*. |
+| macOS 13+ (Apple Silicon and Intel) | `obs-layouts-<version>-macos-universal.pkg` | Open the package and follow the installer (it installs for the current user). The package is signed and notarized by Apple. |
 | Windows 10/11 x64 | `obs-layouts-<version>-windows-x64.zip` | Extract the `obs-layouts` folder into `C:\ProgramData\obs-studio\plugins\`. |
 | Ubuntu x86_64 | `obs-layouts-<version>-x86_64-linux-gnu.deb` | `sudo apt install ./obs-layouts-<version>-x86_64-linux-gnu.deb`. Needs the `obs-studio` package **33 or later** installed system-wide. |
 
@@ -85,9 +92,9 @@ To uninstall, remove the plugin. Your scenes and sources are never touched; Layo
 | Keys | Action |
 |---|---|
 | Arrows, Shift + arrows | move 1 px, 10 px |
-| Shift + drag | constrain to an axis; on a corner handle: free ratio |
+| Shift + drag | constrain to an axis; on a handle: invert the ratio lock |
 | Ctrl/Cmd + drag | no snapping |
-| Alt | measure; Alt + resize: from the center |
+| Alt | measure; Alt + resize: from the center; Alt + drag: move without swapping |
 | Space + drag | pan |
 | Shift + 0 / 1 / 2 | zoom 100 % / fit / selection |
 | + / − | zoom in / out |

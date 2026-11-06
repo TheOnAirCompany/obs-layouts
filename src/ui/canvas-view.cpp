@@ -18,6 +18,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "canvas-view.hpp"
 
+#include "broadcast-gallery.hpp"
+
 #include "theme.hpp"
 
 #include "core/expression.hpp"
@@ -35,6 +37,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QCursor>
 #include <QFontMetrics>
 #include <QGuiApplication>
 #include <QInputDialog>
@@ -738,6 +741,22 @@ void CanvasView::rebuildOverlay()
 				worldRect(*b, one, tokens::kSelection);
 		}
 
+		/* ---- swap target ---- */
+		if (swapTarget_ && mode_ == Mode::Move) {
+			for (const ItemEntry &e : ctx.items()) {
+				if (e.item.Get() != swapTarget_.Get())
+					continue;
+				const core::Rect b = e.frame.quad.bounds();
+				const QPointF a = dev({b.left(), b.top()}), c = dev({b.right(), b.bottom()});
+				rect((float)a.x(), (float)a.y(), (float)(c.x() - a.x()), (float)(c.y() - a.y()),
+				     tokens::kSwapFill);
+				quad(e.frame.quad, tokens::kSwapOutline * one, tokens::kSwap);
+				const QPointF m = dev(e.frame.center());
+				addLabel(*s, T("Canvas.Swap"), tokens::kSwap, (float)m.x(), (float)m.y(), true);
+				break;
+			}
+		}
+
 		/* ---- preview of a preset / auto layout ---- */
 		for (const core::Quad &q : ctx.preview()) {
 			const core::Rect b = q.bounds();
@@ -880,6 +899,20 @@ void CanvasView::rebuildOverlay()
 				const QPointF p = dev({b->centerX(), b->bottom()});
 				addLabel(*s, text, tokens::kSelection, (float)p.x(), (float)p.y() + 8 * (float)r,
 					 false);
+			}
+		}
+
+		/* ---- ratio badge next to the cursor while a locked resize runs ---- */
+		const bool resizing = (mode_ == Mode::Resize && !(cropMode_ && canCrop())) ||
+				      mode_ == Mode::ResizeMulti;
+		if (resizing && dragStarted_ && resizeLocked_ && !dragItems_.empty()) {
+			const double rw = mode_ == Mode::ResizeMulti ? dragUnion_.w : dragItems_.front().frame.width;
+			const double rh = mode_ == Mode::ResizeMulti ? dragUnion_.h : dragItems_.front().frame.height;
+			const std::string ratio = core::ratioLabel(rw, rh);
+			if (!ratio.empty()) {
+				const QPointF p = dev(cursorWorld_);
+				addLabel(*s, QString::fromStdString(ratio), tokens::kSelection,
+					 (float)p.x() + 18 * (float)r, (float)p.y() + 18 * (float)r, false);
 			}
 		}
 
@@ -1100,6 +1133,9 @@ void CanvasView::mousePressEvent(QMouseEvent *e)
 			ctx.select({hit}, false);
 		}
 		mode_ = Mode::Move;
+		swapSource_ = hit->item;
+		swapTarget_ = nullptr;
+		swapOnly_ = false;
 		return;
 	}
 
@@ -1135,6 +1171,12 @@ void CanvasView::startMove(const QPointF &)
 		u = u ? u->united(b) : b;
 	}
 	dragUnion_ = u.value_or(core::Rect());
+	/* A locked item (a locked broadcast layout) does not move, but it can still be dropped
+	 * on another slot to swap with it. */
+	if (dragItems_.empty() && swapSource_ && obs_sceneitem_locked(swapSource_) && ctx.selection().size() == 1) {
+		swapOnly_ = true;
+		return;
+	}
 	session_ = std::make_unique<EditSession>();
 	if (dragItems_.empty() || !session_->begin(T("Undo.Move"))) {
 		session_.reset();
@@ -1145,6 +1187,12 @@ void CanvasView::startMove(const QPointF &)
 
 void CanvasView::updateMove(const QPointF &p, Qt::KeyboardModifiers mods)
 {
+	if (swapOnly_) {
+		snap_ = core::SnapResult();
+		updateSwapTarget(viewToWorld(p), mods);
+		rebuildOverlay();
+		return;
+	}
 	if (!session_)
 		return;
 	const core::Vec2 w = viewToWorld(p);
@@ -1173,7 +1221,38 @@ void CanvasView::updateMove(const QPointF &p, Qt::KeyboardModifiers mods)
 	for (const ItemEntry &e : dragItems_)
 		changes.push_back({e.item, core::moveBy(e.model, e.parent, delta)});
 	session_->apply(changes);
+	updateSwapTarget(w, mods);
 	rebuildOverlay();
+}
+
+bool CanvasView::resizeKeepsRatio(Qt::KeyboardModifiers mods)
+{
+	return Store::instance().settings().ratioLock != bool(mods & Qt::ShiftModifier);
+}
+
+/* Swap (0.5): dragging one item onto a compatible one (camera or host on camera or host,
+ * screen on screen) exchanges their slots on release. Not while the move snaps to a
+ * guide, and never with Alt held (a plain move; Cmd already turns snapping off). */
+void CanvasView::updateSwapTarget(const core::Vec2 &world, Qt::KeyboardModifiers mods)
+{
+	swapTarget_ = nullptr;
+	if (!swapSource_ || (mods & Qt::AltModifier))
+		return;
+	if (!swapOnly_ && (dragItems_.size() != 1 || dragItems_.front().item.Get() != swapSource_.Get()))
+		return;
+	for (const core::SnapLine &l : snap_.lines) {
+		if (l.kind == core::SnapKind::Guide)
+			return;
+	}
+	const std::vector<ItemEntry> &list = EditContext::instance().items();
+	for (auto it = list.rbegin(); it != list.rend(); ++it) {
+		if (it->item.Get() == swapSource_.Get() || !it->visible || it->isGroup)
+			continue;
+		if (it->frame.quad.contains(world) && commands::canSwapItems(swapSource_, it->item)) {
+			swapTarget_ = it->item;
+			return;
+		}
+	}
 }
 
 void CanvasView::updateResize(const QPointF &p, Qt::KeyboardModifiers mods)
@@ -1196,8 +1275,6 @@ void CanvasView::updateResize(const QPointF &p, Qt::KeyboardModifiers mods)
 
 	const core::RefPoint hr = kHandleRefs[handle_];
 	const bool fromCenter = mods & Qt::AltModifier;
-	const double ax = fromCenter ? 0.5 : 1.0 - hr.fx;
-	const double ay = fromCenter ? 0.5 : 1.0 - hr.fy;
 
 	/* Snap the moving edges when the item is axis aligned. */
 	valueSnap_.reset();
@@ -1228,27 +1305,21 @@ void CanvasView::updateResize(const QPointF &p, Qt::KeyboardModifiers mods)
 		}
 	}
 
-	double nw = f.width, nh = f.height;
-	if (hr.fx != 0.5) {
-		const double anchorU = ax * f.width;
-		nw = fromCenter ? 2.0 * std::fabs(u - anchorU) : std::fabs(u - anchorU);
+	/* The ratio lock of the inspector decides, Shift inverts it for this drag. Locked:
+	 * corners and edges keep the ratio (an edge grows the other axis around its center).
+	 * Free: the frame mode of the item fills the new shape (Fill crops, Fit letterboxes,
+	 * only Stretch distorts). */
+	resizeLocked_ = resizeKeepsRatio(mods);
+	const core::HandleResize r =
+		core::resizeWithHandle({0, 0, f.width, f.height}, hr, {u, v}, resizeLocked_, fromCenter);
+	if (resizeLocked_ || e.isGroup) {
+		session_->apply({{e.item, core::setWorldSize(e.model, e.parent, r.rect.w, r.rect.h, r.anchor)}});
+	} else {
+		const double nw = std::max(1.0, std::round(r.rect.w));
+		const double nh = std::max(1.0, std::round(r.rect.h));
+		session_->apply(
+			{{e.item, core::setFrame(e.model, e.parent, nw, nh, commands::frameMode(e.item), r.anchor)}});
 	}
-	if (hr.fy != 0.5) {
-		const double anchorV = ay * f.height;
-		nh = fromCenter ? 2.0 * std::fabs(v - anchorV) : std::fabs(v - anchorV);
-	}
-	/* Corners keep the aspect ratio like OBS; Shift frees it. */
-	const bool corner = hr.fx != 0.5 && hr.fy != 0.5;
-	if (corner && !(mods & Qt::ShiftModifier)) {
-		const double kx = nw / f.width, ky = nh / f.height;
-		const double k = std::max(kx, ky);
-		nw = f.width * k;
-		nh = f.height * k;
-	}
-	nw = std::max(1.0, std::round(nw));
-	nh = std::max(1.0, std::round(nh));
-
-	session_->apply({{e.item, core::setWorldSize(e.model, e.parent, nw, nh, core::RefPoint{ax, ay})}});
 	rebuildOverlay();
 }
 
@@ -1348,6 +1419,9 @@ void CanvasView::cancelInteraction()
 		Store::instance().cancelGuideEdit(); /* Escape puts a dragged guide back */
 	mode_ = Mode::Idle;
 	dragItems_.clear();
+	swapSource_ = nullptr;
+	swapTarget_ = nullptr;
+	swapOnly_ = false;
 	snap_ = core::SnapResult();
 	valueSnap_.reset();
 	dragStarted_ = false;
@@ -1438,12 +1512,26 @@ void CanvasView::mouseReleaseEvent(QMouseEvent *e)
 			Store::instance().endGuideEdit(T("Undo.Guides")); /* a click without a move: no entry */
 		}
 	}
+	if (mode_ == Mode::Move && dragStarted_ && swapSource_ && swapTarget_) {
+		/* The drag only pointed at the slot: put the item back, then swap (one undo entry). */
+		if (session_) {
+			session_->cancel();
+			session_.reset();
+		}
+		const OBSSceneItem a = swapSource_, b = swapTarget_;
+		EditContext::instance().markDirty();
+		if (EditContext::instance().canEdit())
+			commands::swapItems(a, b);
+	}
 	if (session_) {
 		session_->commit();
 		session_.reset();
 	}
 	mode_ = Mode::Idle;
 	dragItems_.clear();
+	swapSource_ = nullptr;
+	swapTarget_ = nullptr;
+	swapOnly_ = false;
 	snap_ = core::SnapResult();
 	valueSnap_.reset();
 	dragStarted_ = false;
@@ -1541,8 +1629,27 @@ bool CanvasView::event(QEvent *e)
 	return QWidget::event(e);
 }
 
+bool CanvasView::refreshResizeForModifier(QKeyEvent *e)
+{
+	/* Shift (ratio) and Alt (from center) apply at once during a resize, without
+	 * waiting for the pointer to move, like Figma. */
+	if (e->key() != Qt::Key_Shift && e->key() != Qt::Key_Alt)
+		return false;
+	if (!dragStarted_ || (mode_ != Mode::Resize && mode_ != Mode::ResizeMulti))
+		return false;
+	altHeld_ = e->modifiers() & Qt::AltModifier;
+	const QPointF p = mapFromGlobal(QCursor::pos().toPointF());
+	if (mode_ == Mode::Resize)
+		updateResize(p, e->modifiers());
+	else
+		updateResizeMulti(p, e->modifiers());
+	return true;
+}
+
 void CanvasView::keyPressEvent(QKeyEvent *e)
 {
+	if (refreshResizeForModifier(e))
+		return;
 	EditContext &ctx = EditContext::instance();
 	const bool shift = e->modifiers() & Qt::ShiftModifier;
 	switch (e->key()) {
@@ -1647,6 +1754,8 @@ void CanvasView::keyReleaseEvent(QKeyEvent *e)
 			unsetCursor();
 		return;
 	}
+	if (refreshResizeForModifier(e))
+		return;
 	if (e->key() == Qt::Key_Alt) {
 		altHeld_ = false;
 		rebuildOverlay();
@@ -1784,41 +1893,11 @@ void CanvasView::updateResizeMulti(const QPointF &p, Qt::KeyboardModifiers mods)
 		}
 	}
 
-	double l = b0.left(), t = b0.top(), r = b0.right(), bt = b0.bottom();
-	const core::Vec2 c = b0.center();
-	if (hr.fx == 1.0) {
-		r = w.x;
-		if (fromCenter)
-			l = 2 * c.x - w.x;
-	} else if (hr.fx == 0.0) {
-		l = w.x;
-		if (fromCenter)
-			r = 2 * c.x - w.x;
-	}
-	if (hr.fy == 1.0) {
-		bt = w.y;
-		if (fromCenter)
-			t = 2 * c.y - w.y;
-	} else if (hr.fy == 0.0) {
-		t = w.y;
-		if (fromCenter)
-			bt = 2 * c.y - w.y;
-	}
-	core::Rect target = core::Rect::fromEdges(std::min(l, r), std::min(t, bt), std::max(l, r), std::max(t, bt));
-	target.w = std::max(1.0, target.w);
-	target.h = std::max(1.0, target.h);
-
-	/* Corners keep the ratio of the selection, like a single element; Shift frees it.
-	 * The anchor is the opposite corner, or the center with Alt. */
-	const bool corner = hr.fx != 0.5 && hr.fy != 0.5;
-	if (corner && !(mods & Qt::ShiftModifier)) {
-		const double k = std::max(target.w / b0.w, target.h / b0.h);
-		const double nw = b0.w * k, nh = b0.h * k;
-		const double ax = fromCenter ? 0.5 : 1.0 - hr.fx;
-		const double ay = fromCenter ? 0.5 : 1.0 - hr.fy;
-		const core::Vec2 anchor = core::pointInRect(b0, {ax, ay});
-		target = {anchor.x - nw * ax, anchor.y - nh * ay, nw, nh};
-	}
+	/* Same rules as a single element: the ratio lock (inverted by Shift) keeps the ratio
+	 * of the selection on corners and edges; a free resize fills each item with its own
+	 * frame mode. The anchor is the opposite side, or the center with Alt. */
+	resizeLocked_ = resizeKeepsRatio(mods);
+	const core::Rect target = core::resizeWithHandle(b0, hr, w, resizeLocked_, fromCenter).rect;
 
 	std::vector<core::Frame> frames;
 	for (const ItemEntry &e : dragItems_)
@@ -1830,8 +1909,11 @@ void CanvasView::updateResizeMulti(const QPointF &p, Qt::KeyboardModifiers mods)
 	for (size_t i = 0; i < dragItems_.size(); i++) {
 		const ItemEntry &e = dragItems_[i];
 		core::ItemModel m = e.model;
-		m.t = core::setWorldSize(m, e.parent, std::max(1.0, out[i].width), std::max(1.0, out[i].height),
-					 center);
+		const double nw = std::max(1.0, out[i].width), nh = std::max(1.0, out[i].height);
+		if (resizeLocked_ || e.isGroup)
+			m.t = core::setWorldSize(m, e.parent, nw, nh, center);
+		else
+			m.t = core::setFrame(m, e.parent, nw, nh, commands::frameMode(e.item), center);
 		m.t = core::moveRefTo(m, e.parent, center, out[i].center);
 		changes.push_back({e.item, m.t});
 	}
@@ -1955,6 +2037,9 @@ void CanvasView::contextMenuEvent(QContextMenuEvent *e)
 		}
 		menu.addSeparator();
 	}
+
+	menu.addAction(T("UserLayout.Save"), this, [this] { saveLayoutDialog(this); });
+	menu.addSeparator();
 
 	const std::string uuid = ctx.sceneUuid().toStdString();
 	const std::string name = ctx.sceneName().toStdString();

@@ -29,6 +29,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "geometry.hpp"
 
 #include <cstdint>
+#include <string>
 
 namespace layouts::core {
 
@@ -155,6 +156,26 @@ ItemTransform originalSize(const ItemModel &m, const Affine &parent, const RefPo
 /* Changes OBS bounds settings while keeping the anchor in place. Switching from no
  * bounds to bounds initializes the bounds box to the current visual size. */
 ItemTransform setBoundsType(const ItemModel &m, const Affine &parent, BoundsType type, const RefPoint &anchor);
+
+/* ---- Canvas resize handles ---------------------------------------------------
+ * start is the frame when the drag began, handle the grabbed handle (fx and fy in
+ * {0, 0.5, 1}) and pointer where that handle is now, in the same space as start.
+ *   keepRatio   corners and edges keep the ratio of start; an edge handle grows the
+ *               other axis on both sides of its center (like Figma)
+ *   fromCenter  the center stays in place, otherwise the opposite side or corner
+ * The frame never turns inside out: width and height stay >= minSize (the ratio is
+ * kept while clamping). anchor is the point of start that does not move, as a
+ * fraction of the frame (the same fraction of the result). */
+struct HandleResize {
+	Rect rect;
+	RefPoint anchor;
+};
+HandleResize resizeWithHandle(const Rect &start, const RefPoint &handle, const Vec2 &pointer, bool keepRatio,
+			      bool fromCenter, double minSize = 1.0);
+
+/* Short ratio text for the resize badge: "16:9", "4:3", "1:1", "9:16"... when the ratio
+ * is close to a common one (or to a small integer ratio), otherwise "1.85:1". */
+std::string ratioLabel(double width, double height);
 
 /* Mirrors obs_sceneitem_get_box_transform() for a parent transform made of OBS groups. */
 double worldRotation(const ItemModel &m, const Affine &parent);

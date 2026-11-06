@@ -21,7 +21,14 @@ add_executable(
   test-guides.cpp
   test-layout.cpp
   test-broadcast.cpp
+  test-broadcast-inventive.cpp
   test-roles.cpp
+  test-slot-apply.cpp
+  test-mirror.cpp
+  test-shape.cpp
+  test-swap.cpp
+  test-user-layouts.cpp
+  test-failover.cpp
   ${CORE_DIR}/geometry.cpp
   ${CORE_DIR}/item-model.cpp
   ${CORE_DIR}/arrange.cpp
@@ -30,8 +37,18 @@ add_executable(
   ${CORE_DIR}/expression.cpp
   ${CORE_DIR}/guides.cpp
   ${CORE_DIR}/layout.cpp
+  ${CORE_DIR}/broadcast-cams.cpp
   ${CORE_DIR}/broadcast.cpp
+  ${CORE_DIR}/broadcast-inventive.cpp
+  ${CORE_DIR}/broadcast-screens.cpp
+  ${CORE_DIR}/mirror.cpp
   ${CORE_DIR}/roles.cpp
+  ${CORE_DIR}/style.cpp
+  ${CORE_DIR}/slot-apply.cpp
+  ${CORE_DIR}/shape.cpp
+  ${CORE_DIR}/swap.cpp
+  ${CORE_DIR}/user-layouts.cpp
+  ${CORE_DIR}/failover.cpp
 )
 target_include_directories(layouts-core-tests PRIVATE "${CORE_DIR}")
 
