@@ -183,7 +183,11 @@ void Failover::update()
 	if (!applied_ && !sceneOnProgram())
 		return;
 
-	obs_source_t *sceneSource = obs_get_source_by_name(scene_.toUtf8().constData());
+	/* The copy on air in Studio Mode with "duplicate scene", else the scene itself. */
+	if (!applied_)
+		actedOn_ = OBSGetWeakRef(commands::onAirScene());
+	OBSSource held = OBSGetStrongRef(actedOn_);
+	obs_source_t *sceneSource = held ? obs_source_get_ref(held) : nullptr;
 	obs_scene_t *scene = obs_scene_from_source(sceneSource);
 	if (!scene) {
 		obs_source_release(sceneSource);
@@ -261,7 +265,8 @@ void Failover::update()
 
 void Failover::restore()
 {
-	obs_source_t *sceneSource = obs_get_source_by_name(scene_.toUtf8().constData());
+	OBSSource held = OBSGetStrongRef(actedOn_);
+	obs_source_t *sceneSource = held ? obs_source_get_ref(held) : nullptr;
 	obs_scene_t *scene = obs_scene_from_source(sceneSource);
 	std::vector<ItemOp> ops;
 	for (Snapshot &s : snapshot_) {

@@ -30,6 +30,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "core/layout.hpp"
 
 #include <obs.h>
+#include <obs.hpp>
 
 #include <functional>
 #include <optional>
@@ -113,6 +114,9 @@ std::vector<core::Slot> broadcastSlots(const std::string &key, const core::Rect 
 /* Stacks the items of a template in slot order (back to front), keeping them in the
  * places they already take among the other items (background below, graphics above). */
 void stackInSlotOrder(const std::vector<obs_sceneitem_t *> &backToFront);
+/* The scene really on air: the active source of the program transition. In Studio Mode
+ * with "duplicate scene", that is a private copy, not obs_frontend_get_current_scene. */
+OBSSource onAirScene();
 /* Locks an item and makes it scale with the canvas. */
 void lockItem(obs_sceneitem_t *item);
 /* Target frames (one per selected item that gets a slot) for a template. */

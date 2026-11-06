@@ -1793,7 +1793,8 @@ OBSSourceAutoRelease g_beforeRegie;
 
 obs_sceneitem_t *programItem(const char *name)
 {
-	OBSSourceAutoRelease scene = obs_frontend_get_current_scene();
+	/* What is really on air (the private copy in Studio Mode with duplication). */
+	OBSSource scene = commands::onAirScene();
 	obs_scene_t *sc = scene ? obs_scene_from_source(scene) : nullptr;
 	return sc ? obs_scene_find_source(sc, name) : nullptr;
 }

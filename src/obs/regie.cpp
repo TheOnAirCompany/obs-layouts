@@ -269,8 +269,7 @@ bool Regie::studioMode() const
 
 bool Regie::onProgram(const std::string &source) const
 {
-	OBSSourceAutoRelease scene = obs_frontend_get_current_scene();
-	return visibleIn(scene, source);
+	return visibleIn(commands::onAirScene(), source);
 }
 
 bool Regie::onPreview(const std::string &source) const

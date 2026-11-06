@@ -1187,4 +1187,18 @@ bool swapItems(obs_sceneitem_t *a, obs_sceneitem_t *b)
 	return true;
 }
 
+OBSSource onAirScene()
+{
+	OBSSourceAutoRelease out = obs_get_output_source(0);
+	if (out && obs_source_get_type(out) == OBS_SOURCE_TYPE_TRANSITION) {
+		OBSSourceAutoRelease active = obs_transition_get_active_source(out);
+		if (active)
+			return OBSSource(active.Get());
+	}
+	if (out && obs_scene_from_source(out))
+		return OBSSource(out.Get());
+	OBSSourceAutoRelease current = obs_frontend_get_current_scene();
+	return OBSSource(current.Get());
+}
+
 } // namespace layouts::commands
