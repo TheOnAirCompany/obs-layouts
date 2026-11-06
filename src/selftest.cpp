@@ -1802,6 +1802,7 @@ void checkShapes()
 
 /* ---- 0.5 Switcher + lost camera failover, end to end on the program ---- */
 OBSSourceAutoRelease g_plateau;
+int g_morphBefore = 300;
 OBSSourceAutoRelease g_beforeRegie;
 
 obs_sceneitem_t *programItem(const char *name)
@@ -1945,7 +1946,18 @@ void checkFailoverBack()
 	/* AUTO (0.6): from the duo to the solo, gliding in the program scene. */
 	Regie &r = Regie::instance();
 	const bool set = r.setLayout("Cam1Full");
+	/* 1 s so that the middle of the glide can be sampled. */
+	g_morphBefore = Store::instance().settings().morphDurationMs;
+	Store::instance().settings().morphDurationMs = 1000;
 	R->check(set && r.autoTake(), "auto-starts", QString::fromStdString(r.preview().key));
+}
+
+/* Half-way: the solo camera is between its duo size and full screen (it glides). */
+void checkAutoMidway()
+{
+	const double w1 = programItemWidth("REGIE CAM 1"), w2 = programItemWidth("REGIE CAM 2");
+	const double w = std::max(w1, w2);
+	R->check(w > 1000 && w < 1880, "auto-interpolates", QString("width %1 half-way").arg(w));
 }
 
 void checkAuto()
@@ -1954,6 +1966,7 @@ void checkAuto()
 	obs_sceneitem_t *c1 = programItem("REGIE CAM 1"), *c2 = programItem("REGIE CAM 2");
 	const bool v1 = c1 && obs_sceneitem_visible(c1), v2 = c2 && obs_sceneitem_visible(c2);
 	const double w = v1 ? programItemWidth("REGIE CAM 1") : programItemWidth("REGIE CAM 2");
+	Store::instance().settings().morphDurationMs = g_morphBefore;
 	R->check(Regie::instance().program().key == "Cam1Full" && v1 != v2 && w > 1900, "auto-glides-to-solo",
 		 QString("visible %1/%2 width %3").arg(v1).arg(v2).arg(w));
 	Regie::instance().setPlateau(QString());
@@ -2611,6 +2624,7 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(1500, [] { checkRegieProgram(); });
 		R->add(3000, [] { checkFailoverLost(); });
 		R->add(3500, [] { checkFailoverBack(); });
+		R->add(500, [] { checkAutoMidway(); });
 		R->add(1200, [] { checkAuto(); });
 	}
 	if (enabled("corners")) {
