@@ -12,7 +12,7 @@ Layouts for OBS is a native OBS Studio plugin that brings the composition tools 
 
 ![The Layouts window: Canvas with rulers and guides, Inspector on the right](docs/images/layouts-window.png)
 
-> **Status: 0.5.0 preview.** Tested in OBS Studio 33.0.1 on macOS (Apple Silicon). Windows and Linux packages are built by CI but not tested at runtime yet. Packages are unsigned. Keep a backup of your scene collection and report anything odd in [Issues](https://github.com/TheOnAirCompany/obs-layouts/issues).
+> **Status: 0.5.0.** Tested in OBS Studio 33.0.1 on macOS (Apple Silicon). Windows and Linux packages are built by CI but not tested at runtime yet. The macOS package is signed and notarized; Windows and Linux packages are not signed. Keep a backup of your scene collection and report anything odd in [Issues](https://github.com/TheOnAirCompany/obs-layouts/issues).
 
 ## What it adds
 
@@ -79,7 +79,7 @@ Download the file for your system from the [releases](https://github.com/TheOnAi
 
 | System | File | How to install |
 |---|---|---|
-| macOS 13+ (Apple Silicon and Intel) | `obs-layouts-<version>-macos-universal.pkg` | Open the package and follow the installer (it installs for the current user). The package is not notarized yet: if macOS blocks it, right-click it and choose *Open*, or allow it in *System Settings > Privacy & Security*. |
+| macOS 13+ (Apple Silicon and Intel) | `obs-layouts-<version>-macos-universal.pkg` | Open the package and follow the installer (it installs for the current user). The package is signed and notarized by Apple. |
 | Windows 10/11 x64 | `obs-layouts-<version>-windows-x64.zip` | Extract the `obs-layouts` folder into `C:\ProgramData\obs-studio\plugins\`. |
 | Ubuntu x86_64 | `obs-layouts-<version>-x86_64-linux-gnu.deb` | `sudo apt install ./obs-layouts-<version>-x86_64-linux-gnu.deb`. Needs the `obs-studio` package **33 or later** installed system-wide. |
 
