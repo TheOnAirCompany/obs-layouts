@@ -2,6 +2,10 @@
 
 ## 0.7.0 — unreleased
 
+- **Layouts Switcher set aside**: the Switcher dock, the lost camera failover, their hotkeys and the
+  obs-websocket requests are not part of this version. Their code stays in the repository behind the
+  `LAYOUTS_REGIE` build option (off by default); their saved settings are kept in the scene
+  collection.
 - **Two windows** instead of one: **Tools > Scene Editor** (FR *Éditeur de scènes*) to edit a scene
   (Scenes navigator and Layers, Canvas, Inspector) and **Tools > Scene Builder** (FR *Créateur de
   scènes*) to make the scenes of the show from the sources. Both can be open at once; each has a

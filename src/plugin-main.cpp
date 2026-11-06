@@ -18,6 +18,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
+#include <obs.hpp>
 #include <plugin-support.h>
 
 #include <cstring>
@@ -30,9 +31,13 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/corners.hpp"
 #include "obs/style-render.hpp"
 #include "obs/edit-context.hpp"
+#ifdef LAYOUTS_REGIE
 #include "obs/failover.hpp"
+#endif
 #include "obs/hotkeys.hpp"
+#ifdef LAYOUTS_REGIE
 #include "obs/regie.hpp"
+#endif
 #include "obs/morph.hpp"
 #include "obs/scene-directory.hpp"
 #include "obs/store.hpp"
@@ -41,7 +46,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "ui/canvas-view.hpp"
 #include "ui/inspector-dock.hpp"
 #include "ui/layouts-window.hpp"
+#ifdef LAYOUTS_REGIE
 #include "ui/regie-dock.hpp"
+#endif
 #include "ui/theme.hpp"
 
 OBS_DECLARE_MODULE()
@@ -84,8 +91,10 @@ void onFrontendEvent(enum obs_frontend_event event, void *)
 {
 	layouts::EditContext::instance().handleFrontendEvent(event);
 	layouts::SceneDirectory::instance().handleFrontendEvent(event);
+#ifdef LAYOUTS_REGIE
 	layouts::Failover::instance().handleFrontendEvent(event);
 	layouts::Regie::instance().handleFrontendEvent(event);
+#endif
 	if (event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP) {
 		/* The old collection was saved just before. A new, empty collection does not
 		 * call the load callback, so start from an empty document. */
@@ -98,8 +107,10 @@ void onFrontendEvent(enum obs_frontend_event event, void *)
 		layouts::ConstraintWatcher::instance().stop();
 		layouts::hotkeys::save();
 		layouts::hotkeys::unregisterAll();
+#ifdef LAYOUTS_REGIE
 		layouts::Regie::instance().saveHotkeys();
 		layouts::Regie::instance().unregisterHotkeys();
+#endif
 	}
 	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING) {
 		layouts::ConstraintWatcher::instance().start();
@@ -110,16 +121,31 @@ void onFrontendEvent(enum obs_frontend_event event, void *)
 	}
 }
 
+#ifndef LAYOUTS_REGIE
+/* Switcher not built: keep its saved settings untouched in the collection, so they
+ * are still there if it comes back. */
+OBSDataAutoRelease g_regieData;
+#endif
+
 void onSave(obs_data_t *data, bool saving, void *)
 {
 	if (saving) {
 		layouts::Store::instance().saveGuides(data);
-		layouts::Regie::instance().save(data);
 		layouts::hotkeys::save(); /* bindings may have changed in Settings > Hotkeys */
+#ifdef LAYOUTS_REGIE
+		layouts::Regie::instance().save(data);
 		layouts::Regie::instance().saveHotkeys();
+#else
+		if (g_regieData)
+			obs_data_set_obj(data, "layouts-regie", g_regieData);
+#endif
 	} else {
 		layouts::Store::instance().loadGuides(data);
+#ifdef LAYOUTS_REGIE
 		layouts::Regie::instance().load(data);
+#else
+		g_regieData = obs_data_get_obj(data, "layouts-regie");
+#endif
 	}
 }
 
@@ -180,10 +206,12 @@ bool obs_module_load(void)
 		},
 		[] { openEditor(); }, [] { openBuilder(); });
 
+#ifdef LAYOUTS_REGIE
 	/* Switcher: a dock of the OBS window (Docks menu), for live use. */
 	obs_frontend_add_dock_by_id("layouts-regie", obs_module_text("Regie.DockTitle"),
 				    new layouts::ui::RegieDock(main));
 	layouts::Regie::instance().registerHotkeys();
+#endif
 
 	layouts::morph::init();
 	obs_frontend_add_event_callback(onFrontendEvent, nullptr);
@@ -195,15 +223,21 @@ bool obs_module_load(void)
 
 void obs_module_post_load(void)
 {
+#ifdef LAYOUTS_REGIE
 	/* obs-websocket is loaded by now: register the "layouts" vendor requests. */
 	layouts::Regie::instance().registerVendor();
+#endif
 	/* Stacks for OBS too, when installed: follow its organization. */
 	layouts::SceneDirectory::instance().connectSisters();
 }
 
 void obs_module_unload(void)
 {
+#ifdef LAYOUTS_REGIE
 	layouts::Regie::instance().unregisterVendor();
+#else
+	g_regieData = nullptr;
+#endif
 	obs_frontend_remove_save_callback(onSave, nullptr);
 	obs_frontend_remove_event_callback(onFrontendEvent, nullptr);
 	layouts::morph::shutdown();

@@ -71,6 +71,8 @@ The editing surface in the middle of the Scene Editor, next to the OBS preview.
 
 ### Layouts Switcher
 
+> Not included in 0.7: the Switcher is set aside for now. Developers can build it with `-DLAYOUTS_REGIE=ON`.
+
 **Docks > Layouts Switcher** turns a scene of your show (the *Plateau*) into a vision mixer: a row of layouts, one bus of sources per slot, a PREVIEW line and **CUT**. Red is on air, green is in preview; with Studio Mode, prepare the next shot in preview and take it. Every action has an OBS hotkey (cut, next / previous layout, layouts 1 to 9, slot N = source M) and an obs-websocket request (vendor `layouts`), for Stream Deck and Companion.
 
 If a camera or a screen on air stops sending video, the program drops at once to the same layout with one tile less and the Switcher shows a red banner; the original layout comes back by itself when the source returns.

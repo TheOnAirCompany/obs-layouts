@@ -29,7 +29,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/edit-session.hpp"
 #include "obs/dual.hpp"
 #include "obs/corners.hpp"
+#ifdef LAYOUTS_REGIE
 #include "obs/regie.hpp"
+#endif
 #include "obs/item-style.hpp"
 #include "obs/builder.hpp"
 #include "obs/roles.hpp"
@@ -1823,6 +1825,7 @@ void checkShapes()
 		obs_frontend_set_current_scene(g_beforeShapes);
 }
 
+#ifdef LAYOUTS_REGIE
 /* ---- 0.5 Switcher + lost camera failover, end to end on the program ---- */
 OBSSourceAutoRelease g_plateau;
 int g_morphBefore = 300;
@@ -1997,6 +2000,7 @@ void checkAuto()
 	if (g_beforeRegie)
 		obs_frontend_set_current_scene(g_beforeRegie);
 }
+#endif
 
 OBSSourceAutoRelease g_move, g_savedTransition, g_moveA, g_moveB;
 
@@ -2982,8 +2986,10 @@ void runSelfTest(ui::EditorWindow *window, ui::BuilderWindow *builder)
 		g_perfScene = nullptr;
 		g_shapeScene = nullptr;
 		g_beforeShapes = nullptr;
+#ifdef LAYOUTS_REGIE
 		g_plateau = nullptr;
 		g_beforeRegie = nullptr;
+#endif
 	};
 	g_window = window;
 	g_builder = builder;
@@ -3181,6 +3187,7 @@ void runSelfTest(ui::EditorWindow *window, ui::BuilderWindow *builder)
 		R->add(1000, [] { takeShot(); });
 		R->add(1500, [] { checkCleanOutput(); });
 	}
+#ifdef LAYOUTS_REGIE
 	if (enabled("regie")) {
 		R->add(500, [] { prepareRegie(); });
 		R->add(1500, [] { checkRegieProgram(); });
@@ -3189,6 +3196,7 @@ void runSelfTest(ui::EditorWindow *window, ui::BuilderWindow *builder)
 		R->add(500, [] { checkAutoMidway(); });
 		R->add(1200, [] { checkAuto(); });
 	}
+#endif
 	if (enabled("corners")) {
 		R->add(500, [] { prepareCorners(); });
 		R->add(1000, [] { takeShot(); });
