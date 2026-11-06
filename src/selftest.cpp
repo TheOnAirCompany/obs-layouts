@@ -686,14 +686,20 @@ void testLayoutsV02()
 	const core::Rect b0 = box("A").united(box("B"));
 	const QPointF h = v->worldToView({b0.right(), b0.bottom()});
 	const double d = 100 * v->zoom(); /* +100 canvas px on x */
+	/* Handles follow the ratio lock (0.5): locked here, so the corner keeps the ratio. */
+	const bool lockBefore = Store::instance().settings().ratioLock;
+	Store::instance().settings().ratioLock = true;
 	sendMouse(v, QEvent::MouseButtonPress, h, Qt::LeftButton);
 	for (int i = 1; i <= 10; i++)
 		sendMouse(v, QEvent::MouseMove, h + QPointF(d * i / 10.0, 0), Qt::LeftButton, Qt::ControlModifier);
 	sendMouse(v, QEvent::MouseButtonRelease, h + QPointF(d, 0), Qt::NoButton, Qt::ControlModifier);
 	ctx.markDirty();
+	Store::instance().settings().ratioLock = lockBefore;
 	const core::Rect b1 = box("A").united(box("B"));
-	const double k = (b0.w + 100) / b0.w;
-	R->check(std::fabs(b1.x - b0.x) < 0.6 && std::fabs(b1.w - b0.w * k) < 1.5 && std::fabs(b1.h - b0.h * k) < 1.5,
+	/* Locked corner: the pointer is projected on the diagonal (Figma), the box grows and
+	 * keeps its ratio, the opposite corner stays. */
+	R->check(std::fabs(b1.x - b0.x) < 0.6 && std::fabs(b1.y - b0.y) < 0.6 && b1.w > b0.w + 10 &&
+			 std::fabs(b1.w / b1.h - b0.w / b0.h) < 0.01,
 		 "multi-resize-keeps-ratio", rectStr(b0) + " -> " + rectStr(b1));
 }
 
@@ -1092,11 +1098,12 @@ void testBroadcast()
 	selectNames({"A", "B", "C"});
 	emit ctx.itemsChanged();
 	auto *gallery = g_window->inspector()->findChild<QListWidget *>();
-	R->check(gallery && gallery->count() == 2, "broadcast-gallery-three-guests",
-		 gallery ? QString::number(gallery->count()) : "no gallery");
+	R->check(gallery && gallery->count() == (int)core::templatesFor(3, 0, 0, ui::canvasAspect() < 1.0).size(),
+		 "broadcast-gallery-three-guests", gallery ? QString::number(gallery->count()) : "no gallery");
 	Store::instance().settings().broadcastKinds = 0;
 	emit ctx.itemsChanged();
-	R->check(gallery && !gallery->isVisible(), "broadcast-gallery-empty-for-three-screens");
+	R->check(gallery && gallery->count() == (int)core::templatesFor(0, 3, 0, ui::canvasAspect() < 1.0).size(),
+		 "broadcast-gallery-three-screens", gallery ? QString::number(gallery->count()) : "no gallery");
 }
 
 /* Swap (0.5): a locked Duo, the right camera dropped on the left one on the canvas. */
@@ -1225,8 +1232,15 @@ void testShowScenes()
 			&locked);
 		obs_source_remove(src);
 	}
-	R->check(n == 5 && found == 5 && locked == 3 + 3 + 3 && ctx.sceneName() == edited, "broadcast-show-scenes",
-		 QString("created %1 found %2 locked %3").arg(n).arg(found).arg(locked));
+	/* The other layouts for three guests were created too: remove them. */
+	const std::vector<core::BroadcastTemplate> trio = core::templatesFor(3, 0, 0, ui::canvasAspect() < 1.0);
+	for (const core::BroadcastTemplate &t : trio) {
+		OBSSourceAutoRelease src = obs_get_source_by_name(("Show " + t.key).c_str());
+		if (src)
+			obs_source_remove(src);
+	}
+	R->check(n == 3 + (int)trio.size() && found == 5 && locked == 3 + 3 + 3 && ctx.sceneName() == edited,
+		 "broadcast-show-scenes", QString("created %1 found %2 locked %3").arg(n).arg(found).arg(locked));
 
 	/* A group is never shared with another scene. */
 	selectNames({"G"});
@@ -1489,7 +1503,9 @@ OBSSourceAutoRelease g_cleanScene;
 
 void prepareCleanOutput()
 {
-	obs_source_t *s = obs_scene_get_source(obs_scene_create("Layouts Clean"));
+	obs_scene_t *sScene = obs_scene_create("Layouts Clean");
+	obs_source_t *s = obs_scene_get_source(sScene);
+	obs_scene_release(sScene); /* the frontend keeps its own reference */
 	g_cleanScene = s;
 	addColor(obs_scene_from_source(s), "Clean BG", 1920, 1080, 0xFF303030, 0, 0);
 	obs_frontend_set_current_scene(s);
@@ -1545,7 +1561,9 @@ void prepareCorners()
 {
 	EditContext &ctx = EditContext::instance();
 	g_beforeCorners = obs_frontend_get_current_scene();
-	obs_source_t *s = obs_scene_get_source(obs_scene_create("Layouts Corners"));
+	obs_scene_t *sScene = obs_scene_create("Layouts Corners");
+	obs_source_t *s = obs_scene_get_source(sScene);
+	obs_scene_release(sScene); /* the frontend keeps its own reference */
 	g_cornerScene = s;
 	/* 800x600 white, cropped 100 left / 50 top: visible 700x550 at (200, 265). */
 	obs_sceneitem_t *item = addColor(obs_scene_from_source(s), "Rounded", 800, 600, 0xFFFFFFFF, 200, 265);
@@ -1611,7 +1629,9 @@ void checkCorners()
 
 	/* The same source in another scene keeps square corners: the radius belongs to the scene. */
 	EditContext &ctx = EditContext::instance();
-	obs_source_t *other = obs_scene_get_source(obs_scene_create("Layouts Corners B"));
+	obs_scene_t *otherScene = obs_scene_create("Layouts Corners B");
+	obs_source_t *other = obs_scene_get_source(otherScene);
+	obs_scene_release(otherScene); /* the frontend keeps its own reference */
 	g_cornerSceneB = other;
 	OBSSourceAutoRelease halfSource = obs_get_source_by_name("Rounded half");
 	obs_sceneitem_t *again = obs_scene_add(obs_scene_from_source(other), halfSource);
