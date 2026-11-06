@@ -359,6 +359,7 @@ void Store::loadSettings()
 	b("failover.enabled", s.failoverEnabled);
 	if (obs_data_has_user_value(d, "morph.durationMs"))
 		s.morphDurationMs = std::clamp((int)obs_data_get_int(d, "morph.durationMs"), 0, 5000);
+	b("dual.enabled", s.dualEnabled);
 	if (obs_data_has_user_value(d, "broadcast_kinds"))
 		s.broadcastKinds = std::clamp((int)obs_data_get_int(d, "broadcast_kinds"), 0, 2);
 	s.windowGeometry = QByteArray::fromBase64(obs_data_get_string(d, "window_geometry"));
@@ -429,6 +430,7 @@ void Store::saveSettings()
 	obs_data_set_bool(d, "builder_graphics", s.builderGraphics);
 	obs_data_set_bool(d, "failover.enabled", s.failoverEnabled);
 	obs_data_set_int(d, "morph.durationMs", s.morphDurationMs);
+	obs_data_set_bool(d, "dual.enabled", s.dualEnabled);
 	obs_data_set_int(d, "broadcast_kinds", s.broadcastKinds);
 	obs_data_set_string(d, "window_geometry", s.windowGeometry.toBase64().constData());
 	obs_data_set_string(d, "splitter_state_3", s.splitterState.toBase64().constData());

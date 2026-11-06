@@ -27,6 +27,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/commands.hpp"
 #include "obs/constraints.hpp"
 #include "obs/edit-session.hpp"
+#include "obs/dual.hpp"
 #include "obs/corners.hpp"
 #include "obs/regie.hpp"
 #include "obs/item-style.hpp"
@@ -1793,7 +1794,8 @@ OBSSourceAutoRelease g_beforeRegie;
 
 obs_sceneitem_t *programItem(const char *name)
 {
-	OBSSourceAutoRelease scene = obs_frontend_get_current_scene();
+	/* What is really on air (the private copy in Studio Mode with duplication). */
+	OBSSource scene = commands::onAirScene();
 	obs_scene_t *sc = scene ? obs_scene_from_source(scene) : nullptr;
 	return sc ? obs_scene_find_source(sc, name) : nullptr;
 }
@@ -1881,6 +1883,20 @@ void checkFailoverBack()
 	const double w1 = programItemWidth("REGIE CAM 1");
 	R->check(back && obs_sceneitem_visible(back) && w1 > 900 && w1 < 980, "failover-restores-layout",
 		 QString("cam1 width %1").arg(w1));
+	/* AUTO (0.6): from the duo to the solo, gliding in the program scene. */
+	Regie &r = Regie::instance();
+	const bool set = r.setLayout("Cam1Full");
+	R->check(set && r.autoTake(), "auto-starts", QString::fromStdString(r.preview().key));
+}
+
+void checkAuto()
+{
+	/* The solo is the first source of the Plateau: one camera full frame, the other gone. */
+	obs_sceneitem_t *c1 = programItem("REGIE CAM 1"), *c2 = programItem("REGIE CAM 2");
+	const bool v1 = c1 && obs_sceneitem_visible(c1), v2 = c2 && obs_sceneitem_visible(c2);
+	const double w = v1 ? programItemWidth("REGIE CAM 1") : programItemWidth("REGIE CAM 2");
+	R->check(Regie::instance().program().key == "Cam1Full" && v1 != v2 && w > 1900, "auto-glides-to-solo",
+		 QString("visible %1/%2 width %3").arg(v1).arg(v2).arg(w));
 	Regie::instance().setPlateau(QString());
 	/* Leave the program as the next tests expect it. */
 	if (g_beforeRegie)
@@ -2018,6 +2034,62 @@ void testMultiCanvas()
 			 std::fabs(b.bottom() - 1920) < 1,
 		 "broadcast-portrait-duo-stacks", rectStr(a) + rectStr(b));
 	obs_scene_release(vs);
+}
+
+/* Dual output: the 9:16 twin of a 16:9 duo lands in the vertical canvas, stacked, with
+ * the same sources, and CUT puts it on the vertical program. */
+void testDualTwin()
+{
+	if (!g_vertical)
+		return;
+	obs_scene_t *land = obs_scene_create("Dual Duo");
+	obs_sceneitem_t *a = addColor(land, "DualA", 1920, 1080, 0xFF4040FF, 0, 0);
+	obs_sceneitem_t *b = addColor(land, "DualB", 1920, 1080, 0xFF40FF40, 960, 0);
+	roles::setRole({obs_sceneitem_get_source(a), obs_sceneitem_get_source(b)}, core::Role::Camera);
+	OBSSource twin = dual::refreshTwin(obs_scene_get_source(land), "Cam2Split", true);
+	R->check(twin != nullptr, "dual-twin-created");
+	if (twin) {
+		obs_canvas_t *c = obs_source_get_canvas(twin);
+		R->check(c == g_vertical, "dual-twin-in-vertical-canvas");
+		obs_canvas_release(c);
+		struct Boxes {
+			std::vector<std::pair<std::string, core::Rect>> list;
+		} boxes;
+		obs_scene_enum_items(
+			obs_scene_from_source(twin),
+			[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+				/* Visible part: the twin crops cameras to fill their cell. */
+				obs_transform_info info = {};
+				obs_sceneitem_crop crop = {};
+				obs_sceneitem_get_info2(item, &info);
+				obs_sceneitem_get_crop(item, &crop);
+				obs_source_t *src = obs_sceneitem_get_source(item);
+				const double w = (obs_source_get_width(src) - crop.left - crop.right) * info.scale.x;
+				const double h = (obs_source_get_height(src) - crop.top - crop.bottom) * info.scale.y;
+				static_cast<Boxes *>(p)->list.push_back(
+					{obs_source_get_name(src), core::Rect(info.pos.x, info.pos.y, w, h)});
+				return true;
+			},
+			&boxes);
+		const bool two = boxes.list.size() == 2;
+		R->check(two, "dual-twin-two-items", QString::number(boxes.list.size()));
+		if (two) {
+			const core::Rect &ra = boxes.list[0].first == "DualA" ? boxes.list[0].second
+									      : boxes.list[1].second;
+			const core::Rect &rb = boxes.list[0].first == "DualA" ? boxes.list[1].second
+									      : boxes.list[0].second;
+			R->check(std::fabs(ra.w - 1080) < 1 && ra.y < 1 && rb.y > ra.bottom() - 1 &&
+					 std::fabs(rb.bottom() - 1920) < 1,
+				 "dual-twin-stacked", rectStr(ra) + rectStr(rb));
+		}
+		R->check(dual::cutTwin(obs_scene_get_source(land)), "dual-cut-twin");
+		OBSSourceAutoRelease onAir = obs_canvas_get_channel(g_vertical, 0);
+		R->check(onAir.Get() == twin.Get(), "dual-twin-on-vertical-program");
+		obs_canvas_set_channel(g_vertical, 0, nullptr);
+	}
+	roles::setRole({obs_sceneitem_get_source(a), obs_sceneitem_get_source(b)}, core::Role::None);
+	obs_source_remove(obs_scene_get_source(land));
+	obs_scene_release(land);
 }
 
 void cleanupCanvas()
@@ -2423,6 +2495,7 @@ void runSelfTest(ui::LayoutsWindow *window)
 		R->add(1500, [] { checkRegieProgram(); });
 		R->add(3000, [] { checkFailoverLost(); });
 		R->add(3500, [] { checkFailoverBack(); });
+		R->add(1200, [] { checkAuto(); });
 	}
 	if (enabled("corners")) {
 		R->add(500, [] { prepareCorners(); });
@@ -2471,6 +2544,7 @@ void runSelfTest(ui::LayoutsWindow *window)
 	}
 	if (enabled("canvas")) {
 		R->add(1500, [] { testMultiCanvas(); });
+		R->add(800, [] { testDualTwin(); });
 		R->add(800, [] { cleanupCanvas(); });
 		R->add(500, [] { constraintsSetup(); });
 		R->add(800, [] { constraintsReset(); });

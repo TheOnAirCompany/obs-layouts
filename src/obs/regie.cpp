@@ -275,8 +275,7 @@ bool Regie::studioMode() const
 
 bool Regie::onProgram(const std::string &source) const
 {
-	OBSSourceAutoRelease scene = obs_frontend_get_current_scene();
-	return visibleIn(scene, source);
+	return visibleIn(commands::onAirScene(), source);
 }
 
 bool Regie::onPreview(const std::string &source) const
@@ -514,7 +513,8 @@ bool Regie::autoTake()
 {
 	if (!plateauSource() || preview_.key.empty())
 		return false;
-	OBSSourceAutoRelease program = obs_frontend_get_current_scene();
+	/* The scene really on air (a private copy in Studio Mode with "duplicate scene"). */
+	OBSSource program = commands::onAirScene();
 	obs_scene_t *scene = program ? obs_scene_from_source(program) : nullptr;
 	if (!scene)
 		return false;
@@ -522,7 +522,9 @@ bool Regie::autoTake()
 	const std::vector<morph::Target> targets = targetsFor(program, preview_, placed);
 	if (targets.empty())
 		return false;
-	morph::applyAnimated(scene, targets);
+	const bool moving = morph::applyAnimated(scene, targets);
+	blog(LOG_INFO, "[Layouts] switcher AUTO on '%s': %zu items, %s", obs_source_get_name(program), targets.size(),
+	     moving ? "animating" : "nothing to animate");
 	finishPlacement(placed, commands::broadcastSlots(preview_.key, canvasRect(program), spec()));
 	program_ = preview_;
 	armFailover();

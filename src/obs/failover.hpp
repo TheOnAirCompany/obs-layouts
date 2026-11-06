@@ -31,6 +31,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs.h>
 #include <obs-frontend-api.h>
 
+#include <obs.hpp>
+
 #include <QObject>
 #include <QString>
 
@@ -85,6 +87,7 @@ private:
 	std::string key_;
 	core::SlotAssignment assignment_;
 	std::set<std::string> lost_;
+	OBSWeakSource actedOn_;          /* the scene reorganized (the on-air copy in Studio Mode) */
 	std::vector<Snapshot> snapshot_; /* original layout, taken at the first drop */
 	bool applied_ = false;
 	std::string fallbackKey_;
