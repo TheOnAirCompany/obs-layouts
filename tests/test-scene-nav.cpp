@@ -45,7 +45,7 @@ const char *kOrg = R"({"schema_version":1,"tree":[
 std::vector<CanvasInfo> canvases()
 {
 	CanvasInfo main{"c-main", "Main", true, 1920, 1080, {}};
-	main.scenes = {{"u-open", "Opening"}, {"u-count", "Countdown"}, {"u-duo", "Duo"},
+	main.scenes = {{"u-open", "Opening"},     {"u-count", "Countdown"}, {"u-duo", "Duo"},
 		       {"u-solo", "Solo invité"}, {"u-brb", "BRB"},         {"u-new", "Interview"}};
 	CanvasInfo vertical{"c-vert", "Vertical", false, 1080, 1920, {}};
 	vertical.scenes = {{"v-duo", "Duo ▯"}, {"v-solo", "Solo 9:16"}};
@@ -209,7 +209,7 @@ TEST("nav: tally of scenes and stacks")
 	const Node &main = tree[0];
 	const Node *plateau = child(main, "Plateau");
 	CHECK(plateau && tallyOf(*plateau, program, preview) == Tally::Program); /* program wins */
-	CHECK(tallyOf(main.children[0], program, preview) == Tally::Preview);   /* Ouverture */
+	CHECK(tallyOf(main.children[0], program, preview) == Tally::Preview);    /* Ouverture */
 	CHECK(tallyOf(main.children[0].children[1], program, preview) == Tally::None);
 	CHECK(plateau && tallyOf(plateau->children[0], program, preview) == Tally::Preview);
 	CHECK(tallyOf(tree[1], program, preview) == Tally::None);
@@ -228,7 +228,7 @@ TEST("live: seen by an audience only when streamed or on a virtual camera")
 	live::Facts f;
 	f.onProgram = true;
 	f.mainCanvas = true;
-	CHECK(!live::seenByAudience(f)); /* program, nothing runs */
+	CHECK(!live::seenByAudience(f));                 /* program, nothing runs */
 	f.outputs.push_back({true, true, false, false}); /* recording the main canvas */
 	CHECK(!live::seenByAudience(f));
 	f.mainStreaming = true;
