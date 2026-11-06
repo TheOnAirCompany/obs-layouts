@@ -1,5 +1,9 @@
 #include "test.hpp"
 
+namespace {
+constexpr double kPi = 3.14159265358979323846;
+}
+
 #include "shape.hpp"
 
 #include <cmath>
@@ -29,7 +33,7 @@ TEST("shape: pixels, round and none")
 
 TEST("shape: axis scale of a rotated matrix")
 {
-	const double a = 30.0 * M_PI / 180.0;
+	const double a = 30.0 * kPi / 180.0;
 	const double sx = 0.5, sy = 2.0;
 	/* rows of an OBS matrix: image of the x axis, image of the y axis */
 	const Vec2 s = axisScale(sx * std::cos(a), sx * std::sin(a), -sy * std::sin(a), sy * std::cos(a));
@@ -59,7 +63,7 @@ TEST("shape: polygon keeps at most 8 points")
 {
 	std::vector<Vec2> circle;
 	for (int i = 0; i < 20; i++)
-		circle.push_back({std::cos(i * M_PI / 10), std::sin(i * M_PI / 10)});
+		circle.push_back({std::cos(i * kPi / 10), std::sin(i * kPi / 10)});
 	CHECK(convexPolygon(circle).size() == 8);
 }
 
