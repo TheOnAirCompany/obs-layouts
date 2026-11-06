@@ -2,6 +2,7 @@
 
 ## 0.6.0 — 2026-11-06
 
+- **Signed and notarized macOS package** (Developer ID): macOS installs it without warning.
 - **AUTO** in the Layouts Switcher: the program glides to the prepared layout inside the same
   scene, no scene transition: tiles move and resize, crops and rotations follow, tiles that leave
   fade out, new ones fade in. Duration next to the button (300 ms by default, 0 = cut). One undo
