@@ -47,8 +47,10 @@
 - Self-tests release the scenes they create while OBS still runs (no more crash on exit after
   the corners tests), and cover round, diagonal, border and shadow pixels, the Switcher CUT and the
   lost camera failover end to end.
-- The drop shadow also shows on cropped items (cameras in Fill): OBS draws them through a texture
-  cut to their visible part, so their shadow is drawn in the scene just before them.
+- The drop shadow also shows on cropped items (cameras in Fill) in the program output (stream,
+  recording, virtual camera): OBS draws them through a texture cut to their visible part, so their
+  shadow is drawn in the scene just before them. Limit: a second view of the same scene in the same
+  frame (projector or multiview of the program) reuses that texture and shows it without shadow.
 
 ## 0.4.1 — 2026-11-06
 
